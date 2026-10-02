@@ -1,0 +1,135 @@
+:orphan:
+
+WS-00：影像 Buffer 與渲染 Context
+================================
+
+``moviepy.ae`` 提供 float32 預乘 RGBA 的 ``Buffer``，以及不可變的
+``RenderContext``。這是渲染基礎；Composition、圖層時間映射、效果、快取
+及色彩管理由後續工作項目實作。既有 ``VideoClip`` 仍可單獨使用。
+
+最小可執行範例
+--------------
+
+.. code-block:: python
+
+    import numpy as np
+    from moviepy.ae import Buffer, RenderContext
+
+    red = np.array([[[255, 0, 0]]], dtype=np.uint8)
+    foreground = Buffer.from_uint8_rgb(red, mask=np.array([[0.5]]))
+    assert foreground.to_uint8_rgb(bg=(0, 0, 1)).tolist() == [[[128, 0, 128]]]
+    assert not foreground.rgba.flags.writeable
+
+    context = RenderContext(t=0.5, fps=24, rng_seed=7)
+    assert context.frame_index == 12
+    assert context.with_time(-0.01).frame_index == -1
+    assert np.array_equal(
+        context.rng_for("foreground").random(4),
+        context.rng_for("foreground").random(4),
+    )
+
+預乘數值與輸出
+--------------
+
+``Buffer(rgba, offset=(0, 0), color_space="srgb")`` 接受有限的
+``(H, W, 4)`` 預乘 RGBA，取得獨立 float32 快照。alpha 必須介於 0 和 1；
+alpha 為 0 的 RGB 會正規化為 0。RGB 可以包含負值及大於 1 的 HDR 數值，
+合成途中不截斷、不量化。直接建構時請先自行預乘，或呼叫
+``premultiply(straight_rgba)``。``unpremultiply`` 與 ``buffer.straight()``
+回傳獨立 straight RGBA 陣列，透明像素不除以 0。
+
+``Buffer.from_uint8_rgb(frame, mask=None)`` 嚴格要求 uint8 RGB；mask 要有
+相同高寬。無 mask 的全部 256 種色碼可精確 round-trip。完全透明像素的
+隱藏顏色在預乘時消失，因此不能從 Buffer 復原。
+
+``to_uint8_rgb()`` 匯出 straight RGB，透明像素為黑。
+``to_uint8_rgb(bg=(r, g, b))`` 先合成到不透明常數背景：背景是目前工作
+空間的 **normalized 0..1** RGB，例如白色是 ``(1, 1, 1)``。
+影像背景請先使用 ``foreground.composite_over(background)``。
+最後匯出才 clip 到 0..1，使用 ``numpy.rint`` 四捨六入五成雙並量化成 uint8。
+
+``srgb``、``linear``、``ocio:<name>`` 是既有數值編碼的標籤，WS-00
+不執行 gamma、OCIO 轉換或 HDR tone mapping。不同標籤不能互相合成；
+非 sRGB Buffer 的 uint8 輸出仍是該工作空間的色碼。
+
+座標與不可變資料
+----------------
+
+``size`` 使用 ``(width, height)``；``offset`` 使用全域合成座標
+``(x, y)``。``bounds`` 與 ``crop(bounds)`` 的矩形是全域半開區間
+``(left, top, right, bottom)``，右及下邊界不包含在內。
+
+``crop`` 取交集，不相交時回傳空 Buffer。
+``pad(left=..., top=..., right=..., bottom=...)`` 補透明邊緣並調整 offset，
+原像素的全域位置保持不變。``expand_to(bounds)`` 要求目標包含原 bounds；
+``composite_over`` 保留兩個 Buffer 的 bounds 聯集。
+``to_uint8_rgb`` 只匯出 Buffer 自身像素，不按 offset 自動補合成畫布。
+
+.. code-block:: python
+
+    placed = foreground.with_offset((-2, 3))
+    assert placed.bounds == (-2, 3, -1, 4)
+    expanded = placed.pad(left=1, top=2)
+    assert expanded.bounds == (-3, 1, -1, 4)
+    assert np.array_equal(expanded.crop(placed.bounds).rgba, placed.rgba)
+
+公開建構入口會複製呼叫者資料；欄位 frozen，``rgba`` 在正常 NumPy
+使用中唯讀。``with_rgba`` 取得新快照；``with_offset`` 可以共享既有唯讀
+儲存體。此契約不保證防止使用者刻意重開 ndarray 的 WRITEABLE flag。
+
+內部配置器可回收已釋放的 float32 原始儲存體，保留最多兩筆，合計最多
+64 MiB。只有當原陣列及所有外流 view 都不再存活時，lease 才讓該儲存體
+重新加入可用池；仍被呼叫者持有的 Buffer 或切片不會被後續運算覆寫。
+每次合成都重新寫入完整輸出。這是有界的記憶體配置重用，不是影格或
+合成結果快取；公開資料快照、唯讀與操作回傳新值的契約維持一致。
+
+既有 clip 的來源局部時間
+------------------------
+
+``Buffer.from_clip(clip, t, offset=(0, 0))`` 在同一個 **來源局部時間**
+讀取 frame 和 mask，不加減 ``clip.start``，也不套用 position。
+RGB 可為有限 0..255 浮點色碼，匯入直接除以 255，保留 FadeIn 等效果的
+小數精度。mask 尺寸與當次 frame 不同時，從左上角裁切或補透明像素。
+
+.. code-block:: python
+
+    from moviepy import ColorClip
+
+    clip = ColorClip((2, 1), color=(255, 0, 0), duration=1).with_start(10)
+    imported = Buffer.from_clip(clip, 0.5, offset=(4, 6))
+    assert imported.bounds == (4, 6, 6, 7)
+    assert imported.to_uint8_rgb()[0, 0].tolist() == [255, 0, 0]
+
+Context 與確定性
+----------------
+
+``RenderContext`` 預設為 ``t=0, fps=30, resolution_scale=1, quality="best",
+rng_seed=0, cache=None, shutter=None``。時間可負且必須有限；fps 必須有限
+且大於 0；resolution_scale 限 0.25、0.5、1；quality 限 draft、best；
+rng_seed 是非負整數。``frame_index`` 使用 ``floor(t * fps)``，不加 epsilon。
+
+``with_time`` 取得新 context。``rng_for(layer_id)`` 接受非負整數或非空
+字串；每次建立 fresh PCG64 generator，穩定混合 seed、layer_id 與
+frame_index，不使用 Python ``hash`` 或全域 NumPy RNG。
+同 context、layer 與相依套件版本下，重算及改變評估順序均得到相同樣本；
+同一幀內的不同 t 使用相同串流。
+
+cache、shutter 是 opaque reference，只傳遞、不執行快取或快門取樣。
+它們可指向可變物件，且不參與 context equality/hash，所以 context 的
+hash 不能當成完整渲染快取鍵。scale、quality 也只供後續渲染階段使用。
+
+驗證與效能
+----------
+
+``tests/ae`` 包含解析解、相容性與合成 golden 測試。預設讀取 golden；
+``--update-golden`` 由獨立解析 recipe 重建 reference，不把受測輸出直接
+存成期望結果。PNG sidecar 記錄 SHA256 與生成來源。
+
+``benchmarks/ae_bench.py --check`` 使用真實 1920×1080，量測單層、10 層
+半透明 Normal 與 cv2 Gaussian σ=20。純 Normal 與包含來源匯入的時間
+分開報告；主驗收是預先建立唯讀輸入後的 10 次 over 和一次最終 RGB
+輸出，單執行緒 CPU median 至少 10 fps。完整命令、參考機型和保存結果
+見 ``benchmarks/README.md``。
+
+本次重用既有 NumPy、Pillow、OpenCV 相依套件；版本、授權與使用範圍
+記錄於 ``docs/ae/THIRD_PARTY.md``。

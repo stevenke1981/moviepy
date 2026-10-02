@@ -1,0 +1,26 @@
+{
+  "png_sha256": "9e84294ec003ee215efe4af07ed22983e9b10e855f36100fb7c86ebd4e8b6bee",
+  "mode": "RGB",
+  "size": [
+    3,
+    2
+  ],
+  "recipe": {
+    "id": "half_alpha_over",
+    "parameters": {
+      "version": 1,
+      "seed": null
+    }
+  },
+  "generator": {
+    "path": "tests/ae/assets/generate_ws00.py",
+    "sha256": "6a50dd4c7a6cb3d5e86236c4631dd140ffe1bf58a38b29758d6e77d22ff54ff6"
+  },
+  "reference_formula": "float64: Cpremult=Cstraight*alpha; Cout=Cforeground+Cbackground*(1-alpha_foreground); aout=alpha_foreground+alpha_background*(1-alpha_foreground); final uint8 RGB=np.rint(np.clip(Cout/aout,0,1)*255)",
+  "versions": {
+    "numpy": "2.4.6",
+    "pillow": "12.3.0",
+    "python": "3.11.14"
+  },
+  "license": "MIT; tests/ae/assets/LICENSE-ASSETS.txt"
+}
