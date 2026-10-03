@@ -1,0 +1,187 @@
+:orphan:
+
+WS-01：屬性、關鍵影格與表達式
+==============================
+
+公開入口為 ``moviepy.ae.properties``。``Property`` 可從靜態值、
+關鍵影格、可信任的 Python callable 或受限 ``Expression`` 取得數值。
+既有 ``moviepy.ae.Buffer`` 和 ``RenderContext`` 可直接搭配使用。
+
+建立可動畫的值
+--------------
+
+.. code-block:: python
+
+    from moviepy.ae.properties import Ease, Expression, Keyframe, Property
+
+    opacity = Property(0, keyframes=[(0, 0), (2, 100)])
+    assert opacity.value_at(1) == 50
+    assert opacity.value_at(-1) == 0
+    animated = opacity.with_expression(Expression("value + time"))
+    assert animated.value_at(1) == 51
+    assert opacity.value_at(1) == 50
+
+``set_keyframes`` 驗證成功後修改目前 Property 並回傳自己；
+``with_keyframes``、``with_value``、``with_expression`` 回傳獨立 Property。
+關鍵影格依時間排序，重複時間與非有限數值會被拒絕。動畫區間外維持
+最前／最後一個值；要循環或延伸，使用表達式的 loop 函式。
+
+值的種類包括 ``float``、``vec2``、``vec3``、``color``、``bool``、
+``enum``、``path``。列表和 NumPy 陣列會正規化為獨立、不可變的 tuple。
+RGB／RGBA 色彩請明確指定 ``value_type="color"``，避免與 Vec3 混淆；
+有限的 signed／HDR 色彩不會在 Property 中截斷。bool 與 enum 關鍵影格
+使用 ``hold``。Enum 成員保存其字串／整數 token，不保存 Python class。
+
+時間緩動與速度
+--------------
+
+.. code-block:: python
+
+    eased = Property(
+        0,
+        keyframes=[
+            Keyframe(0, 0, interp="bezier", out_speed=0, out_influence=33.33),
+            Keyframe(1, 1, in_speed=0, in_influence=33.33),
+        ],
+    )
+    assert abs(eased.value_at(0.5) - 0.5) < 1e-12
+    assert abs(Ease.easy_ease()(0.5) - 0.5) < 1e-12
+
+每段由左側關鍵影格的 ``interp`` 決定：linear、hold、bezier、
+auto_bezier、continuous_bezier。時間 influence 的單位是百分比；
+speed 的單位是屬性值／秒。空間屬性的 scalar speed 是路徑距離／秒。
+明確提供 ``out_ease`` 時使用該 Ease 曲線，否則可使用右側 ``in_ease``；
+未指定 Ease 才由 influence／speed 建立時間曲線。
+
+``Ease.linear/ease_in/ease_out/ease_in_out/bezier/easy_ease/hold`` 是
+factory 方法，請加括號。CSS 型 Bézier 反解時間 x，允許 y 超越 0..1。
+Easy Ease 使用精確的 33.33%，控制點為 ``(.3333,0,.6667,1)``；
+規格範例 ``(.333,0,.667,1)`` 是四捨五入版本，測試另以 2e-4 容差比較。
+Auto Bezier 為單調資料計算受限制的共享速度；Continuous Bezier 保留
+共享的明確／中心差分速度，因此自訂速度可能造成 overshoot。
+
+空間路徑、roving 與獨立維度
+--------------------------
+
+.. code-block:: python
+
+    from moviepy.ae.properties import SpatialSegment
+
+    curve = SpatialSegment((0, 0), (100, 0), (0, 100), (0, 100))
+    assert curve.length > 100
+    assert curve.point_at_fraction(0) == (0, 0)
+    assert curve.point_at_fraction(1) == (100, 0)
+    motion = Property(
+        (0, 0),
+        spatial=True,
+        keyframes=[
+            Keyframe(0, (0, 0)),
+            Keyframe(0.5, (10, 0), roving=True),
+            Keyframe(4, (40, 0)),
+        ],
+    )
+    assert abs(motion.keyframes[1].time - 1) < 1e-9
+    assert abs(motion.value_at(2)[0] - 20) < 1e-4
+
+空間 tangent 是相對於其端點的偏移。``spatial=True`` 使用弧長反解，
+使線性時間進度對應實際行進距離。弧長表只快取固定曲線幾何，
+不快取渲染影格；時間緩動會作用在距離比例上。
+
+Roving 僅適用空間屬性的內部關鍵影格，固定的首尾時間不變。
+內部時間按路徑長度重新分配；hold 與 roving 不可混用。
+完全零長度的區間均分時間；同一段 roving 同時包含零長度及非零長度
+線段時拒絕，避免產生重複時間。位置資料本身不會被改寫。
+
+.. code-block:: python
+
+    x = Property(0, keyframes=[(0, 0), (1, 100)])
+    y = Property(0, keyframes=[(0, 0), (2, 50)])
+    separated = Property.from_dimensions((x, y))
+    assert separated.value_at(1.5) == (100, 37.5)
+    first, second = separated.separate_dimensions()
+    first.set_keyframes([(0, 10), (1, 20)])
+    assert second.value_at(1.5) == 37.5
+
+``separate_dimensions`` 回傳獨立 scalar Properties；
+``from_dimensions`` 複製並組合兩／三條曲線。對 callable 或表達式向量
+作拆分會建立執行期投影，保留呼叫端 context／metadata；這種投影不能
+序列化成 JSON。``velocity_at`` 是端點感知的有限差分；hold 跳躍的
+瞬間不具有有限導數，採用明確的單側區段規則。
+
+Path 與版本化 JSON
+------------------
+
+.. code-block:: python
+
+    from moviepy.ae.properties import PathValue
+
+    path = PathValue(vertices=((0, 0), (10, 0)), closed=False)
+    original = Property(path)
+    assert Property.from_json(original.to_json()).value_at(0) == path
+    restored = Property.from_json(animated.to_json())
+    assert restored.value_at(1) == 51
+
+``PathValue`` 保存頂點、進入／離開 tangent 與 closed。Path 動畫要求
+各關鍵影格拓撲一致，逐座標插值；不自動重採樣或配對不同拓撲。
+Path 表達式的 ``value``／``valueAtTime`` 使用四項不可變 tuple：
+``(vertices, in_tangents, out_tangents, closed)``；回傳後會驗證並還原為
+``PathValue``。一般 Path 可含最多 4096 個頂點；表達式內各序列最多
+64 項。表達式不會取得 PathValue 的 Python 物件方法。
+
+.. code-block:: python
+
+    retained = original.with_expression(Expression("valueAtTime(time)"))
+    assert retained.value_at(0.5) == path
+    direct = Property(Expression("[time, time * 2]"), value_type="vec2")
+    assert direct.value_at(0.5) == (0.5, 1.0)
+
+Property JSON 使用 ``schema: 1``，保留完整 easing、speed、influence、
+空間 tangent、roving、分離維度與 expression 原始文字。
+解碼拒絕未知欄位／版本、重複 JSON key、非有限數值與超出資源限制的
+資料；不動態匯入類別，不還原 callable。可信任 callable 可在執行期
+使用，``to_json`` 會明確拒絕它。
+
+``Property.from_audio_keyframes(times, values)`` 接受已分析的數值樣本，
+只建立關鍵影格；音訊解碼與音量分析留給 WS-25。
+
+表達式與確定性
+--------------
+
+.. code-block:: python
+
+    from moviepy.ae import RenderContext
+    from moviepy.ae.properties import ExpressionError
+
+    expression = Expression("value + thisLayer.offset + timeToFrames()")
+    assert expression.evaluate(
+        0.5, value=2, this_layer={"offset": 3}, context=RenderContext(fps=24)
+    ) == 17
+    context = RenderContext(rng_seed=7)
+    noise = Property(Expression("wiggle(2, 8)"))
+    assert noise.value_at(0.125, context=context) == noise.value_at(0.125, context=context)
+    try:
+        Expression("__import__('os')").evaluate(0)
+    except ExpressionError:
+        pass
+    else:
+        raise AssertionError("unsafe expression was accepted")
+
+引擎以白名單 AST 逐節點解譯，限制長度、節點數、深度、運算數、
+數值大小及採樣回呼。沒有 Python eval／exec，也不公開檔案、網路、
+模組或任意物件方法。Metadata 使用不可變快照，可作安全的屬性讀取
+與索引；``thisComp.layer(...)`` 等 live 物件方法尚未提供。
+向量算術為逐元素運算，``[1,2] * 2`` 得到 ``(2,4)``。
+
+可使用 ``time/value/index/thisLayer/thisComp``、
+``valueAtTime/velocityAtTime``、四種 ``loopIn/loopOut`` 模式、
+``linear/ease/easeIn/easeOut/clamp/lerp``、向量 length／normalize／dot／
+cross／lookAt、RGB/HSL 轉換、random／gaussRandom／noise／wiggle、
+``timeToFrames/framesToTime`` 與基本數學函式。
+取值／速度及循環使用表達式套用前的 base，避免自我遞迴。
+``lookAt`` 回傳 XYZ 角度：+Z 是零角度，roll 為 0。
+
+Expression 的 ease 系列使用有指定端點切線的 Hermite 多項式；
+與 ``Ease`` 的 CSS factory 是不同介面。Wiggle 是以 context seed
+產生、頻譜集中在指定 freq 附近的連續窄頻近似，並非 Adobe 私有 noise
+取樣的逐點複製。相同 seed、時間與 layer_id 得到相同值；重新排序
+評估不會改變結果。切換 fps 不會重新隨機化 wiggle 相位。
