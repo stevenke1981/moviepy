@@ -1,0 +1,317 @@
+:orphan:
+
+WS-02 圖層與變形
+================
+
+本階段新增 ``moviepy.ae.transform``、``moviepy.ae.warp`` 與
+``moviepy.ae.layers``，建立 AE 的圖層模型：變形矩陣、Parenting、
+圖層時間與開關，以及 Solid／Null／AV 三種來源。合成器與 Renderer
+仍屬 WS-03，本頁只示範單一圖層與手工堆疊。
+
+座標系統使用**像素中心**：Buffer 的 ``[row, col]`` 位於世界座標
+``(offset_x + col, offset_y + row)``，``bounds`` 仍是半開區間。
+因此 AE 的 ``anchor = (W/2, H/2)`` 在本實作是 ``((W-1)/2, (H-1)/2)``，
+相差半個像素；這樣 90°／180° 旋轉會把像素中心對準像素中心，
+可以直接與 ``numpy.rot90`` 位元精確比對。``anchor_point=None`` 代表
+自動置中，``position=None`` 代表自動等於 anchor，所以未設定的
+``Transform()`` 對任何來源尺寸都是 identity。
+
+--------------
+
+基本變形
+--------------
+
+.. code-block:: python
+
+    import numpy as np
+    from moviepy.ae import Buffer
+    from moviepy.ae.transform import Transform
+
+    rgba = np.zeros((4, 4, 4), dtype=np.float32)
+    rgba[..., 3] = 1.0
+    rgba[..., 0] = np.linspace(0.0, 1.0, 4, dtype=np.float32)[None, :]
+    source = Buffer(rgba)
+
+    identity = Transform()
+    assert identity.apply(source, 0.0).bounds == (0, 0, 4, 4)
+    assert identity.apply(source, 0.0).rgba is source.rgba
+
+    moved = Transform(position=(3.0, -2.0), anchor_point=(0.0, 0.0))
+    assert moved.apply(source, 0.0).bounds == (3, -2, 7, 2)
+
+    scaled = Transform(scale=(50.0, 50.0), interpolation="nearest")
+    assert scaled.apply(source, 0.0).bounds == (1, 1, 3, 3)
+
+矩陣順序與 AE 相同：``T(position) · R(rotation) · S(scale) · T(-anchor)``。
+``rotation`` 以度為單位、畫面上順時針為正，可超過 360；``scale`` 是百分比，
+負值等於鏡射。整數平移且 opacity 為 100 時走快速路徑，直接共用來源儲存體
+而不複製任何像素。
+
+--------------
+
+精確旋轉與鏡射
+--------------
+
+.. code-block:: python
+
+    import numpy as np
+    from moviepy.ae import Buffer
+    from moviepy.ae.transform import Transform
+
+    rgba = np.arange(36, dtype=np.float32).reshape(6, 6, 1).repeat(4, axis=2)
+    rgba[..., :3] /= 255.0
+    rgba[..., 3] = 1.0
+    source = Buffer(rgba)
+
+    for degrees, turns in ((90, -1), (180, 2), (270, 1)):
+        result = Transform(rotation=degrees, interpolation="linear").apply(source, 0.0)
+        assert result.bounds == source.bounds
+        np.testing.assert_array_equal(result.rgba, np.rot90(source.rgba, turns))
+
+    mirrored = Transform(scale=(-100, 100), interpolation="nearest").apply(source, 0.0)
+    np.testing.assert_array_equal(mirrored.rgba, np.fliplr(source.rgba))
+
+    center = Transform(anchor_point=(2.5, 2.5), position=(2.5, 2.5))
+    mapped = center.matrix_at(0.0, size=(6, 6)) @ [2.5, 2.5, 1.0]
+    np.testing.assert_allclose(mapped[:2], [2.5, 2.5])
+
+``nearest`` 與 ``linear`` 在整數倍 90° 旋轉下與 ``numpy.rot90`` 位元精確一致；
+``cubic`` 的內插結果相同，但因為 OpenCV 的整數不動點濾波會在原本為零的通道
+留下 denormal 殘渣，所以比較要用數值容差而非位元相等。
+
+--------------
+
+子像素、插值品質與不透明度
+--------------
+
+.. code-block:: python
+
+    import numpy as np
+    from moviepy.ae import Buffer, RenderContext
+    from moviepy.ae.transform import Transform
+
+    rgba = np.zeros((3, 6, 4), dtype=np.float32)
+    rgba[..., 3] = 1.0
+    source = Buffer(rgba)
+
+    half = Transform(position=(0.5, 0.0), anchor_point=(0.0, 0.0), interpolation="linear")
+    result = half.apply(source, 0.0)
+    assert result.bounds == (0, 0, 7, 3)
+    np.testing.assert_allclose(result.rgba[:, 0], 0.5 * source.rgba[:, 0], atol=1e-6)
+    np.testing.assert_allclose(
+        result.rgba[:, 3], 0.5 * (source.rgba[:, 2] + source.rgba[:, 3]), atol=1e-6
+    )
+
+    transform = Transform(scale=(150.0, 150.0))
+    best = transform.apply(source, 0.0, RenderContext(quality="best"))
+    draft = transform.apply(source, 0.0, RenderContext(quality="draft"))
+    assert not np.array_equal(best.rgba, draft.rgba)
+
+    faded = Transform(opacity=50.0).apply(source, 0.0)
+    np.testing.assert_allclose(faded.rgba, source.rgba * 0.5, atol=1e-7)
+
+``interpolation="auto"`` 依 ``RenderContext.quality`` 選擇：``best`` 用
+``INTER_CUBIC``、``draft`` 用 ``INTER_LINEAR``。濾波支援半徑決定自動
+destination bounds（nearest 0.5、linear 1.0、cubic 2.0 像素），所以 cubic
+會比 linear 多一圈透明邊框，不會丟掉濾波能量。cubic 的 alpha 溢位會被
+clip 到 ``[0, 1]``；RGB 溢位保留，因為 Buffer 允許 signed／HDR 色值。
+opacity 以百分比指定，靜態賦值會驗範圍，動畫或運算式超界則在套用時 clamp。
+
+--------------
+
+動畫：關鍵影格、獨立維度與 Auto-Orient
+--------------
+
+.. code-block:: python
+
+    from moviepy.ae import Buffer
+    from moviepy.ae.properties import Keyframe, Property
+    from moviepy.ae.transform import Transform
+    import numpy as np
+
+    source = Buffer(np.full((4, 4, 4), 1.0, dtype=np.float32))
+    moving = Transform(
+        position=Property((0.0, 0.0), keyframes=[(0, (0, 0)), (2, (10, 0))]),
+        anchor_point=(0.0, 0.0),
+        interpolation="nearest",
+    )
+    assert moving.apply(source, 0.0).bounds == (0, 0, 4, 4)
+    assert moving.apply(source, 1.0).bounds == (5, 0, 9, 4)
+    assert moving.apply(source, 2.0).bounds == (10, 0, 14, 4)
+
+    axis_x, axis_y = Property((0.0, 0.0)).separate_dimensions()
+    axis_x.set_keyframes([(0, 0), (1, 8)])
+    separable = Transform(
+        position=Property.from_dimensions((axis_x, axis_y)),
+        anchor_point=(0.0, 0.0),
+        interpolation="nearest",
+    )
+    assert separable.apply(source, 0.5).bounds == (4, 0, 8, 4)
+
+    along_path = Transform(
+        position=Property((0.0, 0.0), keyframes=[(0, (0, 0)), (1, (0, 10))]),
+        anchor_point=(0.0, 0.0),
+        auto_orient=True,
+    )
+    assert abs(along_path.rotation_at(0.5) - 90.0) < 1e-6
+
+    locked = Transform(scale=(200.0, 100.0), constrain_proportions=True)
+    locked.scale_axis("x", 400.0)
+    assert locked.scale.value_at(0.0) == (400.0, 200.0)
+
+``auto_orient`` 用 position 的速度方向取代 ``rotation``，靜止時回 0，
+與 AE 的 Auto-Orient Along Path 一致。``constrain_proportions`` 讓
+``scale_axis`` 依比例調整另一軸；``scale_axis`` 只接受靜態 scale，
+動畫來源會明確報錯而不是被靜默取代。
+
+--------------
+
+圖層時間與開關
+--------------
+
+.. code-block:: python
+
+    import numpy as np
+    from moviepy.ae.layers import SolidLayer
+
+    layer = SolidLayer("bg", color=(20, 20, 30), size=(8, 6))
+    assert layer.out_point == float("inf")
+    assert layer.source_time(2.5) == 2.5
+    np.testing.assert_array_equal(
+        layer.render(0.0).to_uint8_rgb(), [[[20, 20, 30]] * 8] * 6
+    )
+
+    slowed = SolidLayer("slow", color=(0, 0, 0), size=(2, 2), start_time=1.0, stretch=200.0)
+    assert slowed.source_time(2.0) == 0.5
+    reversed_ = SolidLayer("rev", color=(0, 0, 0), size=(2, 2), stretch=-100.0)
+    assert reversed_.source_time(3.0) == -3.0
+
+    windowed = SolidLayer("win", color=(0, 0, 0), size=(2, 2), in_point=1.0, out_point=3.0)
+    assert windowed.render(0.5) is None
+    assert windowed.render(1.5) is not None
+    assert windowed.render(3.0) is None
+
+    windowed.enabled = False
+    assert not windowed.visible(1.5)
+    windowed.enabled = True
+    assert not windowed.visible(1.5, solo_active=True)
+    windowed.solo = True
+    assert windowed.visible(1.5, solo_active=True)
+
+來源時間是 ``(t - start_time) / (stretch / 100)``，所以 ``stretch=200``
+是半速、負值是反向播放。``in_point``／``out_point`` 是合成時間的半開區間；
+``enabled`` 與 ``solo`` 影響渲染，``shy``／``locked``／``guide`` 在本階段
+只是中繼資料（guide 是否排除於最終輸出屬於 WS-03 的 Renderer 政策）。
+``collapse_transformations``、``continuously_rasterize`` 與 ``motion_blur``
+同樣只儲存旗標，行為分別在 WS-03／WS-20／WS-07 完成。
+
+--------------
+
+Parenting 與 Null 控制器
+--------------
+
+.. code-block:: python
+
+    from moviepy.ae.layers import NullLayer, SolidLayer
+
+    controller = NullLayer("controller", size=(100, 100))
+    controller.transform.anchor_point = (50.0, 50.0)
+    controller.transform.position = (200.0, 100.0)
+    controller.transform.rotation = 30.0
+    controller.transform.opacity = 25.0
+
+    child = SolidLayer(
+        "child",
+        color=(0, 255, 0),
+        size=(10, 10),
+        parent=controller,
+    )
+    child.transform.position = (60.0, 50.0)
+    child.transform.anchor_point = (5.0, 5.0)
+
+    assert child.parent_chain() == (child, controller)
+    assert child.opacity_at(0.0) == 1.0
+    rendered = child.render(0.0)
+    assert rendered.size[0] > 0 and rendered.size[1] > 0
+    assert float(rendered.rgba[..., 3].max()) == 1.0
+
+    try:
+        controller.parent = child
+    except ValueError:
+        pass
+    else:
+        raise AssertionError("cycle was accepted")
+
+世界矩陣是 ``parent_world · child_local`` 由根往下累乘，所以子層的
+position 位於父層的圖層座標系，父層旋轉會讓子層繞父層 anchor 公轉。
+opacity **不繼承**，與 AE 相同。Null 沒有像素，``render`` 回傳空 Buffer，
+合成時等同 identity，因此可以放在堆疊任何位置。父子循環在賦值當下就被拒絕。
+
+--------------
+
+與既有 MoviePy 合成的對照
+--------------
+
+.. code-block:: python
+
+    import numpy as np
+    from moviepy import ColorClip, CompositeVideoClip
+    from moviepy.ae.layers import AVLayer, SolidLayer
+    from moviepy.ae.transform import Transform
+
+    background = ColorClip(size=(8, 6), color=(10, 20, 30), duration=1.0)
+    foreground = ColorClip(size=(4, 3), color=(200, 100, 50), duration=1.0)
+    legacy = CompositeVideoClip(
+        [background, foreground.with_position((2, 1))], size=(8, 6)
+    ).get_frame(0.5)
+
+    layers = [
+        SolidLayer("bg", color=(10, 20, 30), size=(8, 6)),
+        AVLayer(
+            foreground,
+            transform=Transform(position=(2.0, 1.0), anchor_point=(0.0, 0.0)),
+        ),
+    ]
+    accumulator = None
+    for layer in layers:
+        rendered = layer.render(0.5)
+        accumulator = (
+            rendered if accumulator is None else rendered.composite_over(accumulator)
+        )
+    actual = accumulator.to_uint8_rgb()
+    assert np.abs(actual.astype(int) - legacy.astype(int)).max() <= 1
+
+在「僅位置＋Normal」的場景下，新管線與既有 ``CompositeVideoClip``
+的輸出在 ±1 code 內一致。差異來自既有管線逐層量化為 uint8，
+而本管線全程 float32、只在最後輸出時量化一次。完整的逐畫素對照
+驗收屬於 WS-03（需要 ``Composition`` 與 ``Renderer``）。
+
+--------------
+
+未實作項目與已知差異
+--------------
+
+本階段**不包含**：遮罩與 Track Matte（WS-05）、特效與 Adjustment Layer
+（WS-06）、Time Remap（WS-07）、3D 圖層與 Camera（WS-22）、
+子合成與 Collapse Transformations 的實際行為（WS-03／WS-20）、
+Motion Blur 的實際取樣（WS-07），以及 ``Composition``／``Renderer``
+本身（WS-03）。
+
+已知差異與限制：
+
+* ``anchor_point`` 使用像素中心慣例，與 AE 的角點慣例相差半個像素。
+* 3D 欄位（``orientation``、``x_rotation``、``y_rotation``、``z_rotation``、
+  ``position_z``、``scale_z``）會被驗證、儲存與序列化，但只有在
+  ``three_d=True`` 時拋出 ``NotImplementedError``；它們不會被靜默套用。
+* ``blend_mode`` 目前只是一個非空字串 token，38 種模式與公式屬於 WS-04。
+* 自動 destination bounds 依濾波支援半徑外擴，cubic 會多出 1 像素透明邊框；
+  指定 ``bounds`` 時則精確裁切／補邊到該矩形。
+* bilinear／bicubic 重採樣不保證 alpha 質量守恆（旋轉單點時總和可能大於 1），
+  這是離散取樣的正常行為，不是合成錯誤。
+* OpenCV 以不動點反矩陣取樣，因此非整數角度的旋轉中心會有約 1e-6 的偏差。
+* ``AVLayer`` 的預設 ``out_point`` 在建立時依 ``clip.duration`` 與當時的
+  ``stretch`` 計算，之後修改 ``stretch`` 不會自動更新。
+* ``VideoClip.to_ae_layer()`` 便利掛鉤延後到 WS-03 與 ``Composition`` 一起加入；
+  目前請直接使用 ``AVLayer(clip)``。
+
+公開功能與實際差異見本頁，驗收證據見 ``ws02_acceptance.md``。
