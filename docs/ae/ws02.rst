@@ -11,8 +11,9 @@ WS-02 圖層與變形
 座標系統使用**像素中心**：Buffer 的 ``[row, col]`` 位於世界座標
 ``(offset_x + col, offset_y + row)``，``bounds`` 仍是半開區間。
 因此 AE 的 ``anchor = (W/2, H/2)`` 在本實作是 ``((W-1)/2, (H-1)/2)``，
-相差半個像素；這樣 90°／180° 旋轉會把像素中心對準像素中心，
-可以直接與 ``numpy.rot90`` 位元精確比對。``anchor_point=None`` 代表
+相差半個像素；寬高同為奇數或同為偶數時，90°／180° 旋轉可以直接與
+``numpy.rot90`` 比對。寬高奇偶不同的 90° 旋轉會落在半像素位置，
+固定世界座標中心需要重採樣，輸出尺寸也可能增加。``anchor_point=None`` 代表
 自動置中，``position=None`` 代表自動等於 anchor，所以未設定的
 ``Transform()`` 對任何來源尺寸都是 identity。
 
@@ -75,7 +76,8 @@ WS-02 圖層與變形
     mapped = center.matrix_at(0.0, size=(6, 6)) @ [2.5, 2.5, 1.0]
     np.testing.assert_allclose(mapped[:2], [2.5, 2.5])
 
-``nearest`` 與 ``linear`` 在整數倍 90° 旋轉下與 ``numpy.rot90`` 位元精確一致；
+寬高奇偶相同時，``nearest`` 與 ``linear`` 在整數倍 90° 旋轉下與
+``numpy.rot90`` 位元精確一致；
 ``cubic`` 的內插結果相同，但因為 OpenCV 的整數不動點濾波會在原本為零的通道
 留下 denormal 殘渣，所以比較要用數值容差而非位元相等。
 
@@ -114,7 +116,8 @@ WS-02 圖層與變形
 ``INTER_CUBIC``、``draft`` 用 ``INTER_LINEAR``。濾波支援半徑決定自動
 destination bounds（nearest 0.5、linear 1.0、cubic 2.0 像素），所以 cubic
 會比 linear 多一圈透明邊框，不會丟掉濾波能量。cubic 的 alpha 溢位會被
-clip 到 ``[0, 1]``；RGB 溢位保留，因為 Buffer 允許 signed／HDR 色值。
+clip 到 ``[0, 1]``；有限的 RGB overshoot 保留，因為 Buffer 允許 signed／HDR
+色值。若取樣中間結果超出 float32 而成為 NaN／Inf，會在套用 opacity 前拒絕。
 opacity 以百分比指定，靜態賦值會驗範圍，動畫或運算式超界則在套用時 clamp。
 
 --------------
@@ -159,8 +162,9 @@ opacity 以百分比指定，靜態賦值會驗範圍，動畫或運算式超界
     locked.scale_axis("x", 400.0)
     assert locked.scale.value_at(0.0) == (400.0, 200.0)
 
-``auto_orient`` 用 position 的速度方向取代 ``rotation``，靜止時回 0，
-與 AE 的 Auto-Orient Along Path 一致。``constrain_proportions`` 讓
+``auto_orient`` 用 position 的速度方向取代 ``rotation``。曲線結束或進入
+hold 後保留上一段的終點朝向；運動開始前使用第一段的初始朝向，整條
+路徑都靜止時才回傳 0。``constrain_proportions`` 讓
 ``scale_axis`` 依比例調整另一軸；``scale_axis`` 只接受靜態 scale，
 動畫來源會明確報錯而不是被靜默取代。
 
@@ -199,11 +203,34 @@ opacity 以百分比指定，靜態賦值會驗範圍，動畫或運算式超界
     assert windowed.visible(1.5, solo_active=True)
 
 來源時間是 ``(t - start_time) / (stretch / 100)``，所以 ``stretch=200``
-是半速、負值是反向播放。``in_point``／``out_point`` 是合成時間的半開區間；
+是半速。Solid／Null 的負值時間會往零以下遞減；AVLayer 倒放有有限來源
+終點，使用 ``duration + (t - start_time) / (stretch / 100)``，讓影片、mask
+與變形動畫使用同一反向時間。``in_point``／``out_point`` 是合成時間的半開區間；
 ``enabled`` 與 ``solo`` 影響渲染，``shy``／``locked``／``guide`` 在本階段
 只是中繼資料（guide 是否排除於最終輸出屬於 WS-03 的 Renderer 政策）。
 ``collapse_transformations``、``continuously_rasterize`` 與 ``motion_blur``
 同樣只儲存旗標，行為分別在 WS-03／WS-20／WS-07 完成。
+
+.. code-block:: python
+
+    import numpy as np
+    from moviepy import VideoClip
+    from moviepy.ae.layers import AVLayer
+
+    clip = VideoClip(
+        lambda t: np.full((1, 1, 3), int(t * 4) * 50, dtype=np.uint8),
+        duration=0.9,
+    ).with_fps(4)
+    reverse = AVLayer(clip, stretch=-100)
+    assert reverse.source_time(0.1) == 0.8
+    assert reverse.render(0).to_uint8_rgb()[0, 0, 0] == 150
+    reverse.stretch = -200
+    assert reverse.out_point == 1.8
+
+AVLayer 的預設 out_point 每次讀取都依目前 ``start_time``、``stretch``
+與片長重新計算。倒放要求有限片長；第一格從來源最後一個可讀影格開始，
+不會讀取半開區間的 ``duration`` 端點。沒有 fps 的來源則從端點前一個
+可表示時間取樣。未設定有限片長的來源仍可正向播放。
 
 --------------
 
@@ -309,8 +336,11 @@ Motion Blur 的實際取樣（WS-07），以及 ``Composition``／``Renderer``
 * bilinear／bicubic 重採樣不保證 alpha 質量守恆（旋轉單點時總和可能大於 1），
   這是離散取樣的正常行為，不是合成錯誤。
 * OpenCV 以不動點反矩陣取樣，因此非整數角度的旋轉中心會有約 1e-6 的偏差。
-* ``AVLayer`` 的預設 ``out_point`` 在建立時依 ``clip.duration`` 與當時的
-  ``stretch`` 計算，之後修改 ``stretch`` 不會自動更新。
+* 來源沒有像素或縮放矩陣奇異時，回傳空 Buffer；即使指定 ROI，也不會
+  把塌縮的來源填滿輸出區域。超出 OpenCV 可表示反矩陣範圍的極端縮放會
+  明確拋出 ``ValueError``。
+* ``AVLayer`` 的預設 ``out_point`` 會隨目前的 ``start_time``／``stretch``
+  改變；明確指定的 out_point 維持原值。
 * ``VideoClip.to_ae_layer()`` 便利掛鉤延後到 WS-03 與 ``Composition`` 一起加入；
   目前請直接使用 ``AVLayer(clip)``。
 

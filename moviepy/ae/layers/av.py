@@ -32,7 +32,13 @@ def _clamped_source_time(clip, t):
     """Clamp a source time into the readable range, holding the end frames."""
     time = max(0.0, float(t))
     duration = _finite_duration(clip)
-    return time if duration is None else min(time, duration)
+    if duration is None or time < duration or duration == 0:
+        return time if duration is None else min(time, duration)
+    fps = getattr(clip, "fps", None)
+    if isinstance(fps, (int, float)) and math.isfinite(fps) and fps > 0:
+        final_frame = max(0, math.ceil(duration * fps) - 1)
+        return min(final_frame / fps, math.nextafter(duration, 0.0))
+    return math.nextafter(duration, 0.0)
 
 
 class AVLayer(Layer):
@@ -57,7 +63,11 @@ class AVLayer(Layer):
     ``start_time`` and ``stretch`` on every access rather than frozen at
     construction, which matches After Effects retiming the layer bar when the
     stretch changes. A clip without a finite duration leaves the layer open
-    ended. Source times before the first frame hold frame zero, so an
+    ended during forward playback. Negative stretch starts at the source end
+    and uses ``duration + (t - start_time) / (stretch / 100)`` for footage and
+    animated properties; it requires a finite source duration. The final frame
+    is sampled inside the readable half-open source interval. Source times
+    before the first frame hold frame zero, so an
     ``in_point`` earlier than ``start_time`` cannot hand a negative timestamp to
     a real footage reader.
 
@@ -83,6 +93,16 @@ class AVLayer(Layer):
         if duration is None:
             return math.inf
         return self.start_time + duration * abs(self.stretch) / 100.0
+
+    def source_time(self, t):
+        """Map reverse playback from the finite source end on the layer clock."""
+        time = super().source_time(t)
+        if self.stretch >= 0:
+            return time
+        duration = _finite_duration(self.clip)
+        if duration is None:
+            raise ValueError("reverse footage requires a finite source duration")
+        return duration + time
 
     @property
     def source_size(self):

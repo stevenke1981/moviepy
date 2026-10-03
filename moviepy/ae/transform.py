@@ -127,10 +127,11 @@ def _segment_index(times, t):
     return min(max(index, 0), len(times) - 2)
 
 
-def _segment_tangent(position, times, index, bindings):
-    """Return the tangent at the midpoint of one keyframe segment."""
-    midpoint = (times[index] + times[index + 1]) * 0.5
-    return _tangent(position, midpoint, bindings)
+def _segment_tangent(position, times, index, bindings, from_end=True):
+    """Sample just inside the relevant segment boundary, preserving direction."""
+    start, end = times[index : index + 2]
+    time = np.nextafter(end, start) if from_end else np.nextafter(start, end)
+    return _tangent(position, time, bindings)
 
 
 def _held_tangent(position, t, bindings):
@@ -145,13 +146,13 @@ def _held_tangent(position, t, bindings):
     if len(times) < 2:
         return None
     last = len(times) - 2
-    start = _segment_index(times, t)
+    start = -1 if t < times[0] else _segment_index(times, t)
     for index in range(start, -1, -1):
         delta = _segment_tangent(position, times, index, bindings)
         if delta is not None:
             return delta
     for index in range(start + 1, last + 1):
-        delta = _segment_tangent(position, times, index, bindings)
+        delta = _segment_tangent(position, times, index, bindings, from_end=False)
         if delta is not None:
             return delta
     return None
@@ -258,8 +259,9 @@ class Transform:
             self._anchor_auto = True
             self._fields.pop("anchor_point", None)
             return
+        prop = to_property(value, "anchor_point", "vec2")
+        self._fields["anchor_point"] = prop
         self._anchor_auto = False
-        self._fields["anchor_point"] = to_property(value, "anchor_point", "vec2")
 
     @property
     def position(self):
@@ -272,8 +274,9 @@ class Transform:
             self._position_auto = True
             self._fields.pop("position", None)
             return
+        prop = to_property(value, "position", "vec2")
+        self._fields["position"] = prop
         self._position_auto = False
-        self._fields["position"] = to_property(value, "position", "vec2")
 
     @property
     def scale(self):
@@ -530,11 +533,6 @@ class Transform:
         Buffer
             Transformed premultiplied pixels at the destination rectangle.
 
-        Notes
-        -----
-        ``context`` always wins over a ``context`` entry supplied through
-        ``bindings``, because the same object must reach both the filter
-        selection and the expression evaluation.
         """
         if not isinstance(buffer, Buffer):
             raise TypeError("buffer must be a Buffer")

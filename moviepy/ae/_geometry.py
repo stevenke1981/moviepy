@@ -142,6 +142,8 @@ def validate_matrix(value):
         raise ValueError("matrix must be a 3x3 affine matrix")
     if not np.isfinite(array).all():
         raise ValueError("matrix must contain only finite values")
+    if not np.array_equal(array[2], (0.0, 0.0, 1.0)):
+        raise ValueError("matrix must be affine with last row (0, 0, 1)")
     return array
 
 

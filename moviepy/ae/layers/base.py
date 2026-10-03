@@ -75,7 +75,8 @@ class Layer:
         Composition-time window, half open. ``out_point=None`` uses
         ``default_out_point``.
     start_time : float, optional
-        Composition time at which source time zero begins.
+        Composition time at which playback begins at the source origin.
+        Finite AV footage with negative stretch begins at the source end.
     stretch : float, optional
         Percent time stretch; negative values reverse the source.
     parent : Layer, optional

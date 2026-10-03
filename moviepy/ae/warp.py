@@ -20,7 +20,6 @@ import math
 import numpy as np
 
 from moviepy.ae._geometry import (
-    BOUND_EPSILON,
     DIMENSION_LIMIT,
     applied_factor,
     validate_integers,
@@ -100,7 +99,16 @@ def destination_bounds(matrix, size, offset=(0, 0), *, interpolation="linear"):
         raise ValueError("interpolation must be nearest, linear or cubic")
     box = _support_box(width, height, origin, _SUPPORT[interpolation])
     corners = _transformed_corners(transform, box)
-    return _snap_rectangle(corners[0], corners[1], inclusive=interpolation == "nearest")
+    rectangle = _snap_rectangle(
+        corners[0], corners[1], inclusive=interpolation == "nearest"
+    )
+    target = (*rectangle[:2], *rectangle[:2]) if _singular(transform) else rectangle
+    return validate_rectangle(target)
+
+
+def _singular(matrix):
+    """Recognize a collapsed affine plane without determinant overflow."""
+    return np.linalg.slogdet(matrix[:2, :2])[0] == 0
 
 
 def _support_box(width, height, origin, radius):
@@ -130,8 +138,9 @@ def _transformed_corners(transform, box):
 def _snap_rectangle(xs, ys, *, inclusive=False):
     """Snap a transformed box onto the whole destination pixels it can touch.
 
-    Exact angles reconstructed from trigonometry leave about 1e-16 of residue,
-    so a relative slack keeps integer boundaries from adding a spare pixel.
+    Exact angles reconstructed from trigonometry leave floating-point residue,
+    so eight coordinate ulps keep integer boundaries from adding a spare pixel
+    without consuming real subpixel support at large world origins.
 
     ``inclusive`` selects the nearest-neighbour rule. A linear or cubic filter
     weighs a sample landing exactly on the support radius as zero, so a box edge
@@ -150,8 +159,8 @@ def _snap_rectangle(xs, ys, *, inclusive=False):
     furthest = max(abs(minimum_x), abs(maximum_x), abs(minimum_y), abs(maximum_y))
     if furthest > DIMENSION_LIMIT:
         raise ValueError("transformed bounds exceed the representable pixel range")
-    slack_x = BOUND_EPSILON * max(1.0, abs(minimum_x), abs(maximum_x))
-    slack_y = BOUND_EPSILON * max(1.0, abs(minimum_y), abs(maximum_y))
+    slack_x = 8 * math.ulp(max(1.0, abs(minimum_x), abs(maximum_x)))
+    slack_y = 8 * math.ulp(max(1.0, abs(minimum_y), abs(maximum_y)))
     if inclusive:
         start_x = math.ceil(minimum_x - slack_x)
         start_y = math.ceil(minimum_y - slack_y)
@@ -203,7 +212,7 @@ def warp_buffer(buffer, matrix, opacity=1.0, *, interpolation="linear", bounds=N
     if shift is not None:
         return _translated(buffer, shift, factor)
     target = _target_rectangle(transform, buffer, interpolation, bounds)
-    if target[2] <= target[0] or target[3] <= target[1]:
+    if target[2] <= target[0] or target[3] <= target[1] or _singular(transform):
         return _empty_result(buffer, target[:2])
     return _resample(buffer, transform, factor, interpolation, target)
 
@@ -242,6 +251,10 @@ def _integer_translation(matrix):
 def _translated(buffer, shift, factor):
     """Copy or scale pixels without resampling, preserving exact summaries."""
     offset = (buffer.offset[0] + shift[0], buffer.offset[1] + shift[1])
+    validate_rectangle(
+        (*offset, offset[0] + buffer.size[0], offset[1] + buffer.size[1])
+    )
+    validate_pixel_area(*buffer.size, "destination bounds")
     if factor == 1.0:
         return buffer.with_offset(offset)
     array = _owned_output(buffer.rgba.shape)
@@ -282,8 +295,9 @@ def _resample(buffer, transform, factor, interpolation, target):
 
     width, height = target[2] - target[0], target[3] - target[1]
     forward = np.array(transform[:2], dtype=np.float64, copy=True)
-    forward[0, 2] -= target[0]
-    forward[1, 2] -= target[1]
+    # cv2 indexes source pixels locally; the public matrix maps world points.
+    forward[:, 2] += transform[:2, :2] @ np.asarray(buffer.offset) - target[:2]
+    _validate_inverse_range(forward)
     flags = {
         "nearest": cv2.INTER_NEAREST,
         "linear": cv2.INTER_LINEAR,
@@ -302,15 +316,32 @@ def _resample(buffer, transform, factor, interpolation, target):
     return _finish(array, buffer, factor, interpolation, target)
 
 
+def _validate_inverse_range(matrix):
+    """Reject affine arithmetic outside OpenCV's float64 inverse range."""
+    if not np.isfinite(matrix).all():
+        raise ValueError("local affine inverse must remain representable in float64")
+    a, b, c, d = (float(matrix[i, j]) for i, j in [(0, 0), (0, 1), (1, 0), (1, 1)])
+    determinant = a * d - b * c
+    if (
+        not math.isfinite(determinant)
+        or determinant == 0
+        or not math.isfinite(1.0 / determinant)
+    ):
+        raise ValueError("affine inverse exceeds the supported float64 range")
+    inverse_axes = (abs(value / determinant) for value in (a, b, c, d))
+    if max(inverse_axes) > DIMENSION_LIMIT:
+        raise ValueError("affine inverse exceeds the supported pixel coordinate range")
+
+
 def _finish(array, buffer, factor, interpolation, target):
     """Clamp cubic alpha, apply opacity and publish conservative metadata."""
+    headroom = 2.0 if interpolation == "cubic" else 1.0
+    if _may_overflow(buffer, factor, headroom) and not np.isfinite(array).all():
+        raise ValueError("warped pixels must remain finite in float32")
     if interpolation == "cubic":
         np.clip(array[..., 3], 0.0, 1.0, out=array[..., 3])
     if factor != 1.0:
         array *= np.float32(factor)
-    headroom = 2.0 if interpolation == "cubic" else 1.0
-    if _may_overflow(buffer, factor, headroom) and not np.isfinite(array).all():
-        raise ValueError("warped pixels must remain finite in float32")
     metadata = (
         None,
         buffer._value_bound * factor * headroom,
@@ -328,5 +359,6 @@ def _may_overflow(buffer, factor, headroom):
     scan off the hot path for ordinary footage while still refusing to publish
     an infinite buffer that would detonate later inside an export.
     """
-    projected = buffer._value_bound * factor * headroom
+    # Opacity is applied after resampling and cannot make an overflow safe.
+    projected = buffer._value_bound * headroom
     return not projected <= float(np.finfo(np.float32).max)

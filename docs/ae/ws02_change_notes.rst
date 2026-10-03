@@ -14,6 +14,12 @@ identity。整數平移且 opacity 100 時共用來源儲存體，不複製像�
 其他情況寫入 WS-00 的儲存池並以 ``Buffer._publish`` 發布保守 metadata，
 避免每格重新掃描全張畫面的 min／max。
 
+推送前的獨立審查修復了非零 Buffer offset 的取樣、零縮放錯誤填滿 ROI、
+負 stretch 影片／mask／動畫倒放、opacity 套用前的 cubic 非有限值檢查，
+以及曲線停止後的終點朝向。驗證失敗的屬性賦值會保留原物件狀態；
+矩陣與所有平移／裁切路徑都有一致的形狀、bounds 及像素面積檢查。
+大座標的半像素支援不再被相對容差裁掉；不可表示的反矩陣明確拒絕。
+
 圖層提供 AE 時間模型（``in_point``／``out_point``／``start_time``／
 ``stretch``，負 stretch 為反向）、開關（``enabled``／``solo`` 影響渲染，
 ``shy``／``locked``／``guide`` 僅中繼資料）、Parenting（世界矩陣由根往下
