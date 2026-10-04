@@ -70,5 +70,5 @@ def _mix(layer, below, effected, alpha, context):
         mode,
         preserve_underlying_transparency=layer.preserve_transparency,
         context=context,
-        layer_id=layer.name,
+        layer_id=layer.id,
     )

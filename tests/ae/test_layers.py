@@ -365,8 +365,8 @@ def test_layer_uses_its_own_identity_for_expression_randomness():
     first = SolidLayer("a", color=(255, 255, 255), size=(2, 2), index=1)
     second = SolidLayer("b", color=(255, 255, 255), size=(2, 2), index=2)
     assert first.expression_bindings["index"] == 1
-    assert first.expression_bindings["layer_id"] == "a"
-    assert second.expression_bindings["layer_id"] == "b"
+    assert first.expression_bindings["layer_id"] == first.id
+    assert second.expression_bindings["layer_id"] == second.id
 
 
 def test_render_context_time_is_not_used_for_source_time():

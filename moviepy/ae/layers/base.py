@@ -9,6 +9,7 @@ still absent.
 
 import math
 from numbers import Integral, Real
+from uuid import UUID, uuid4
 
 import numpy as np
 
@@ -67,7 +68,10 @@ class Layer:
     Parameters
     ----------
     name : str, optional
-        Non-empty layer name, also used as the deterministic expression identity.
+        Non-empty display name. Names need not be unique.
+    id : str, optional
+        Persisted UUID string. Omit it to assign a new unique identity. The
+        read-only ``id`` is JSON-serializable and survives renaming and reordering.
     index : int, optional
         Positive AE-style layer index exposed to expressions. Defaults to 1.
     transform : Transform, optional
@@ -123,6 +127,7 @@ class Layer:
         self,
         name="Layer",
         *,
+        id=None,
         index=1,
         transform=None,
         in_point=0.0,
@@ -144,6 +149,7 @@ class Layer:
         continuously_rasterize=False,
         motion_blur=False,
     ):
+        self._id = uuid4().hex if id is None else UUID(id).hex
         self.name = name
         self.index = index
         self.transform = Transform() if transform is None else transform
@@ -172,8 +178,13 @@ class Layer:
     # -- validated attributes ----------------------------------------------- #
 
     @property
+    def id(self):
+        """Return the persistent UUID used for this layer's random streams."""
+        return self._id
+
+    @property
     def name(self):
-        """Return the layer name used for expression identity."""
+        """Return the layer's display name."""
         return self._name
 
     @name.setter
@@ -487,7 +498,7 @@ class Layer:
     @property
     def expression_bindings(self):
         """Return deterministic expression identity bindings for properties."""
-        return {"index": self._index, "layer_id": self._name}
+        return {"index": self._index, "layer_id": self._id}
 
     def parent_chain(self):
         """Return ``(self, parent, ...)`` up to the root, rejecting cycles."""

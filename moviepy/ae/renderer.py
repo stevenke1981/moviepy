@@ -167,7 +167,7 @@ class Renderer:
                 layer.blend_mode,
                 preserve_underlying_transparency=layer.preserve_transparency,
                 context=ctx,
-                layer_id=layer.name,
+                layer_id=layer.id,
             )
         return accumulator
 
