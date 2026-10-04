@@ -2,8 +2,8 @@
 
 import pytest
 
-from moviepy.ae.properties.property import Property
 from moviepy.ae.properties.keyframe import Keyframe
+from moviepy.ae.properties.property import Property
 from moviepy.ae.properties.values import PathValue
 
 

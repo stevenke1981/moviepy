@@ -7,6 +7,7 @@ from types import MappingProxyType
 
 import numpy as np
 
+
 _NUMERIC_TYPES = frozenset(
     (
         int,

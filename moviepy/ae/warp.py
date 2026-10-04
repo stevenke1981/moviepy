@@ -30,6 +30,7 @@ from moviepy.ae._geometry import (
 )
 from moviepy.ae.buffer import Buffer, _owned_output
 
+
 INTERPOLATIONS = ("auto", "nearest", "linear", "cubic")
 WARP_INTERPOLATIONS = ("nearest", "linear", "cubic")
 _SUPPORT = {"nearest": 0.5, "linear": 1.0, "cubic": 2.0}

@@ -1,6 +1,7 @@
 """Spatial arc-length and roving acceptance tests."""
 
 import numpy as np
+
 import pytest
 
 from moviepy.ae.properties.keyframe import (

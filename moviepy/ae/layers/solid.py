@@ -7,6 +7,7 @@ from moviepy.ae.buffer import Buffer
 from moviepy.ae.layers.base import Layer
 from moviepy.ae.properties.values import finite_real
 
+
 _COMPONENTS = 3
 _CODE_RANGE = 255.0
 

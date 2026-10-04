@@ -3,6 +3,7 @@
 import math
 
 import numpy as np
+
 import pytest
 
 from moviepy.ae.context import RenderContext

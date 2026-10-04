@@ -10,7 +10,6 @@ from moviepy.ae.properties.keyframe import (
     evaluate_keyframes,
     normalize_keyframes,
 )
-from moviepy.ae.properties.spatial import resolve_roving_times
 from moviepy.ae.properties.serialization import (
     MAX_KEYFRAMES,
     dumps,
@@ -18,6 +17,7 @@ from moviepy.ae.properties.serialization import (
     require_fields,
     validate_payload,
 )
+from moviepy.ae.properties.spatial import resolve_roving_times
 from moviepy.ae.properties.values import (
     VALUE_TYPES,
     decode_value,
@@ -29,9 +29,10 @@ from moviepy.ae.properties.values import (
     infer_value_type,
     normalize_value,
     path_topology,
-    restore_expression_value,
     rebuild_path,
+    restore_expression_value,
 )
+
 
 T = TypeVar("T")
 

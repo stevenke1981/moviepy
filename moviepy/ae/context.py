@@ -7,7 +7,7 @@ from dataclasses import dataclass, field, replace
 from numbers import Integral, Real
 from typing import Optional, Union
 
-from numpy.random import Generator, PCG64
+from numpy.random import PCG64, Generator
 
 
 def _finite_real(value: Real, name: str) -> float:

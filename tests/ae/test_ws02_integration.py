@@ -1,6 +1,7 @@
 """WS-02 integration tests: layers, transforms and the existing MoviePy pipeline."""
 
 import numpy as np
+
 import pytest
 
 from moviepy import ColorClip, CompositeVideoClip

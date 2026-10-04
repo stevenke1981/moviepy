@@ -1,6 +1,7 @@
 """Numeric keyframe interpolation and metadata acceptance tests."""
 
 import numpy as np
+
 import pytest
 
 from moviepy.ae.properties.easing import Ease

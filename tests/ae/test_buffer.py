@@ -4,6 +4,7 @@ from dataclasses import FrozenInstanceError
 from types import SimpleNamespace
 
 import numpy as np
+
 import pytest
 
 from moviepy.ae.buffer import Buffer, premultiply, unpremultiply

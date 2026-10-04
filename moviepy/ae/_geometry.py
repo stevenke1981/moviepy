@@ -7,6 +7,7 @@ import numpy as np
 from moviepy.ae.properties.property import Property
 from moviepy.ae.properties.values import finite_real
 
+
 DIMENSION_LIMIT = 2**31 - 1
 BOUND_EPSILON = 1e-9
 

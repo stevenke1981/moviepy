@@ -8,6 +8,7 @@ from typing import Tuple
 
 import numpy as np
 
+
 Vec2 = Tuple[float, float]
 Vec3 = Tuple[float, float, float]
 VALUE_TYPES = frozenset(("float", "vec2", "vec3", "color", "bool", "enum", "path"))

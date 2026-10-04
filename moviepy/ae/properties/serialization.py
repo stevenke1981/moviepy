@@ -3,6 +3,7 @@
 import json
 import math
 
+
 MAX_JSON_CHARS = 1000000
 MAX_NODES = 100000
 MAX_DEPTH = 24

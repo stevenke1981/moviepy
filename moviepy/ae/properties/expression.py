@@ -16,6 +16,7 @@ from moviepy.ae.properties._sandbox import (
     sanitize,
 )
 
+
 __all__ = ["Expression", "ExpressionError", "ExpressionSnapshot"]
 _OPERATION_ERRORS = (
     ArithmeticError,

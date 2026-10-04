@@ -8,6 +8,7 @@ import numpy as np
 from moviepy.ae.properties._expression_helpers import componentwise, vector
 from moviepy.ae.properties._sandbox import ExpressionError, safe_number, sanitize
 
+
 _UNSET = object()
 
 

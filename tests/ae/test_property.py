@@ -3,11 +3,12 @@
 from enum import Enum
 
 import numpy as np
+
 import pytest
 
+from moviepy.ae.properties.keyframe import Keyframe
 from moviepy.ae.properties.property import Property
 from moviepy.ae.properties.values import PathValue
-from moviepy.ae.properties.keyframe import Keyframe
 
 
 @pytest.mark.parametrize(

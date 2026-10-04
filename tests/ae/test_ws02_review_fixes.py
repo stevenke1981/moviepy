@@ -6,6 +6,7 @@ confirmed by the verification script.
 """
 
 import numpy as np
+
 import pytest
 
 from moviepy.ae._geometry import MAX_RENDER_PIXELS, validate_matrix, validate_pixel_size

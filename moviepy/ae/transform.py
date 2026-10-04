@@ -35,6 +35,7 @@ from moviepy.ae.properties.serialization import require_fields, validate_payload
 from moviepy.ae.properties.values import finite_real
 from moviepy.ae.warp import INTERPOLATIONS, resolve_interpolation, warp_buffer
 
+
 _SCHEMA = 1
 _ANIMATED_FIELDS = (
     "scale",

@@ -4,6 +4,7 @@ import json
 from enum import Enum
 
 import numpy as np
+
 import pytest
 
 from moviepy.ae import Buffer, RenderContext

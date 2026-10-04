@@ -3,11 +3,12 @@
 import copy
 
 import numpy as np
+
 import pytest
 
 from moviepy.ae import RenderContext
-from moviepy.ae.properties.expression import Expression
 from moviepy.ae.properties.easing import Ease
+from moviepy.ae.properties.expression import Expression
 from moviepy.ae.properties.keyframe import Keyframe
 from moviepy.ae.properties.property import Property
 from moviepy.ae.properties.serialization import dumps, loads, validate_payload

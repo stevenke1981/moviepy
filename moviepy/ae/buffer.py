@@ -13,6 +13,7 @@ from weakref import finalize
 
 import numpy as np
 
+
 Offset = Tuple[int, int]
 Bounds = Tuple[int, int, int, int]
 RGB = Tuple[float, float, float]

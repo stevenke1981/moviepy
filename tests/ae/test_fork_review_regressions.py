@@ -3,11 +3,11 @@
 import math
 
 import numpy as np
+
 import pytest
 
 from moviepy import VideoClip
-from moviepy.ae import Buffer
-from moviepy.ae import _geometry
+from moviepy.ae import Buffer, _geometry
 from moviepy.ae.layers import AVLayer
 from moviepy.ae.properties import Keyframe, Property
 from moviepy.ae.transform import Transform

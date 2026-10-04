@@ -1,6 +1,7 @@
 """Boundary regressions for helpers, inert values and controlled sampling."""
 
 import numpy as np
+
 import pytest
 
 from moviepy.ae.properties.expression import (
