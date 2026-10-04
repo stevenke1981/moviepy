@@ -98,7 +98,9 @@ class EffectStack:
             raise IndexError("effect index out of range")
         return index % size if index < 0 else index
 
-    def apply(self, buffer, t, context=None, *, bindings=None, source_at=None):
+    def apply(
+        self, buffer, t, context=None, *, bindings=None, source_at=None, pixel_scale=1.0
+    ):
         """Run the enabled effects on ``buffer`` at layer time ``t``.
 
         Parameters
@@ -114,29 +116,44 @@ class EffectStack:
         source_at : callable, optional
             ``source_at(time)`` returns the stack input at another layer time;
             needed only by temporal effects.
+        pixel_scale : float, optional
+            Pixels per authored pixel for this stack and its temporal inputs.
         """
         effects = self.active()
-        return self._run(effects, buffer, t, context, bindings, source_at)
+        return self._run(effects, buffer, t, context, bindings, source_at, pixel_scale)
 
-    def _run(self, effects, buffer, t, context, bindings, source_at):
+    def _run(self, effects, buffer, t, context, bindings, source_at, pixel_scale):
         """Apply ``effects`` in order, wiring temporal providers."""
         for position, effect in enumerate(effects):
             provider = None
             if source_at is not None:
                 provider = self._provider(
-                    effects[:position], effect, t, context, bindings, source_at
+                    effects[:position],
+                    effect,
+                    t,
+                    context,
+                    bindings,
+                    source_at,
+                    pixel_scale,
                 )
             buffer = effect.process(
-                buffer, float(t), context, bindings=bindings, source_at=provider
+                buffer,
+                float(t),
+                context,
+                bindings=bindings,
+                source_at=provider,
+                pixel_scale=pixel_scale,
             )
         return buffer
 
-    def _provider(self, earlier, effect, t, context, bindings, source_at):
+    def _provider(self, earlier, effect, t, context, bindings, source_at, pixel_scale):
         """Return ``dt -> input of effect at t + dt`` limited to its window."""
         cache = {}
 
         def provide(dt):
-            values = effect.values_at(float(t), context, **(bindings or {}))
+            values = effect.values_at(
+                float(t), context, pixel_scale=pixel_scale, **(bindings or {})
+            )
             before, after = effect.temporal_window(float(t), context, values)
             if not -before - _EPSILON <= dt <= after + _EPSILON:
                 raise ValueError("requested time is outside the temporal window")
@@ -149,7 +166,9 @@ class EffectStack:
                     else context.with_time(context._exact_time + key)
                 )
                 inner = source_at(time)
-                cache[key] = self._run(earlier, inner, time, when, bindings, source_at)
+                cache[key] = self._run(
+                    earlier, inner, time, when, bindings, source_at, pixel_scale
+                )
             return cache[key]
 
         return provide

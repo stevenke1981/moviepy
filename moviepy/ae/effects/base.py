@@ -41,6 +41,9 @@ class Param:
         Allowed tokens for ``enum`` parameters.
     label : str, optional
         AE panel label; defaults to the title-cased name.
+    unit : {None, "px"}, optional
+        Pixel lengths are scaled to the effect's processing resolution.
+        This runtime annotation does not change the version 1 JSON schema.
     """
 
     name: str
@@ -49,6 +52,7 @@ class Param:
     limits: Optional[Tuple[float, float]] = None
     choices: Optional[Tuple[str, ...]] = None
     label: Optional[str] = None
+    unit: Optional[str] = None
 
     def __post_init__(self):
         if not isinstance(self.name, str) or not self.name.isidentifier():
@@ -57,6 +61,10 @@ class Param:
             raise ValueError(f"parameter name {self.name!r} is reserved")
         if self.kind not in _KINDS:
             raise ValueError(f"unsupported parameter kind {self.kind!r}")
+        if self.unit not in (None, "px"):
+            raise ValueError(f"unsupported parameter unit {self.unit!r}")
+        if self.unit == "px" and self.kind not in ("float", "vec2", "vec3"):
+            raise ValueError("pixel units require a float or vector parameter")
         if self.kind == "enum" and not self.choices:
             raise ValueError("enum parameters need choices")
         if self.label is None:
@@ -88,6 +96,14 @@ class Param:
             return value
         low, high = self.limits
         return min(high, max(low, float(value)))
+
+    def scale(self, value, pixel_scale):
+        """Convert an evaluated pixel length to the processing resolution."""
+        if self.unit != "px" or pixel_scale == 1.0:
+            return value
+        if self.kind == "float":
+            return value * pixel_scale
+        return tuple(component * pixel_scale for component in value)
 
     def to_dict(self):
         """Return JSON-ready metadata."""
@@ -203,12 +219,18 @@ class AEEffect(Effect):
         prop = to_property(value, "blend_with_original", "float", (0.0, 100.0))
         object.__setattr__(self, "_blend_with_original", prop)
 
-    def values_at(self, t, context=None, **bindings):
-        """Evaluate and clamp every parameter at layer time ``t``."""
+    def values_at(self, t, context=None, *, pixel_scale=1.0, **bindings):
+        """Evaluate, clamp and scale parameters at layer time ``t``."""
+        pixel_scale = finite_real(pixel_scale, "pixel_scale")
+        if pixel_scale <= 0:
+            raise ValueError("pixel_scale must be positive")
         evaluation = dict(bindings)
         evaluation["context"] = context
         return {
-            param.name: param.clamp(self.params[param.name].value_at(t, **evaluation))
+            param.name: param.scale(
+                param.clamp(self.params[param.name].value_at(t, **evaluation)),
+                pixel_scale,
+            )
             for param in self.PARAMS
         }
 
@@ -248,7 +270,9 @@ class AEEffect(Effect):
 
     # -- stack entry point ----------------------------------------------------- #
 
-    def process(self, src, t, context=None, *, bindings=None, source_at=None):
+    def process(
+        self, src, t, context=None, *, bindings=None, source_at=None, pixel_scale=1.0
+    ):
         """Run the effect with bounds growth, effect mask and blending.
 
         Parameters
@@ -263,11 +287,14 @@ class AEEffect(Effect):
             Expression identity bindings (``index``, ``layer_id``).
         source_at : callable, optional
             Supplies inputs at other times for temporal effects.
+        pixel_scale : float, optional
+            Pixels per authored pixel: 1 for source-space effects and the
+            render resolution scale for composition-space adjustments.
         """
         if not self._enabled:
             return src
         bindings = {} if bindings is None else dict(bindings)
-        values = self.values_at(t, context, **bindings)
+        values = self.values_at(t, context, pixel_scale=pixel_scale, **bindings)
         margins = [
             max(0, int(v)) for v in self.bounds_expand(src.size, t, context, values)
         ]
@@ -284,9 +311,13 @@ class AEEffect(Effect):
             result = self.render(padded, t, context, values)
         if not isinstance(result, Buffer):
             raise TypeError(f"{self.name} render must return a Buffer")
-        return self._composite_on_original(src, result, t, context, bindings)
+        return self._composite_on_original(
+            src, result, t, context, bindings, pixel_scale
+        )
 
-    def _composite_on_original(self, original, result, t, context, bindings):
+    def _composite_on_original(
+        self, original, result, t, context, bindings, pixel_scale
+    ):
         """Mix the result with the original through mask and blend amount."""
         evaluation = dict(bindings, context=context)
         keep = self._blend_with_original.value_at(t, **evaluation)
@@ -298,7 +329,9 @@ class AEEffect(Effect):
         processed = result.crop(bounds).expand_to(bounds)
         factor = np.float32(amount)
         if self._mask is not None:
-            coverage = self._mask.coverage(bounds, t, context, **bindings)
+            coverage = self._mask.coverage(
+                bounds, t, context, pixel_scale=pixel_scale, **bindings
+            )
             if coverage is not None:
                 factor = coverage[..., None] * factor
         rgba = base.rgba + (processed.rgba - base.rgba) * factor

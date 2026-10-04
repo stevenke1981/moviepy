@@ -53,6 +53,7 @@ def apply_adjustment(layer, below, coverage, t, context=None, *, source_at=None)
         context,
         bindings=dict(layer.expression_bindings),
         source_at=source_at,
+        pixel_scale=1.0 if context is None else context.resolution_scale,
     )
     return _mix(layer, below, effected.crop(bounds).expand_to(bounds), alpha, context)
 

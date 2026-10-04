@@ -44,7 +44,7 @@ class GaussianBlur(AEEffect):
     name = "Gaussian Blur"
     category = "Blur & Sharpen"
     PARAMS = (
-        Param("blurriness", "float", 0.0, (0.0, 1000.0)),
+        Param("blurriness", "float", 0.0, (0.0, 1000.0), unit="px"),
         Param("blur_dimensions", "enum", DIMENSIONS[0], choices=DIMENSIONS),
         Param("repeat_edge_pixels", "bool", False),
     )

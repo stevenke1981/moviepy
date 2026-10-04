@@ -16,7 +16,12 @@ from functools import lru_cache
 
 import numpy as np
 
-from moviepy.ae._geometry import to_property, validate_flag, validate_pixel_size
+from moviepy.ae._geometry import (
+    finite_real,
+    to_property,
+    validate_flag,
+    validate_pixel_size,
+)
 from moviepy.ae.buffer import Buffer
 from moviepy.ae.masks import path as shapes
 from moviepy.ae.masks.rasterize import rasterize
@@ -83,6 +88,16 @@ def _cached_coverage(path, bounds, feather, expansion, supersample):
     )
     coverage.setflags(write=False)
     return coverage
+
+
+def _scale_path(path, scale):
+    """Scale pixel-center vertices and relative tangents into render space."""
+    if scale == 1.0:
+        return path
+    vertices = tuple(tuple((v + 0.5) * scale - 0.5 for v in p) for p in path.vertices)
+    incoming = tuple(tuple(v * scale for v in p) for p in path.in_tangents)
+    outgoing = tuple(tuple(v * scale for v in p) for p in path.out_tangents)
+    return PathValue(vertices, incoming, outgoing, path.closed)
 
 
 class Mask:
@@ -227,16 +242,23 @@ class Mask:
 
     # -- evaluation ------------------------------------------------------------ #
 
-    def coverage(self, bounds, t=0.0, context=None, **bindings):
+    def coverage(self, bounds, t=0.0, context=None, *, pixel_scale=1.0, **bindings):
         """Return float32 mask values in [0, 1] over a world rectangle.
 
         The result includes feather, expansion, inversion and opacity.
+        ``pixel_scale`` converts authored mask coordinates and lengths to
+        output pixels; source-space masks use the default of 1.
         """
+        pixel_scale = finite_real(pixel_scale, "pixel_scale")
+        if pixel_scale <= 0:
+            raise ValueError("pixel_scale must be positive")
         evaluation = dict(bindings)
         evaluation["context"] = context
-        path = self._path.value_at(t, **evaluation)
-        feather = tuple(max(0.0, v) for v in self._feather.value_at(t, **evaluation))
-        expansion = float(self._expansion.value_at(t, **evaluation))
+        path = _scale_path(self._path.value_at(t, **evaluation), pixel_scale)
+        feather = tuple(
+            max(0.0, v) * pixel_scale for v in self._feather.value_at(t, **evaluation)
+        )
+        expansion = float(self._expansion.value_at(t, **evaluation)) * pixel_scale
         opacity = min(1.0, max(0.0, self._opacity.value_at(t, **evaluation) / 100.0))
         draft = context is not None and context.quality == "draft"
         arguments = (
@@ -326,7 +348,7 @@ class MaskStack:
         """Return the masks whose mode is not ``none``."""
         return [mask for mask in self._masks if mask.mode is not MaskMode.NONE]
 
-    def coverage(self, bounds, t=0.0, context=None, **bindings):
+    def coverage(self, bounds, t=0.0, context=None, *, pixel_scale=1.0, **bindings):
         """Return combined float32 coverage, or ``None`` without active masks."""
         masks = self.active()
         if not masks:
@@ -335,7 +357,9 @@ class MaskStack:
         start = 1.0 if masks[0].mode in self._OPAQUE_START else 0.0
         result = np.full((bottom - top, right - left), start, dtype=np.float32)
         for mask in masks:
-            values = mask.coverage(bounds, t, context, **bindings)
+            values = mask.coverage(
+                bounds, t, context, pixel_scale=pixel_scale, **bindings
+            )
             result = combine(result, values, mask.mode)
         return np.clip(result, 0.0, 1.0).astype(np.float32, copy=False)
 

@@ -281,7 +281,12 @@ class Renderer:
                 / _exact_time(layer.stretch)
             )
             for effect in effects:
-                values = effect.values_at(local_t, ctx, **layer.expression_bindings)
+                values = effect.values_at(
+                    local_t,
+                    ctx,
+                    pixel_scale=ctx.resolution_scale,
+                    **layer.expression_bindings,
+                )
                 needed = effect.input_margin(size, local_t, ctx, values)
                 margins = [a + max(0, math.ceil(b)) for a, b in zip(margins, needed)]
         if not any(margins):
