@@ -218,6 +218,14 @@ class AEEffect(Effect):
         """Return ``(left, top, right, bottom)`` pixels the effect grows by."""
         return (0, 0, 0, 0)
 
+    def input_margin(self, size, t, context=None, values=None):
+        """Return input pixels needed beyond an output region on each side.
+
+        This is independent of output growth: an effect that repeats its
+        input edges can read neighboring pixels without growing its output.
+        """
+        return self.bounds_expand(size, t, context, values)
+
     def temporal_window(self, t, context=None, values=None):
         """Return ``(before, after)`` seconds of input this effect may read."""
         return (0.0, 0.0)

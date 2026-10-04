@@ -39,6 +39,7 @@ from moviepy.ae.blend.modes import blend
 from moviepy.ae.buffer import Buffer
 from moviepy.ae.context import RenderContext, _exact_time
 from moviepy.ae.effects.adjustment import apply_adjustment
+from moviepy.ae.effects.base import AEEffect
 from moviepy.ae.warp import (
     _integer_translation,
     destination_bounds,
@@ -88,6 +89,20 @@ def _transparent(bounds):
     left, top, right, bottom = bounds
     array = np.zeros((bottom - top, right - left, 4), dtype=np.float32)
     return Buffer._publish(array, (left, top), "srgb", (np.float32(0), 0.0, True))
+
+
+def _needs_full_effect_frame(effects):
+    """Identify stacks whose nested temporal reads have unknown spatial demand."""
+    temporal = sum(
+        type(effect).temporal_window is not AEEffect.temporal_window
+        for effect in effects
+    )
+    spatial = any(
+        type(effect).input_margin is not AEEffect.input_margin
+        or type(effect).bounds_expand is not AEEffect.bounds_expand
+        for effect in effects
+    )
+    return temporal > 1 and spatial
 
 
 class _RenderCache:
@@ -211,11 +226,13 @@ class Renderer:
 
     def _composite_uncached(self, comp, ctx, view, roi, below):
         """Blend contributing layers bottom to top; stop under ``below``."""
-        accumulator = None if roi is None else _transparent(roi)
         layers = self.contributing_layers(comp, ctx.t)
         if below is not None:
             allowed = {id(layer) for layer in _layers_under(comp, below)}
             layers = [layer for layer in layers if id(layer) in allowed]
+        requested = roi
+        roi = self._effect_roi(comp, layers, ctx, roi)
+        accumulator = None if roi is None else _transparent(roi)
         for layer in layers:
             if layer.is_adjustment:
                 accumulator = self._adjust(comp, layer, accumulator, ctx, view, roi)
@@ -233,7 +250,60 @@ class Renderer:
                 context=ctx,
                 layer_id=layer.id,
             )
+        if requested is not None and roi != requested:
+            return accumulator.crop(requested).expand_to(requested)
         return accumulator
+
+    @staticmethod
+    def _effect_roi(comp, layers, ctx, roi):
+        """Include adjustment input dependencies, bounded by the canvas."""
+        if roi is None:
+            return None
+        size = scaled_size(comp.size, ctx.resolution_scale)
+        margins = [0, 0, 0, 0]
+        for layer in layers:
+            if not layer.is_adjustment:
+                continue
+            effects = layer.effects.active()
+            if _needs_full_effect_frame(effects):
+                # A nested temporal stage may replay a spatial effect at a
+                # time with a larger radius. The current margins cannot bound
+                # that demand, including when the current radius is zero.
+                return (
+                    min(roi[0], 0),
+                    min(roi[1], 0),
+                    max(roi[2], size[0]),
+                    max(roi[3], size[1]),
+                )
+            local_t = float(
+                (ctx._exact_time - _exact_time(layer.start_time))
+                * 100
+                / _exact_time(layer.stretch)
+            )
+            for effect in effects:
+                values = effect.values_at(local_t, ctx, **layer.expression_bindings)
+                needed = effect.input_margin(size, local_t, ctx, values)
+                margins = [a + max(0, math.ceil(b)) for a, b in zip(margins, needed)]
+        if not any(margins):
+            return roi
+        expanded = _intersection(
+            (0, 0, *size),
+            (
+                roi[0] - margins[0],
+                roi[1] - margins[1],
+                roi[2] + margins[2],
+                roi[3] + margins[3],
+            ),
+        )
+        if expanded is None:
+            return roi
+        # Preserve explicitly requested pixels outside the canvas, if any.
+        return (
+            min(roi[0], expanded[0]),
+            min(roi[1], expanded[1]),
+            max(roi[2], expanded[2]),
+            max(roi[3], expanded[3]),
+        )
 
     def _adjust(self, comp, layer, accumulator, ctx, view, roi):
         """Apply an adjustment layer's effects to the accumulated backdrop."""
@@ -246,7 +316,11 @@ class Renderer:
                 _exact_time(layer.start_time)
                 + _exact_time(local_t) * _exact_time(layer.stretch) / 100
             )
-            result = self._composite(comp, ctx.with_time(time), view, roi, layer)
+            when = ctx.with_time(time)
+            # Earlier effects in this same stack are re-run at the sampled
+            # time. Their animated margins may exceed the current margins.
+            sample_roi = self._effect_roi(comp, [layer], when, roi)
+            result = self._composite(comp, when, view, sample_roi, layer)
             return _transparent(accumulator.bounds) if result is None else result
 
         return apply_adjustment(

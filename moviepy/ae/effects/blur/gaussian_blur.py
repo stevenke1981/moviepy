@@ -63,6 +63,11 @@ class GaussianBlur(AEEffect):
         values = self.values_at(t, context) if values is None else values
         if values["repeat_edge_pixels"]:
             return (0, 0, 0, 0)
+        return self.input_margin(size, t, context, values)
+
+    def input_margin(self, size, t, context=None, values=None):
+        """Read three sigma per axis even when output edges do not grow."""
+        values = self.values_at(t, context) if values is None else values
         sigma_x, sigma_y = self.sigmas(values)
         x, y = sigma_margin(sigma_x), sigma_margin(sigma_y)
         return (x, y, x, y)
