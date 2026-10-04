@@ -305,16 +305,109 @@ def _resample(buffer, transform, factor, interpolation, target):
         "cubic": cv2.INTER_CUBIC,
     }[interpolation]
     array = _owned_output((height, width, 4))
-    cv2.warpAffine(
-        buffer.rgba,
-        forward,
-        (width, height),
-        dst=array,
-        flags=flags,
-        borderMode=cv2.BORDER_CONSTANT,
-        borderValue=(0.0, 0.0, 0.0, 0.0),
-    )
+    if interpolation == "cubic":
+        _cubic_remap(buffer, transform, target, array)
+    else:
+        cv2.warpAffine(
+            buffer.rgba,
+            forward,
+            (width, height),
+            dst=array,
+            flags=flags,
+            borderMode=cv2.BORDER_CONSTANT,
+            borderValue=(0.0, 0.0, 0.0, 0.0),
+        )
     return _finish(array, buffer, factor, interpolation, target)
+
+
+def _cubic_remap(buffer, transform, target, array):
+    """Sample cubic pixels at fixed world coordinates, independent of the ROI.
+
+    warpAffine rounds coordinates relative to its output origin. Explicit maps
+    use the same inverse and arithmetic for each world pixel in every render.
+    OpenCV remap requires each source and destination axis to be below 32767.
+    """
+    import cv2
+
+    forward = np.array(transform[:2], dtype=np.float64, copy=True)
+    forward[:, 2] += transform[:2, :2] @ np.asarray(buffer.offset)
+    inverse = cv2.invertAffineTransform(forward)
+    if max(buffer.size) >= 32767:
+        _large_cubic_source(buffer, inverse, target, array)
+        return
+    for top in range(target[1], target[3], 32766):
+        for left in range(target[0], target[2], 32766):
+            right, bottom = min(left + 32766, target[2]), min(top + 32766, target[3])
+            output = array[
+                top - target[1] : bottom - target[1],
+                left - target[0] : right - target[0],
+            ]
+            _remap_rectangle(
+                buffer.rgba, inverse, (left, top, right, bottom), (0, 0), output
+            )
+
+
+def _remap_rectangle(pixels, inverse, bounds, source_origin, array):
+    """Build only the requested maps, without full-size float64 temporaries."""
+    import cv2
+
+    xs = np.arange(bounds[0], bounds[2], dtype=np.float64)
+    ys = np.arange(bounds[1], bounds[3], dtype=np.float64)
+    maps = []
+    for axis in range(2):
+        mapping = np.empty(array.shape[:2], dtype=np.float32)
+        horizontal = inverse[axis, 0] * xs
+        vertical = inverse[axis, 1] * ys + inverse[axis, 2] - source_origin[axis]
+        np.add(horizontal[None, :], vertical[:, None], out=mapping, casting="unsafe")
+        maps.append(mapping)
+    cv2.remap(pixels, *maps, cv2.INTER_CUBIC, dst=array, borderMode=cv2.BORDER_CONSTANT)
+
+
+def _large_cubic_source(buffer, inverse, target, array):
+    """Crop oversized sources on a fixed grid while sampling only the ROI."""
+    steps = _cubic_tile_steps(inverse)
+    for top in range(target[1] // steps[1] * steps[1], target[3], steps[1]):
+        for left in range(target[0] // steps[0] * steps[0], target[2], steps[0]):
+            tile = (left, top, left + steps[0], top + steps[1])
+            bounds = (
+                max(left, target[0]),
+                max(top, target[1]),
+                min(tile[2], target[2]),
+                min(tile[3], target[3]),
+            )
+            output = array[
+                bounds[1] - target[1] : bounds[3] - target[1],
+                bounds[0] - target[0] : bounds[2] - target[0],
+            ]
+            pixels, origin = _cubic_tile_source(buffer, inverse, tile)
+            if pixels is None:
+                output.fill(0.0)
+            else:
+                _remap_rectangle(pixels, inverse, bounds, origin, output)
+
+
+def _cubic_tile_steps(inverse):
+    """Limit each axis to half the source span allowed after the cubic halo."""
+    steps = []
+    for axis in range(2):
+        coefficient = float(np.max(np.abs(inverse[:, axis])))
+        steps.append(
+            4096 if coefficient <= 16380 / 4095 else int(16380 / coefficient) + 1
+        )
+    return tuple(steps)
+
+
+def _cubic_tile_source(buffer, inverse, tile):
+    """Choose a source crop from the full tile so ROI changes cannot move it."""
+    box = (tile[0], tile[1], tile[2] - 1, tile[3] - 1)
+    corners = _transformed_corners(inverse, box)
+    left = max(0, math.floor(float(corners[0].min())) - 2)
+    top = max(0, math.floor(float(corners[1].min())) - 2)
+    right = min(buffer.size[0], math.floor(float(corners[0].max())) + 3)
+    bottom = min(buffer.size[1], math.floor(float(corners[1].max())) + 3)
+    if left >= right or top >= bottom:
+        return None, None
+    return buffer.rgba[top:bottom, left:right], (left, top)
 
 
 def _validate_inverse_range(matrix):
