@@ -249,7 +249,7 @@ def blend(
             return base
         base = _transparent(source.bounds, base.color_space)
     if kind == "dissolve":
-        noise = _noise(source, member, context, layer_id)
+        noise = lambda clipped: _noise(clipped, member, context, layer_id)
         return _region(base, source, preserve, rules.dissolve, noise)
     if kind == "alpha_add" and not preserve:
         return _region(base, source, False, _alpha_add)
@@ -338,8 +338,7 @@ def _region(base, source, preserve, composite, noise=None):
     arguments = (*rules.split(region), *rules.split(clipped.rgba))
     with np.errstate(all="ignore"):
         if noise is not None:
-            noise = _crop_noise(noise, source, clipped)
-            rgb, alpha = composite(*arguments, noise, preserve=preserve)
+            rgb, alpha = composite(*arguments, noise(clipped), preserve=preserve)
         else:
             rgb, alpha = composite(*arguments, preserve)
     np.clip(alpha, 0, 1, out=alpha)
@@ -416,20 +415,23 @@ def _matte(base, layer, factor, member, kind):
 
 
 def _noise(source, member, context, layer_id):
-    """Return a deterministic uniform field covering the source rectangle."""
+    """Hash world pixel coordinates with one seed from the layer's stream."""
     ctx = RenderContext() if context is None else context
     if not isinstance(ctx, RenderContext):
         raise TypeError("context must be a RenderContext")
     if member is BlendMode.DISSOLVE:
         ctx = ctx.with_time(0.0)
     width, height = source.size
-    generator = ctx.rng_for(layer_id)
-    return generator.random((height, width), dtype=np.float32)
-
-
-def _crop_noise(noise, source, clipped):
-    """Select the noise pixels matching the clipped part of the source."""
-    left = clipped.offset[0] - source.offset[0]
-    top = clipped.offset[1] - source.offset[1]
-    width, height = clipped.size
-    return noise[top : top + height, left : left + width]
+    seed = ctx.rng_for(layer_id).integers(0, 2**64, dtype=np.uint64)
+    x = np.arange(width, dtype=np.uint64) + np.uint64(source.offset[0] % 2**64)
+    y = np.arange(height, dtype=np.uint64) + np.uint64(source.offset[1] % 2**64)
+    # Arithmetic intentionally wraps modulo 2**64, including negative coordinates.
+    values = (
+        x[None, :] * np.uint64(0x9E3779B97F4A7C15)
+        ^ y[:, None] * np.uint64(0xD1B54A32D192ED03)
+        ^ seed
+    )
+    values = (values ^ (values >> 30)) * np.uint64(0xBF58476D1CE4E5B9)
+    values = (values ^ (values >> 27)) * np.uint64(0x94D049BB133111EB)
+    values ^= values >> 31
+    return (values >> 40).astype(np.float32) * np.float32(2**-24)
