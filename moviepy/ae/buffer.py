@@ -27,13 +27,19 @@ def _release_storage(storage):
     """Retain at most two freed allocations, bounded to 64 MiB in total."""
     if storage.nbytes > _STORAGE_BYTE_LIMIT:
         return
-    with _STORAGE_LOCK:
+    # A finalizer can run while this thread is acquiring another allocation.
+    # The pool is optional: discard retired storage rather than reenter it.
+    if not _STORAGE_LOCK.acquire(blocking=False):
+        return
+    try:
         _FREE_STORAGE.append(storage)
         while (
             len(_FREE_STORAGE) > 2
             or sum(item.nbytes for item in _FREE_STORAGE) > _STORAGE_BYTE_LIMIT
         ):
             _FREE_STORAGE.pop(0)
+    finally:
+        _STORAGE_LOCK.release()
 
 
 class _StorageLease:
