@@ -42,6 +42,10 @@ _LAZY = {
     "Layer": "moviepy.ae.layers.base",
     "AVLayer": "moviepy.ae.layers.av",
     "CompLayer": "moviepy.ae.layers.comp",
+    "AdjustmentLayer": "moviepy.ae.layers.adjustment",
+    "AEEffect": "moviepy.ae.effects.base",
+    "EffectStack": "moviepy.ae.effects.stack",
+    "from_moviepy_effect": "moviepy.ae.effects.bridge",
     "NullLayer": "moviepy.ae.layers.null",
     "SolidLayer": "moviepy.ae.layers.solid",
     "Transform": "moviepy.ae.transform",
@@ -51,14 +55,26 @@ _LAZY = {
     "Expression": "moviepy.ae.properties.expression",
 }
 
-__all__ = ["Buffer", "RenderContext", "premultiply", "unpremultiply", *_LAZY]
+_MODULES = {"fx": "moviepy.ae.fx", "effects": "moviepy.ae.effects"}
+
+__all__ = [
+    "Buffer",
+    "RenderContext",
+    "premultiply",
+    "unpremultiply",
+    *_LAZY,
+    *_MODULES,
+]
 
 
 def __getattr__(name):
     """Load the requested public symbol without eagerly importing all modules."""
-    if name not in _LAZY:
+    if name in _MODULES:
+        value = import_module(_MODULES[name])
+    elif name in _LAZY:
+        value = getattr(import_module(_LAZY[name]), name)
+    else:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    value = getattr(import_module(_LAZY[name]), name)
     globals()[name] = value
     return value
 

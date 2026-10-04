@@ -1,20 +1,22 @@
 """Bottom-to-top layer renderer for ``moviepy.ae.Composition``.
 
-The renderer implements the specification's pipeline for the stages that
-exist so far::
+The renderer implements the specification's pipeline (section 3.3)::
 
     for layer in comp.layers (bottom -> top) if layer contributes at t:
         buf = layer.source_buffer(source_time)        # footage / solid / precomp
         buf = layer.apply_masks(buf, t)                # WS-05 masks
+        buf = layer.apply_effects(buf, t)              # WS-06 effect stack
         buf = warp(buf, view @ world_matrix, opacity)  # WS-02 transform
         buf = apply_track_matte(buf)                   # WS-05 track matte
         acc = blend(acc, buf, layer.blend_mode)        # WS-04
     return acc cropped to the region of interest
 
-Masks (WS-05) are applied to the source pixels before the transform and
-track mattes (WS-05) multiply the transformed layer by the matte layer's alpha
-or luma just before the blend. Effects (WS-06) will slot in after the masks. Every layer is resampled directly into the requested region of interest,
-so large or far off-screen layers cost only the pixels that can be seen.
+Adjustment layers (WS-06) are the exception: their effects run on the
+accumulated result below them, and their transformed, masked, matted and
+faded coverage limits where the effected pixels replace the backdrop.
+Temporal effects on adjustment layers receive the composite below at other
+times. Every layer is resampled directly into the requested region of
+interest, so large or far off-screen layers cost only the visible pixels.
 
 Examples
 --------
@@ -34,6 +36,7 @@ from moviepy.ae._geometry import validate_flag, validate_rectangle
 from moviepy.ae.blend.modes import blend
 from moviepy.ae.buffer import Buffer
 from moviepy.ae.context import RenderContext
+from moviepy.ae.effects.adjustment import apply_adjustment
 from moviepy.ae.warp import (
     _integer_translation,
     destination_bounds,
@@ -67,6 +70,15 @@ def _intersection(first, second):
     if right <= left or bottom <= top:
         return None
     return (left, top, right, bottom)
+
+
+def _layers_under(comp, layer):
+    """Return the composition layers stacked below ``layer``."""
+    layers = list(comp.layers)
+    for position, item in enumerate(layers):
+        if item is layer:
+            return layers[position + 1 :]
+    return []
 
 
 def _transparent(bounds):
@@ -122,13 +134,28 @@ class Renderer:
         """
         ctx = self._context(comp, t, context)
         view = view_matrix(ctx.resolution_scale)
+        roi = None
         if clip:
             frame = (0, 0, *scaled_size(comp.size, ctx.resolution_scale))
             roi = frame if bounds is None else validate_rectangle(bounds)
-            accumulator = _transparent(roi)
-        else:
-            roi, accumulator = None, None
-        for layer in self.contributing_layers(comp, ctx.t):
+        accumulator = self._composite(comp, ctx, view, roi)
+        if accumulator is None:
+            return _transparent((0, 0, 0, 0))
+        if roi is None:
+            return accumulator
+        return accumulator.crop(roi).expand_to(roi)
+
+    def _composite(self, comp, ctx, view, roi, below=None):
+        """Blend contributing layers bottom to top; stop under ``below``."""
+        accumulator = None if roi is None else _transparent(roi)
+        layers = self.contributing_layers(comp, ctx.t)
+        if below is not None:
+            allowed = {id(layer) for layer in _layers_under(comp, below)}
+            layers = [layer for layer in layers if id(layer) in allowed]
+        for layer in layers:
+            if layer.is_adjustment:
+                accumulator = self._adjust(comp, layer, accumulator, ctx, view, roi)
+                continue
             rendered = self._matted_layer(layer, ctx, view, roi)
             if rendered is None:
                 continue
@@ -142,11 +169,22 @@ class Renderer:
                 context=ctx,
                 layer_id=layer.name,
             )
+        return accumulator
+
+    def _adjust(self, comp, layer, accumulator, ctx, view, roi):
+        """Apply an adjustment layer's effects to the accumulated backdrop."""
         if accumulator is None:
-            return _transparent((0, 0, 0, 0))
-        if roi is None:
-            return accumulator
-        return accumulator.crop(roi).expand_to(roi)
+            return None
+        coverage = self._matted_layer(layer, ctx, view, roi)
+
+        def below_at(local_t):
+            time = layer.start_time + local_t * layer.stretch / 100.0
+            result = self._composite(comp, ctx.with_time(time), view, roi, layer)
+            return _transparent(accumulator.bounds) if result is None else result
+
+        return apply_adjustment(
+            layer, accumulator, coverage, ctx.t, ctx, source_at=below_at
+        )
 
     def contributing_layers(self, comp, t):
         """Return layers that render at ``t``, ordered bottom to top."""
@@ -168,10 +206,9 @@ class Renderer:
         Returns ``None`` when the layer has no pixels inside ``roi``.
         """
         t = context.t
-        source = layer.source_buffer(layer.source_time(t), context)
+        source = layer.prepared_source(t, context)
         if 0 in source.size:
             return None
-        source = layer.apply_masks(source, t, context)
         matrix = view @ layer.world_matrix(t, context)
         opacity = layer.opacity_at(t, context)
         interpolation = resolve_interpolation(layer.transform.interpolation, context)

@@ -2,8 +2,9 @@
 
 A layer owns a ``Transform``, a composition-time
 window, a source that produces premultiplied pixels in layer-local space, a
-``MaskStack`` (WS-05) and an optional ``TrackMatte`` (WS-05, applied by the
-WS-03 renderer). Effects (WS-06) and time remapping (WS-07) are still absent.
+``MaskStack`` (WS-05), an optional ``TrackMatte`` (WS-05, applied by the
+WS-03 renderer) and an ``EffectStack`` (WS-06). Time remapping (WS-07) is
+still absent.
 """
 
 import math
@@ -13,6 +14,8 @@ import numpy as np
 
 from moviepy.ae._geometry import validate_flag
 from moviepy.ae.blend.modes import BlendMode
+from moviepy.ae.effects.base import AEEffect
+from moviepy.ae.effects.stack import EffectStack
 from moviepy.ae.masks.mask import Mask, MaskStack
 from moviepy.ae.masks.matte import TrackMatte
 from moviepy.ae.transform import Transform
@@ -91,6 +94,8 @@ class Layer:
         Layer masks, applied to the source pixels before the transform.
     track_matte : TrackMatte, optional
         Matte layer and mode; applied by ``moviepy.ae.renderer.Renderer``.
+    effects : EffectStack or sequence of AEEffect, optional
+        Effects applied after the masks and before the transform.
     collapse_transformations, continuously_rasterize, motion_blur : bool, optional
         Flags stored for WS-03, WS-20 and WS-07 behavior.
 
@@ -134,6 +139,7 @@ class Layer:
         preserve_transparency=False,
         masks=None,
         track_matte=None,
+        effects=None,
         collapse_transformations=False,
         continuously_rasterize=False,
         motion_blur=False,
@@ -158,6 +164,7 @@ class Layer:
         self.masks = MaskStack() if masks is None else masks
         self._track_matte = None
         self.track_matte = track_matte
+        self.effects = EffectStack() if effects is None else effects
         self.collapse_transformations = collapse_transformations
         self.continuously_rasterize = continuously_rasterize
         self.motion_blur = motion_blur
@@ -366,6 +373,60 @@ class Layer:
         return self._masks.apply(buffer, self.source_time(t), context, **bindings)
 
     @property
+    def effects(self):
+        """Return the layer's ``EffectStack``."""
+        return self._effects
+
+    @effects.setter
+    def effects(self, value):
+        if isinstance(value, EffectStack):
+            self._effects = value
+            return
+        if isinstance(value, AEEffect):
+            value = [value]
+        self._effects = EffectStack(value)
+
+    @property
+    def is_adjustment(self):
+        """Return whether effects apply to the layers below (adjustment layer)."""
+        return False
+
+    def apply_effects(self, buffer, t, context=None):
+        """Run the effect stack on masked source pixels at composition time ``t``.
+
+        Temporal effects fetch other times through the layer source and masks.
+        """
+        if not self._effects.active():
+            return buffer
+        bindings = dict(self.expression_bindings)
+        return self._effects.apply(
+            buffer,
+            self.source_time(t),
+            context,
+            bindings=bindings,
+            source_at=lambda local: self._masked_source(local, context),
+        )
+
+    def _masked_source(self, local_t, context=None):
+        """Return source pixels with masks at layer (source-local) time."""
+        buffer = self.source_buffer(local_t, context)
+        if not len(self._masks):
+            return buffer
+        bindings = dict(self.expression_bindings)
+        return self._masks.apply(buffer, local_t, context, **bindings)
+
+    def prepared_source(self, t, context=None):
+        """Return source pixels after masks and effects (before the transform).
+
+        Adjustment layers return their masked coverage only: their effects act
+        on the composite below and are run by the renderer.
+        """
+        buffer = self._masked_source(self.source_time(t), context)
+        if self.is_adjustment or 0 in buffer.size:
+            return buffer
+        return self.apply_effects(buffer, t, context)
+
+    @property
     def collapse_transformations(self):
         """Return the collapse flag whose behavior lands with WS-03."""
         return self._collapse_transformations
@@ -509,8 +570,7 @@ class Layer:
         """
         if not self.is_active(t):
             return None
-        buffer = self.source_buffer(self.source_time(t), context)
-        buffer = self.apply_masks(buffer, t, context)
+        buffer = self.prepared_source(t, context)
         if 0 in buffer.size:
             # Delegate so an explicit region of interest is honoured for empty
             # sources exactly as warp_buffer honours it for empty inputs.

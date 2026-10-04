@@ -19,6 +19,7 @@ _EXPORTS = {
     "NullLayer": "null",
     "SolidLayer": "solid",
     "CompLayer": "comp",
+    "AdjustmentLayer": "adjustment",
 }
 __all__ = list(_EXPORTS)
 

@@ -1,0 +1,216 @@
+:orphan:
+
+WS-06 效果框架、效果堆疊與調整圖層
+==================================
+
+本階段新增 ``moviepy.ae.effects``：效果基底 ``AEEffect``、參數描述
+``Param``、每個圖層的 ``EffectStack``、效果註冊表、``moviepy.ae.fx`` 捷徑、
+既有 MoviePy 效果橋接 ``from_moviepy_effect``，以及 **調整圖層**
+（``AdjustmentLayer``／``Composition.add_adjustment``）。管線順序與規格
+§3.3 相同：來源 → 遮罩 → **效果** → 變換 → 軌道遮罩 → 混合。
+
+--------------
+
+效果與參數
+--------------
+
+每個效果是 ``AEEffect`` 子類別，宣告 ``name``（註冊表 key、AE 選單名稱）、
+``category``（AE 分類）與 ``PARAMS``。所有參數都是 WS-01 的 ``Property``：
+可給常數、關鍵影格、函式或表達式；常數會檢查範圍，動畫值在求值時夾到範圍內。
+
+.. code-block:: python
+
+    import numpy as np
+    import moviepy.ae as ae
+    from moviepy.ae import Buffer, Property
+    from moviepy.ae.properties import Expression
+
+    blur = ae.fx.GaussianBlur(blurriness=[(0, 0), (1, 20)])     # 關鍵影格
+    assert blur.values_at(0.5)["blurriness"] == 10.0
+    blur.blurriness = Property(0.0, expression=Expression("time * 8"))
+    assert blur.values_at(2.0)["blurriness"] == 16.0
+
+    red = Buffer.from_uint8_rgb(np.array([[[255, 0, 0]]], dtype=np.uint8))
+    assert ae.fx.Invert().process(red, 0.0).to_uint8_rgb().tolist() == [[[0, 255, 255]]]
+
+每個效果都有 AE 的「合成選項」：
+
+* ``enabled``：效果開關；停用的效果與未加入完全相同。
+* ``mask``：效果遮罩（``Mask`` 或 ``MaskStack``），範圍外保留原始像素。
+* ``blend_with_original``：0–100 %，把未處理的輸入混回結果（可動畫）。
+
+``bounds_expand()`` 回傳效果需要的外擴邊界（例如 Gaussian Blur 外擴
+``3σ``）；``process()`` 先以透明像素擴張 ``Buffer`` 再呼叫 ``render()``，
+因此模糊可以溢出圖層原本的矩形。
+
+--------------
+
+效果堆疊
+--------------
+
+``Layer.effects`` 是 ``EffectStack``，依序由上而下處理；提供 ``add``（可指定
+位置）、``remove``、``move``、``find``、``active``、``clear``。效果參數在圖層
+時間（套用 ``start_time``／``stretch`` 之後）求值，表達式可使用 ``index`` 等
+圖層綁定。
+
+.. code-block:: python
+
+    import moviepy.ae as ae
+    from moviepy.ae import Composition, Transform
+
+    comp = Composition(size=(8, 4), fps=10, duration=1, bg_color=(0, 0, 0))
+    layer = comp.add_solid("gray", color=(51, 51, 51))
+    fill = ae.fx.Fill(color=(255, 255, 255), opacity=50)
+    layer.effects = [ae.fx.Invert(), fill]
+    assert comp.get_frame(0)[0, 0, 0] == 230          # 先反相再填色
+    layer.effects.move(fill, 0)
+    assert comp.get_frame(0)[0, 0, 0] == 102          # 順序不同，結果不同
+    fill.enabled = False
+    assert comp.get_frame(0)[0, 0, 0] == 204          # 停用 = 未加入
+
+--------------
+
+調整圖層
+--------------
+
+調整圖層本身不產生像素：它的效果作用在下方所有圖層累積的結果上，並以
+自身的矩形經過遮罩、變換、不透明度與軌道遮罩後的 alpha 作為作用範圍。
+Normal 模式下結果為 ``below + (effected - below) * coverage``，因此範圍外的
+像素與沒有調整圖層時 **位元相同**；其他混合模式則把 ``effected * coverage``
+以該模式混合到下方。效果在合成座標中、於調整圖層的時間求值；位於調整圖層
+上方的圖層不受影響。
+
+.. code-block:: python
+
+    import moviepy.ae as ae
+    from moviepy.ae import Composition, Mask
+
+    comp = Composition(size=(4, 1), fps=10, duration=1, bg_color=(0, 0, 0))
+    comp.add_solid("red", color=(255, 0, 0))
+    adjust = comp.add_adjustment(effects=[ae.fx.Tint()])
+    adjust.masks = [Mask.rect((0.5, 0), (2, 1))]            # 只調整左半
+    frame = comp.get_frame(0)
+    assert frame[0].tolist() == [[54, 54, 54]] * 2 + [[255, 0, 0]] * 2
+    adjust.transform.opacity = 50
+    assert comp.get_frame(0)[0, 0].tolist() == [155, 27, 27]
+
+``AdjustmentLayer.apply_to(buffer, t)`` 可在合成之外直接把調整圖層套用到
+一個世界座標 ``Buffer``。
+
+--------------
+
+時間鄰域效果
+--------------
+
+需要其他時刻影像的效果（Echo、日後的 Frame Blend、Time Difference）以
+``temporal_window(t, ctx, values) -> (before, after)``（秒）宣告範圍，並覆寫
+``render_temporal(src, t, ctx, values, source_at)``。``source_at(dt)`` 由
+渲染器提供：一般圖層回傳「來源 → 遮罩 → 堆疊中較早的效果」在 ``t + dt`` 的
+結果；調整圖層回傳下方合成在該時刻的結果。超出宣告範圍的請求會拋出
+``ValueError``。
+
+.. code-block:: python
+
+    import numpy as np
+    import moviepy.ae as ae
+    from moviepy import VideoClip
+    from moviepy.ae import Composition
+
+    def counter(t):                       # 紅色值 = 10 × 影格號
+        frame = np.zeros((2, 2, 3), dtype=np.uint8)
+        frame[..., 0] = int(round(t * 10)) * 10
+        return frame
+
+    comp = Composition(size=(2, 2), fps=10, duration=2, bg_color=(0, 0, 0))
+    layer = comp.add_clip(VideoClip(counter, duration=2).with_fps(10))
+    layer.effects.add(ae.fx.Echo(echo_time=-0.1, number_of_echoes=2))
+    assert comp.get_frame(0.5)[0, 0, 0] == 50 + 40 + 30
+
+--------------
+
+註冊表與 ``ae.fx``
+------------------
+
+.. code-block:: python
+
+    import json
+    import moviepy.ae as ae
+    from moviepy.ae.effects import registry
+
+    assert registry.get("Gaussian Blur") is ae.fx.GaussianBlur
+    assert registry.get("brightness-contrast") is ae.fx.BrightnessContrast
+    assert [c.name for c in registry.list(category="Time")] == ["Echo"]
+    document = json.loads(registry.to_json())
+    assert document["schema"] == 1 and document["effects"][0]["params"]
+
+``registry.get`` 接受 AE 名稱或類別名稱（忽略大小寫、空白與符號），
+``registry.list(category=...)``、``registry.categories()``、
+``registry.metadata()`` 與 ``registry.to_json()`` 匯出參數型別、範圍、預設值，
+供 GUI／專案檔（WS-27）使用。自訂效果以 ``@registry.register`` 註冊後也會出現在
+``ae.fx``；寫法見 :doc:`writing_effects`。
+
+--------------
+
+與 MoviePy 互通
+------------------
+
+.. code-block:: python
+
+    import moviepy.ae as ae
+    from moviepy import ColorClip, vfx
+    from moviepy.ae.effects import from_moviepy_effect
+
+    clip = ColorClip((4, 2), color=(255, 0, 0), duration=1).with_fps(10)
+    comp = clip.with_effects([ae.fx.GaussianBlur(blurriness=2)])   # §3.5 捷徑
+    assert comp.size == (4, 2) and comp.duration == 1
+
+    bridged = from_moviepy_effect(vfx.InvertColors())               # 舊效果進堆疊
+    inverted = clip.with_effects([bridged]).get_frame(0)
+    assert inverted[0, 0].tolist() == [0, 255, 255]
+
+``AEEffect`` 本身也是 MoviePy ``Effect``：``clip.with_effects([...])`` 會把 clip
+包成單一圖層的 ``Composition`` 並加入效果。``from_moviepy_effect`` 讓任何
+``moviepy.video.fx`` 效果放進效果堆疊（以 straight RGB 與 alpha mask 呼叫，
+需要片長的效果可傳 ``duration``）。
+
+--------------
+
+內建參考效果
+--------------
+
+WS-06 只交付框架；為了驗證框架並提供範本，先實作以下 ★ 效果（其餘
+WS-10～19 效果在 M3 依同一模板加入）：
+
+=====================  ================  ====================================
+效果                   分類              說明
+=====================  ================  ====================================
+Gaussian Blur          Blur & Sharpen    ``σ = blurriness / 2``；可單軸、可重複邊緣
+Brightness & Contrast  Color Correction  AE Legacy 線性模型
+Tint                   Color Correction  Rec.709 亮度映射到黑→白色階
+Invert                 Color Correction  RGB／單一通道／alpha
+Fill                   Generate          以顏色取代，保留 alpha
+Echo                   Time              7 種 Echo Operator，時間鄰域
+=====================  ================  ====================================
+
+所有色彩效果先反預乘、運算、夾到 [0, 1] 再預乘；完全不透明的輸入走快速路徑。
+
+--------------
+
+效能（參考機型，1080p、單執行緒 numpy／OpenCV）
+-----------------------------------------------
+
+* Gaussian Blur ``blurriness=40``（σ=20）約 80–100 ms（純 ``cv2.GaussianBlur``
+  約 55 ms，差額為外擴與夾值）。
+* 色彩效果：不透明輸入約 45–90 ms，含 alpha 輸入約 110–155 ms。
+* 調整圖層的混合本身為一次逐像素線性內插；整體成本由效果決定。
+* 尚未有 draft 降階；GPU（``render_gpu``）屬 P3。
+
+--------------
+
+與 AE 的差異與限制
+------------------
+
+* Gaussian Blur 的 ``blurriness → σ`` 換算為經驗值（Adobe 未公開）。
+* Brightness & Contrast 只實作 Legacy 線性模型。
+* 調整圖層的效果與效果遮罩在合成座標中運作；一般圖層則在圖層座標中運作。
+* 註冊表目前只有上表 6 個效果；規格要求的 WS-10～19 全部效果屬 M3。

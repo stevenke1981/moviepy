@@ -19,6 +19,7 @@ import numpy as np
 
 from moviepy.ae._geometry import validate_flag, validate_pixel_size
 from moviepy.ae.context import RenderContext
+from moviepy.ae.layers.adjustment import AdjustmentLayer
 from moviepy.ae.layers.av import AVLayer
 from moviepy.ae.layers.base import Layer, _name
 from moviepy.ae.layers.comp import CompLayer
@@ -248,6 +249,11 @@ class Composition(VideoClip):
         """Add a ``SolidLayer``; its size defaults to the composition size."""
         size = self.size if size is None else size
         return self.add_layer(SolidLayer(name, color=color, size=size, **kwargs))
+
+    def add_adjustment(self, name="Adjustment Layer", *, size=None, **kwargs):
+        """Add an ``AdjustmentLayer`` covering the composition by default."""
+        size = self.size if size is None else size
+        return self.add_layer(AdjustmentLayer(name, size=size, **kwargs))
 
     def add_null(self, name="Null", **kwargs):
         """Add a ``NullLayer`` controller."""
