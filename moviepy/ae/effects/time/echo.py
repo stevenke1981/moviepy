@@ -1,8 +1,11 @@
 """Echo (Time): combine the current frame with earlier or later frames."""
 
+from fractions import Fraction
+
 import numpy as np
 
 from moviepy.ae.buffer import Buffer
+from moviepy.ae.context import _TemporalTime
 from moviepy.ae.effects.base import AEEffect, Param
 from moviepy.ae.effects.registry import register
 
@@ -70,7 +73,8 @@ class Echo(AEEffect):
         """Fetch the echoes through ``source_at`` and combine them."""
         count = int(values["number_of_echoes"])
         frames = [src]
-        frames += [source_at(k * values["echo_time"]) for k in range(1, count + 1)]
+        step = Fraction(values["echo_time"])
+        frames += [source_at(_TemporalTime(k * step)) for k in range(1, count + 1)]
         return self._combine(frames, values)
 
     @staticmethod

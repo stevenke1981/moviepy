@@ -29,13 +29,15 @@ Examples
 """
 
 import math
+from contextlib import contextmanager
+from dataclasses import replace
 
 import numpy as np
 
 from moviepy.ae._geometry import validate_flag, validate_rectangle
 from moviepy.ae.blend.modes import blend
 from moviepy.ae.buffer import Buffer
-from moviepy.ae.context import RenderContext
+from moviepy.ae.context import RenderContext, _exact_time
 from moviepy.ae.effects.adjustment import apply_adjustment
 from moviepy.ae.warp import (
     _integer_translation,
@@ -88,6 +90,40 @@ def _transparent(bounds):
     return Buffer._publish(array, (left, top), "srgb", (np.float32(0), 0.0, True))
 
 
+class _RenderCache:
+    """Own intermediate results only while the outer render is active."""
+
+    def __init__(self):
+        self.values = {}
+        self.active = True
+
+
+@contextmanager
+def _render_cache(context):
+    """Share active nested work and retire results after the outer render."""
+    cache = context.cache
+    owner = not isinstance(cache, _RenderCache) or not cache.active
+    if owner:
+        cache = _RenderCache()
+        context = replace(context, t=context._exact_time, cache=cache)
+    try:
+        yield context
+    finally:
+        if owner:
+            cache.active = False
+            cache.values.clear()
+
+
+def _cached(context, key, compute):
+    """Reuse a result, including None, inside a renderer-owned cache."""
+    cache = context.cache
+    if not isinstance(cache, _RenderCache) or not cache.active:
+        return compute()
+    if key not in cache.values:
+        cache.values[key] = compute()
+    return cache.values[key]
+
+
 class Renderer:
     """Render a composition's layer stack into one premultiplied Buffer.
 
@@ -133,6 +169,11 @@ class Renderer:
             region of interest; its alpha is the composition alpha.
         """
         ctx = self._context(comp, t, context)
+        with _render_cache(ctx) as ctx:
+            return self._render(comp, ctx, bounds, clip)
+
+    def _render(self, comp, ctx, bounds, clip):
+        """Render inside the active cache scope."""
         view = view_matrix(ctx.resolution_scale)
         roi = None
         if clip:
@@ -145,7 +186,30 @@ class Renderer:
             return accumulator
         return accumulator.crop(roi).expand_to(roi)
 
+    def _render_key(self, context, view, roi):
+        """Distinguish every render setting that affects intermediate pixels."""
+        return (
+            id(self),
+            self.include_guides,
+            context.t,
+            context._exact_time,
+            context.fps,
+            context.resolution_scale,
+            context.quality,
+            context.rng_seed,
+            id(context.shutter),
+            tuple(view.ravel()),
+            roi,
+        )
+
     def _composite(self, comp, ctx, view, roi, below=None):
+        """Reuse the composite below a layer during this render."""
+        key = ("composite", id(comp), id(below), self._render_key(ctx, view, roi))
+        return _cached(
+            ctx, key, lambda: self._composite_uncached(comp, ctx, view, roi, below)
+        )
+
+    def _composite_uncached(self, comp, ctx, view, roi, below):
         """Blend contributing layers bottom to top; stop under ``below``."""
         accumulator = None if roi is None else _transparent(roi)
         layers = self.contributing_layers(comp, ctx.t)
@@ -178,12 +242,15 @@ class Renderer:
         coverage = self._matted_layer(layer, ctx, view, roi)
 
         def below_at(local_t):
-            time = layer.start_time + local_t * layer.stretch / 100.0
+            time = (
+                _exact_time(layer.start_time)
+                + _exact_time(local_t) * _exact_time(layer.stretch) / 100
+            )
             result = self._composite(comp, ctx.with_time(time), view, roi, layer)
             return _transparent(accumulator.bounds) if result is None else result
 
         return apply_adjustment(
-            layer, accumulator, coverage, ctx.t, ctx, source_at=below_at
+            layer, accumulator, coverage, ctx._exact_time, ctx, source_at=below_at
         )
 
     def contributing_layers(self, comp, t):
@@ -230,6 +297,13 @@ class Renderer:
         return None if 0 in rendered.size else rendered
 
     def _matted_layer(self, layer, context, view, roi):
+        """Reuse a transformed and matted layer during this render."""
+        key = ("layer", id(layer), self._render_key(context, view, roi))
+        return _cached(
+            context, key, lambda: self._matted_layer_uncached(layer, context, view, roi)
+        )
+
+    def _matted_layer_uncached(self, layer, context, view, roi):
         """Render one layer and apply its track matte, if any."""
         rendered = self.render_layer(layer, context, view, roi)
         if rendered is not None and layer.track_matte is not None:

@@ -4,6 +4,7 @@ import numpy as np
 
 from moviepy.ae.blend.modes import BlendMode, blend
 from moviepy.ae.buffer import Buffer
+from moviepy.ae.context import _exact_time, _TemporalTime
 
 
 def apply_adjustment(layer, below, coverage, t, context=None, *, source_at=None):
@@ -41,9 +42,14 @@ def apply_adjustment(layer, below, coverage, t, context=None, *, source_at=None)
     alpha = coverage.crop(bounds).expand_to(bounds).rgba[..., 3:]
     if not alpha.any() or not layer.effects.active():
         return below
+    local_time = _TemporalTime(
+        (_exact_time(t) - _exact_time(layer.start_time))
+        * 100
+        / _exact_time(layer.stretch)
+    )
     effected = layer.effects.apply(
         below,
-        layer.source_time(t),
+        local_time,
         context,
         bindings=dict(layer.expression_bindings),
         source_at=source_at,

@@ -1,5 +1,6 @@
 """Ordered, switchable effect stack owned by a layer (AE's Effect Controls)."""
 
+from moviepy.ae.context import _exact_time, _TemporalTime
 from moviepy.ae.effects.base import AEEffect
 
 
@@ -126,7 +127,7 @@ class EffectStack:
                     effects[:position], effect, t, context, bindings, source_at
                 )
             buffer = effect.process(
-                buffer, t, context, bindings=bindings, source_at=provider
+                buffer, float(t), context, bindings=bindings, source_at=provider
             )
         return buffer
 
@@ -135,14 +136,18 @@ class EffectStack:
         cache = {}
 
         def provide(dt):
-            values = effect.values_at(t, context, **(bindings or {}))
-            before, after = effect.temporal_window(t, context, values)
+            values = effect.values_at(float(t), context, **(bindings or {}))
+            before, after = effect.temporal_window(float(t), context, values)
             if not -before - _EPSILON <= dt <= after + _EPSILON:
                 raise ValueError("requested time is outside the temporal window")
-            key = round(float(dt), 9)
+            key = _exact_time(dt)
             if key not in cache:
-                time = t + dt
-                when = None if context is None else context.with_time(context.t + dt)
+                time = _TemporalTime(_exact_time(t) + key)
+                when = (
+                    None
+                    if context is None
+                    else context.with_time(context._exact_time + key)
+                )
                 inner = source_at(time)
                 cache[key] = self._run(earlier, inner, time, when, bindings, source_at)
             return cache[key]

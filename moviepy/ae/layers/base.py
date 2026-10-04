@@ -420,6 +420,7 @@ class Layer:
 
     def _masked_source(self, local_t, context=None):
         """Return source pixels with masks at layer (source-local) time."""
+        local_t = float(local_t)
         buffer = self.source_buffer(local_t, context)
         if not len(self._masks):
             return buffer

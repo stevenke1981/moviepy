@@ -4,6 +4,7 @@ import hashlib
 import json
 import math
 from dataclasses import dataclass, field, replace
+from fractions import Fraction
 from numbers import Integral, Real
 from typing import Optional, Union
 
@@ -28,6 +29,25 @@ def _nonnegative_integer(value: Integral, name: str) -> int:
     if value < 0:
         raise ValueError(f"{name} must be nonnegative")
     return int(value)
+
+
+def _exact_time(value):
+    """Preserve binary input values before temporal arithmetic is rounded."""
+    if isinstance(value, Fraction):
+        return value
+    if isinstance(value, _TemporalTime):
+        return value._exact_time
+    return Fraction(_finite_real(value, "t"))
+
+
+class _TemporalTime(float):
+    """Pass a float-compatible time while retaining its exact arithmetic."""
+
+    def __new__(cls, value):
+        exact = _exact_time(value)
+        result = super().__new__(cls, float(exact))
+        result._exact_time = exact
+        return result
 
 
 @dataclass(frozen=True)
@@ -83,10 +103,13 @@ class RenderContext:
     rng_seed: int = 0
     cache: Optional[object] = field(default=None, compare=False, hash=False)
     shutter: Optional[object] = field(default=None, compare=False, hash=False)
+    _exact_time: Fraction = field(init=False, compare=False, hash=False, repr=False)
 
     def __post_init__(self) -> None:
+        original_time = self.t
         for name in ("t", "fps", "resolution_scale"):
             object.__setattr__(self, name, _finite_real(getattr(self, name), name))
+        object.__setattr__(self, "_exact_time", _exact_time(original_time))
         if self.fps <= 0:
             raise ValueError("fps must be positive")
         if not math.isfinite(self.t * self.fps):
