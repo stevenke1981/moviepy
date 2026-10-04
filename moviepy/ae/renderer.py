@@ -5,12 +5,15 @@ exist so far::
 
     for layer in comp.layers (bottom -> top) if layer contributes at t:
         buf = layer.source_buffer(source_time)        # footage / solid / precomp
+        buf = layer.apply_masks(buf, t)                # WS-05 masks
         buf = warp(buf, view @ world_matrix, opacity)  # WS-02 transform
+        buf = apply_track_matte(buf)                   # WS-05 track matte
         acc = blend(acc, buf, layer.blend_mode)        # WS-04
     return acc cropped to the region of interest
 
-Masks, effects and track mattes (WS-05/06) slot in before the blend once they
-exist. Every layer is resampled directly into the requested region of interest,
+Masks (WS-05) are applied to the source pixels before the transform and
+track mattes (WS-05) multiply the transformed layer by the matte layer's alpha
+or luma just before the blend. Effects (WS-06) will slot in after the masks. Every layer is resampled directly into the requested region of interest,
 so large or far off-screen layers cost only the pixels that can be seen.
 
 Examples
@@ -126,7 +129,7 @@ class Renderer:
         else:
             roi, accumulator = None, None
         for layer in self.contributing_layers(comp, ctx.t):
-            rendered = self.render_layer(layer, ctx, view, roi)
+            rendered = self._matted_layer(layer, ctx, view, roi)
             if rendered is None:
                 continue
             if accumulator is None:
@@ -168,6 +171,7 @@ class Renderer:
         source = layer.source_buffer(layer.source_time(t), context)
         if 0 in source.size:
             return None
+        source = layer.apply_masks(source, t, context)
         matrix = view @ layer.world_matrix(t, context)
         opacity = layer.opacity_at(t, context)
         interpolation = resolve_interpolation(layer.transform.interpolation, context)
@@ -187,6 +191,35 @@ class Renderer:
                 source, matrix, opacity, interpolation=interpolation, bounds=target
             )
         return None if 0 in rendered.size else rendered
+
+    def _matted_layer(self, layer, context, view, roi):
+        """Render one layer and apply its track matte, if any."""
+        rendered = self.render_layer(layer, context, view, roi)
+        if rendered is not None and layer.track_matte is not None:
+            rendered = self.apply_track_matte(layer, rendered, context, view, roi)
+        return rendered
+
+    def apply_track_matte(self, layer, rendered, context, view, roi):
+        """Multiply a transformed layer by its track matte's opacity.
+
+        The matte layer renders through its own masks, transform, opacity and
+        (recursively) its own track matte, even when its video switch is off,
+        but only inside its time window. Where the matte has no pixels an
+        alpha/luma matte hides the layer and an inverted matte shows it.
+        """
+        matte = layer.track_matte
+        source = matte.layer
+        t = context.t
+        matte_buffer = None
+        if source.in_point <= t < source.out_point:
+            matte_buffer = self._matted_layer(source, context, view, roi)
+        bounds = rendered.bounds
+        if matte_buffer is None:
+            matte_buffer = _transparent(bounds)
+        aligned = matte_buffer.crop(bounds).expand_to(bounds)
+        values = matte.values(aligned)
+        rgba = rendered.rgba * values[..., None]
+        return Buffer._publish(rgba, rendered.offset, rendered.color_space)
 
     @staticmethod
     def _context(comp, t, context):

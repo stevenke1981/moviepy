@@ -1,9 +1,9 @@
 """Layer timing, switches, parenting and the shared render entry point.
 
 A layer owns a ``Transform``, a composition-time
-window and a source that produces premultiplied pixels in layer-local space.
-Masks (WS-05), effects (WS-06) and time remapping (WS-07) are intentionally
-absent; the renderer hooks they need are named in the class documentation.
+window, a source that produces premultiplied pixels in layer-local space, a
+``MaskStack`` (WS-05) and an optional ``TrackMatte`` (WS-05, applied by the
+WS-03 renderer). Effects (WS-06) and time remapping (WS-07) are still absent.
 """
 
 import math
@@ -13,6 +13,8 @@ import numpy as np
 
 from moviepy.ae._geometry import validate_flag
 from moviepy.ae.blend.modes import BlendMode
+from moviepy.ae.masks.mask import Mask, MaskStack
+from moviepy.ae.masks.matte import TrackMatte
 from moviepy.ae.transform import Transform
 from moviepy.ae.warp import resolve_interpolation, warp_buffer
 
@@ -85,6 +87,10 @@ class Layer:
         label. Stored as the canonical token. Defaults to ``normal``.
     preserve_transparency : bool, optional
         AE's "Preserve Underlying Transparency" (T) switch.
+    masks : MaskStack or sequence of Mask, optional
+        Layer masks, applied to the source pixels before the transform.
+    track_matte : TrackMatte, optional
+        Matte layer and mode; applied by ``moviepy.ae.renderer.Renderer``.
     collapse_transformations, continuously_rasterize, motion_blur : bool, optional
         Flags stored for WS-03, WS-20 and WS-07 behavior.
 
@@ -126,6 +132,8 @@ class Layer:
         guide=False,
         blend_mode="normal",
         preserve_transparency=False,
+        masks=None,
+        track_matte=None,
         collapse_transformations=False,
         continuously_rasterize=False,
         motion_blur=False,
@@ -147,6 +155,9 @@ class Layer:
         self.guide = guide
         self.blend_mode = blend_mode
         self.preserve_transparency = preserve_transparency
+        self.masks = MaskStack() if masks is None else masks
+        self._track_matte = None
+        self.track_matte = track_matte
         self.collapse_transformations = collapse_transformations
         self.continuously_rasterize = continuously_rasterize
         self.motion_blur = motion_blur
@@ -309,6 +320,52 @@ class Layer:
         self._preserve_transparency = validate_flag(value, "preserve_transparency")
 
     @property
+    def masks(self):
+        """Return the layer's ``MaskStack``."""
+        return self._masks
+
+    @masks.setter
+    def masks(self, value):
+        if isinstance(value, MaskStack):
+            self._masks = value
+            return
+        if isinstance(value, Mask):
+            value = [value]
+        self._masks = MaskStack(value)
+
+    @property
+    def track_matte(self):
+        """Return the ``TrackMatte`` or None."""
+        return self._track_matte
+
+    @track_matte.setter
+    def track_matte(self, value):
+        if value is not None:
+            if not isinstance(value, TrackMatte):
+                raise TypeError("track_matte must be a TrackMatte or None")
+            _reject_matte_cycle(self, value.layer)
+        self._track_matte = value
+
+    def set_track_matte(self, layer, mode="alpha", *, hide=True, **kwargs):
+        """Use ``layer`` as this layer's track matte and return the binding.
+
+        Like AE, the matte layer's video switch is turned off (``hide``) so it
+        only acts as a matte; it still renders as a matte while switched off.
+        Extra keywords (``coefficients``, ``linear``) go to ``TrackMatte``.
+        """
+        self.track_matte = TrackMatte(layer, mode, **kwargs)
+        if hide:
+            layer.enabled = False
+        return self._track_matte
+
+    def apply_masks(self, buffer, t, context=None):
+        """Apply the mask stack to source pixels at composition time ``t``."""
+        if not len(self._masks):
+            return buffer
+        bindings = dict(self.expression_bindings)
+        return self._masks.apply(buffer, self.source_time(t), context, **bindings)
+
+    @property
     def collapse_transformations(self):
         """Return the collapse flag whose behavior lands with WS-03."""
         return self._collapse_transformations
@@ -453,6 +510,7 @@ class Layer:
         if not self.is_active(t):
             return None
         buffer = self.source_buffer(self.source_time(t), context)
+        buffer = self.apply_masks(buffer, t, context)
         if 0 in buffer.size:
             # Delegate so an explicit region of interest is honoured for empty
             # sources exactly as warp_buffer honours it for empty inputs.
@@ -463,6 +521,19 @@ class Layer:
         return warp_buffer(
             buffer, matrix, factor, interpolation=interpolation, bounds=bounds
         )
+
+
+def _reject_matte_cycle(layer, candidate):
+    """Refuse a track matte that is the layer itself or loops back to it."""
+    current, seen = candidate, set()
+    while current is not None:
+        if current is layer:
+            raise ValueError("track matte chain contains a cycle")
+        if id(current) in seen:
+            return
+        seen.add(id(current))
+        matte = current.track_matte
+        current = None if matte is None else matte.layer
 
 
 def _reject_cycle(layer, candidate):

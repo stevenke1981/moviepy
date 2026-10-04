@@ -1,0 +1,129 @@
+:orphan:
+
+WS-05 遮罩與軌道遮罩（Masks & Track Mattes）
+============================================
+
+本階段新增 ``moviepy.ae.masks``：AE 圖層遮罩（Bezier 路徑、模式、羽化、
+擴張、反轉、不透明度）與軌道遮罩（Alpha／Luma 及其反轉）。遮罩在圖層
+本地座標中、於變換之前套用到來源像素；軌道遮罩在變換之後、混合之前，
+由 ``Renderer`` 以遮罩圖層的 alpha 或亮度相乘。
+
+--------------
+
+路徑
+--------------
+
+``moviepy.ae.masks.path`` 產生 WS-01 的 ``PathValue``（頂點加相對切線），
+因此路徑可以直接設定關鍵影格；頂點數相同的路徑逐點內插。
+
+.. code-block:: python
+
+    from moviepy.ae.masks import path as shapes
+
+    box = shapes.rect(center=(5, 3), size=(4, 2))
+    assert box.vertices == ((3.0, 2.0), (7.0, 2.0), (7.0, 4.0), (3.0, 4.0))
+    circle = shapes.ellipse((0, 0), (20, 20))      # 4 點 + KAPPA 切線
+    star = shapes.star((0, 0), 5, outer_radius=10, inner_radius=4)
+    pill = shapes.rounded_rect((0, 0), (40, 10), roundness=5)
+    svg = shapes.from_svg_path("M 1 1 H 5 V 4 L 1 4 Z")
+    assert svg.vertices == ((1.0, 1.0), (5.0, 1.0), (5.0, 4.0), (1.0, 4.0))
+    assert len(star.vertices) == 10 and len(circle.vertices) == 4 and pill.closed
+
+SVG 支援 ``M L H V C S Q Z``（絕對與相對；二次曲線精確轉成三次）。弧線
+``A``、``T``、多個子路徑與未知字元一律 ``ValueError``，因為 AE 遮罩只有
+一條路徑。座標採像素中心慣例：像素 ``(i, j)`` 覆蓋 ``[i-0.5, i+0.5]``。
+
+--------------
+
+點陣化
+--------------
+
+``rasterize(path, bounds, feather, expansion, supersample=4)`` 以精確的
+掃描線（奇偶規則）在超取樣格點上填滿，再平均回像素：
+
+* 軸對齊、落在像素邊界上的矩形完全精確；半徑 40 的圓面積誤差 < 0.05 %。
+* 羽化為可分離高斯模糊，``sigma = feather / 2``（水平、垂直可不同）。
+* 擴張以距離轉換實作：正值向外長、負值向內縮（像素單位）。
+* 草稿品質（``RenderContext(quality="draft")``）改用 2 倍超取樣。
+* 靜態遮罩（路徑、羽化、擴張都沒有動畫）的結果會快取（最多 8 筆，唯讀）；
+  有動畫的遮罩每次重新計算，避免記憶體膨脹。
+
+--------------
+
+遮罩與模式
+--------------
+
+.. code-block:: python
+
+    import numpy as np
+    from moviepy.ae.masks import Mask, MaskStack
+
+    left = Mask.rect((0.5, 0), (2, 1))                   # 像素 0、1
+    middle = Mask.rect((1.5, 0), (2, 1), mode="intersect")  # 像素 1、2
+    values = MaskStack([left, middle]).coverage((0, 0, 4, 1))
+    assert values[0].tolist() == [0.0, 1.0, 0.0, 0.0]
+
+    soft = Mask.ellipse((50, 50), (40, 20), feather=6, expansion=2, opacity=80)
+    clip = soft.to_clip((100, 100), duration=1, fps=24)   # MoviePy 遮罩 clip
+    assert clip.is_mask and np.isclose(clip.get_frame(0).max(), 0.8, atol=1e-3)
+
+由上而下合併，``a`` 為累積值、``m`` 為該遮罩（已含羽化、反轉、不透明度）：
+
+==============  ===========================  ==================
+模式            公式                         二值時
+==============  ===========================  ==================
+``add``         ``a + m - a·m``              聯集
+``subtract``    ``a·(1 - m)``                差集
+``intersect``   ``a·m``                      交集
+``lighten``     ``max(a, m)``                聯集
+``darken``      ``min(a, m)``                交集
+``difference``  ``|a - m|``                  對稱差
+``none``        忽略                         —
+==============  ===========================  ==================
+
+第一個有效遮罩若是 ``subtract``／``intersect``／``darken``，累積值從 1
+（整個圖層可見）開始，否則從 0 開始；沒有有效遮罩時圖層不受影響。
+
+--------------
+
+圖層整合與軌道遮罩
+------------------
+
+.. code-block:: python
+
+    from moviepy.ae import Composition, Mask, Transform
+
+    comp = Composition(size=(8, 6), fps=10, duration=1, bg_color=(0, 0, 0))
+    red = comp.add_solid("red", color=(255, 0, 0))
+    red.masks = [Mask.rect((1.5, 2.5), (4, 6), feather=0)]   # 只留左半
+    assert comp.get_frame(0)[0, :5, 0].tolist() == [255] * 4 + [0]
+
+    comp = Composition(size=(8, 6), fps=10, duration=1, bg_color=(0, 0, 0))
+    fill = comp.add_solid("fill", color=(255, 0, 0))
+    matte = comp.add_solid("matte", color=(128, 128, 128), size=(4, 6))
+    matte.transform = Transform(position=(0, 0), anchor_point=(0, 0))
+    fill.set_track_matte(matte, "luma")          # 自動關閉 matte 的顯示開關
+    frame = comp.get_frame(0)
+    assert abs(int(frame[0, 0, 0]) - 128) <= 1 and frame[0, 7, 0] == 0
+
+* ``Layer.masks`` 是 ``MaskStack``；可指定 ``Mask`` 或其序列。遮罩屬性在
+  圖層時間（``start_time``／``stretch`` 之後）求值，運算式可使用與變換相同的
+  綁定。``Layer.render`` 與 ``Renderer`` 都會套用遮罩。
+* ``Layer.set_track_matte(layer, mode="alpha", hide=True, coefficients=...,
+  linear=...)`` 建立 ``TrackMatte``。拒絕自身與循環；``hide`` 依 AE 慣例關閉
+  遮罩圖層的視訊開關，但它仍會（只在自己的時間範圍內）作為遮罩算圖，包含其
+  遮罩、變換、不透明度與巢狀軌道遮罩。
+* 遮罩圖層沒有像素處：一般模式隱藏目標，反轉模式顯示目標。
+* Luma 使用 Rec.709 係數（可選 ``coefficients="rec601"``），計算在
+  premultiplied 顏色上（透明處視為黑）；``linear=True`` 先做 sRGB 線性化，
+  中灰 0.5 會得到 0.214。
+
+--------------
+
+限制
+--------------
+
+* 軌道遮罩只在 ``Renderer``／``Composition`` 中套用；單獨呼叫
+  ``Layer.render`` 只套用遮罩。
+* 不支援 AE 的遮罩運動模糊、可變寬度羽化（Mask Feather Tool）與
+  RotoBezier；這些可在後續工作流程補上。
