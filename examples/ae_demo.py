@@ -2,7 +2,9 @@
 
 The scene exercises keyframes with easing, parenting to a null, a
 pre-composition, blend modes, feathered and animated masks, a luma track
-matte and the Dissolve mode. Run it with an output path::
+matte, the Dissolve mode, layer effects (keyframed Gaussian Blur, Echo,
+Fill) and an adjustment layer (masked vignette). Run it with an output
+path::
 
     python examples/ae_demo.py ae_demo.mp4
 """
@@ -11,6 +13,7 @@ import sys
 
 import numpy as np
 
+import moviepy.ae as ae
 from moviepy import VideoClip
 from moviepy.ae import Composition, Ease, Keyframe, Mask, Property, Transform
 from moviepy.ae.masks import path as shapes
@@ -69,6 +72,10 @@ def badge_comp():
     ]
     star = badge.add_solid("star", color=(255, 170, 30))
     star.masks = [Mask.star((79.5, 79.5), 5, 62, 26, feather=3)]
+    # The star spins inside the pre-comp so the outer layer's Echo sees it move.
+    star.transform = Transform(
+        rotation=Property(0.0, keyframes=[(0.0, 0.0), (DURATION, 360.0)])
+    )
     return badge
 
 
@@ -102,10 +109,18 @@ def build_scene():
     )
     badge = comp.add_comp(badge_comp(), "badge")
     badge.parent = rig
-    badge.transform = Transform(
-        position=(0.0, 0.0),
-        rotation=Property(0.0, keyframes=[(0.0, 0.0), (DURATION, 180.0)]),
-    )
+    badge.transform = Transform(position=(0.0, 0.0))
+    # Effects: the badge focuses in and leaves an echo trail while it spins.
+    badge.effects = [
+        ae.fx.GaussianBlur(blurriness=eased([0.0, 1.2], [16.0, 0.0])),
+        ae.fx.Echo(
+            echo_time=-0.08,
+            number_of_echoes=4,
+            starting_intensity=1.0,
+            decay=0.55,
+            echo_operator="composite_in_back",
+        ),
+    ]
 
     # Dissolve: a solid that grains in over the first two seconds.
     grain = comp.add_solid("grain", color=(255, 255, 255), size=(160, 70))
@@ -115,6 +130,21 @@ def build_scene():
     )
     grain.masks = [Mask.rounded_rect((79.5, 34.5), (160, 70), 18)]
     grain.blend_mode = "dissolve"
+    grain.effects.add(
+        ae.fx.Fill(color=(255, 230, 120), opacity=[(2.0, 0.0), (3.5, 100.0)])
+    )
+
+    # Adjustment layer: darken and warm everything outside a soft ellipse.
+    vignette = comp.add_adjustment("vignette")
+    vignette.masks = [
+        Mask.ellipse((319.5, 179.5), (600, 380), feather=(140, 140), inverted=True)
+    ]
+    vignette.effects = [
+        ae.fx.BrightnessContrast(brightness=-60, contrast=10),
+        ae.fx.Tint(
+            map_black_to=(30, 0, 50), map_white_to=(255, 225, 190), amount_to_tint=35
+        ),
+    ]
     return comp
 
 

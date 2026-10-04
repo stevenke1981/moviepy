@@ -196,6 +196,22 @@ Echo                   Time              7 種 Echo Operator，時間鄰域
 
 --------------
 
+M1 範例
+--------------
+
+規格 M1 的完成標準要求「Lower third」與「Logo reveal」可輸出：
+
+* ``examples/ae_lower_third.py``：遮罩動畫擦入的底條、經軌道遮罩滑入的標題與
+  模糊陰影（Fill + Gaussian Blur）、以調整圖層柔焦並壓暗底部畫面。
+* ``examples/ae_logo_reveal.py``：預合成標誌縮放旋轉進場、關鍵影格模糊對焦、
+  Echo 拖影、Screen 光暈、以 alpha 軌道遮罩與 Add 模式掃光、調整圖層暗角。
+* ``examples/ae_demo.py``：綜合展示（含效果與調整圖層）。
+
+執行 ``python examples/ae_logo_reveal.py out.mp4`` 即可輸出；
+``tests/ae/test_demo.py`` 會建立每個場景並檢查關鍵像素。
+
+--------------
+
 效能（參考機型，1080p、單執行緒 numpy／OpenCV）
 -----------------------------------------------
 
