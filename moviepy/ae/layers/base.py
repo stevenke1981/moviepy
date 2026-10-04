@@ -12,11 +12,12 @@ from numbers import Integral, Real
 import numpy as np
 
 from moviepy.ae._geometry import validate_flag
+from moviepy.ae.blend.modes import BlendMode
 from moviepy.ae.transform import Transform
 from moviepy.ae.warp import resolve_interpolation, warp_buffer
 
+
 _MAX_NAME = 256
-_BLEND_MODE_LIMIT = 64
 
 
 def _name(value):
@@ -51,13 +52,8 @@ def _time(value, name):
 
 
 def _blend_mode(value):
-    """Validate a blend-mode token; WS-04 owns the complete mode set."""
-    if not isinstance(value, str):
-        raise TypeError("blend_mode must be a string token")
-    token = value.strip()
-    if not token or len(token) > _BLEND_MODE_LIMIT:
-        raise ValueError("blend_mode must be a nonempty token")
-    return token
+    """Normalize a blend mode member, token or AE label to its token."""
+    return BlendMode.coerce(value).value
 
 
 class Layer:
@@ -84,8 +80,11 @@ class Layer:
     enabled, solo, shy, locked, guide : bool, optional
         AE layer switches. ``enabled`` and ``solo`` affect rendering; ``shy``,
         ``locked`` and ``guide`` remain editor metadata in this workstream.
-    blend_mode : str, optional
-        Blend token consumed by WS-04. Defaults to ``normal``.
+    blend_mode : BlendMode or str, optional
+        Any of the 38 AE blend modes as a ``BlendMode`` member, token or AE
+        label. Stored as the canonical token. Defaults to ``normal``.
+    preserve_transparency : bool, optional
+        AE's "Preserve Underlying Transparency" (T) switch.
     collapse_transformations, continuously_rasterize, motion_blur : bool, optional
         Flags stored for WS-03, WS-20 and WS-07 behavior.
 
@@ -126,6 +125,7 @@ class Layer:
         locked=False,
         guide=False,
         blend_mode="normal",
+        preserve_transparency=False,
         collapse_transformations=False,
         continuously_rasterize=False,
         motion_blur=False,
@@ -146,6 +146,7 @@ class Layer:
         self.locked = locked
         self.guide = guide
         self.blend_mode = blend_mode
+        self.preserve_transparency = preserve_transparency
         self.collapse_transformations = collapse_transformations
         self.continuously_rasterize = continuously_rasterize
         self.motion_blur = motion_blur
@@ -291,12 +292,21 @@ class Layer:
 
     @property
     def blend_mode(self):
-        """Return the blend token consumed by WS-04."""
+        """Return the canonical blend-mode token, e.g. ``"screen"``."""
         return self._blend_mode
 
     @blend_mode.setter
     def blend_mode(self, value):
         self._blend_mode = _blend_mode(value)
+
+    @property
+    def preserve_transparency(self):
+        """Return the Preserve Underlying Transparency switch."""
+        return self._preserve_transparency
+
+    @preserve_transparency.setter
+    def preserve_transparency(self, value):
+        self._preserve_transparency = validate_flag(value, "preserve_transparency")
 
     @property
     def collapse_transformations(self):

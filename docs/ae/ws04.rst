@@ -1,0 +1,159 @@
+:orphan:
+
+WS-04 混合模式與 Alpha 模式
+===========================
+
+本階段新增 ``moviepy.ae.blend``：完整的 38 種 AE 圖層混合模式
+（``BlendMode``）與 ``blend(base, layer, mode, opacity)``。所有運算都在
+premultiplied float32 ``Buffer`` 上進行：先反預乘、混色、再以 W3C
+source-over 規則預乘回去，只有最後輸出時才量化。
+
+--------------
+
+基本用法
+--------------
+
+.. code-block:: python
+
+    import numpy as np
+    from moviepy.ae import Buffer
+    from moviepy.ae.blend import BlendMode, blend
+
+    def gray(value, alpha=1.0):
+        rgba = np.full((1, 1, 4), value * alpha, dtype=np.float32)
+        rgba[..., 3] = alpha
+        return Buffer(rgba)
+
+    assert blend(gray(0.5), gray(0.5), BlendMode.MULTIPLY).rgba[0, 0, 0] == 0.25
+    assert blend(gray(0.5), gray(0.5), "screen").rgba[0, 0, 0] == 0.75
+    assert BlendMode.coerce("Classic Color Burn") is BlendMode.CLASSIC_COLOR_BURN
+    assert BlendMode.SOFT_LIGHT.label == "Soft Light"
+    assert BlendMode.SOFT_LIGHT.category == "contrast"
+    assert len(BlendMode) == 38
+
+``BlendMode`` 是字串列舉，成員等於其 snake_case token
+（``BlendMode.SCREEN == "screen"``）；``coerce`` 接受成員、token 或 AE
+選單名稱（不分大小寫，空白／連字號視同底線）。圖層的 ``blend_mode``
+屬性改為驗證這個集合並儲存標準 token，未知名稱會拋出 ``ValueError``。
+
+--------------
+
+模式與公式出處
+--------------
+
+=================  ===============================================================
+分類 (category)    模式與公式
+=================  ===============================================================
+normal             Normal（``Cs``）、Dissolve、Dancing Dissolve
+darken             Darken、Multiply、Color Burn、Classic Color Burn、Linear Burn、
+                   Darker Color
+lighten            Add、Lighten、Screen、Color Dodge、Classic Color Dodge、
+                   Linear Dodge、Lighter Color
+contrast           Overlay、Soft Light、Hard Light、Vivid Light、Linear Light、
+                   Pin Light、Hard Mix
+difference         Difference、Classic Difference、Exclusion、Subtract、Divide
+hsl                Hue、Saturation、Color、Luminosity
+matte              Stencil Alpha／Luma、Silhouette Alpha／Luma
+utility            Alpha Add、Luminescent Premul
+=================  ===============================================================
+
+* W3C *Compositing and Blending Level 1*：normal、multiply、screen、overlay、
+  darken、lighten、color-dodge、color-burn、hard-light、soft-light、
+  difference、exclusion，以及 hue／saturation／color／luminosity
+  （``Lum``／``ClipColor``／``SetLum``／``Sat``／``SetSat``，係數 0.3／0.59／0.11）。
+* 公開的 Photoshop 系定義：Linear Burn ``max(0, Cb+Cs-1)``、
+  Linear Dodge ``min(1, Cb+Cs)``、Vivid Light（2Cs 的 burn／dodge）、
+  Linear Light ``clip(Cb+2Cs-1)``、Pin Light、Hard Mix ``Cb+Cs>=1``、
+  Subtract ``max(0, Cb-Cs)``、Divide ``min(1, Cb/Cs)``、Darker／Lighter Color
+  （以 W3C 亮度選整個顏色）。
+* Add 為不截斷的 ``Cb + Cs``，HDR 值保留到最後輸出才截斷。
+* Classic 模式直接以 **premultiplied** 色值混色（舊版 AE 不先反預乘），
+  且 Classic Color Burn／Dodge 不套用 W3C 的全白／全黑背景特例；
+  不透明像素時與新版模式相同。
+* Stencil／Silhouette 以圖層 alpha 或 Rec.709 luma 乘上（或以 1 減後乘上）
+  其下方所有圖層的累積結果；圖層範圍外 Stencil 為透明、Silhouette 不變。
+* Alpha Add 保留 Normal 的 straight 顏色但把兩個 alpha 相加，互補邊緣
+  （``as + ab = 1``）因此無縫且完全不透明。
+* Luminescent Premul 在本 float 管線與 Normal 相同：AE 用此模式避免
+  「顏色超過 alpha」被截斷，而本管線的 Normal 本來就不截斷。
+
+.. code-block:: python
+
+    import numpy as np
+    from moviepy.ae import Buffer
+    from moviepy.ae.blend import blend
+
+    def pixel(rgb, alpha=1.0):
+        rgba = np.empty((1, 1, 4), dtype=np.float32)
+        rgba[..., :3] = np.asarray(rgb, dtype=np.float32) * alpha
+        rgba[..., 3] = alpha
+        return Buffer(rgba)
+
+    # Overlay 兩個分支（base 0.25 與 0.75）
+    assert abs(blend(pixel((0.25,) * 3), pixel((0.5,) * 3), "overlay").rgba[0, 0, 0] - 0.25) < 1e-6
+    assert abs(blend(pixel((0.75,) * 3), pixel((0.5,) * 3), "overlay").rgba[0, 0, 0] - 0.75) < 1e-6
+    # Luma stencil：白→不透明、黑→透明、中灰→0.5
+    for value in (1.0, 0.0, 0.5):
+        cut = blend(pixel((0.8,) * 3), pixel((value,) * 3), "stencil_luma")
+        assert abs(cut.rgba[0, 0, 3] - value) < 1e-6
+    # Alpha Add：互補邊緣
+    seam = blend(pixel((0.2, 0.6, 0.4), 0.3), pixel((0.2, 0.6, 0.4), 0.7), "alpha_add")
+    assert abs(seam.rgba[0, 0, 3] - 1.0) < 1e-6
+
+--------------
+
+Alpha 規則、Opacity 與 Preserve Underlying Transparency
+--------------
+
+一般模式使用 W3C 帶混合的 source-over：
+
+``co = (1-ab)·Cs_p + (1-as)·Cb_p + as·ab·B(Cb, Cs)``，
+``ao = as + ab - as·ab``。
+
+除 Normal、Add、Alpha Add、Luminescent Premul 外，straight 顏色在混色前
+截斷到 ``[0, 1]``（對齊 AE 8/16 bpc 專案；32 bpc／線性光屬於 WS-26）。
+``opacity`` 為 0..1 的額外係數：0 時回傳原 base（Stencil 例外，會把全部
+遮掉）、1 時與未指定相同。``preserve_underlying_transparency=True``
+（AE 的 T 開關）改用 source-atop：``ao = ab``，圖層只畫在下方已有像素處。
+圖層的 ``preserve_transparency`` 旗標由 WS-03 Renderer 傳入。
+
+.. code-block:: python
+
+    import numpy as np
+    from moviepy.ae import Buffer, RenderContext
+    from moviepy.ae.blend import blend
+
+    base = Buffer(np.full((10, 10, 4), 0.5, dtype=np.float32))  # 50% 灰、alpha 0.5
+    layer = Buffer(np.ones((10, 10, 4), dtype=np.float32))
+    kept = blend(base, layer, "normal", preserve_underlying_transparency=True)
+    assert np.allclose(kept.rgba[..., 3], 0.5)
+    assert blend(base, layer, "multiply", 0.0) is base
+
+    # Dissolve：以 ctx.rng_seed 與 layer_id 決定的確定性雜訊；
+    # Dissolve 圖樣固定、Dancing Dissolve 每格改變。
+    ctx = RenderContext(t=0.0, fps=24, rng_seed=3)
+    half = Buffer(np.full((10, 10, 4), 0.5, dtype=np.float32))
+    first = blend(base, half, "dissolve", context=ctx, layer_id="fg")
+    again = blend(base, half, "dissolve", context=ctx.with_time(2.0), layer_id="fg")
+    assert np.array_equal(first.rgba, again.rgba)
+
+結果範圍為兩者 bounds 的聯集；Stencil／Silhouette 與 preserve 模式維持
+base 的 bounds。
+
+--------------
+
+效能與已知限制
+--------------
+
+實作完全向量化（NumPy + OpenCV 通道拆併，無新依賴）。不透明圖層完全落在
+不透明背景內時走快速路徑（兩個 alpha 都是 1，結果就是 ``B(Cb, Cs)``）。
+本機 1920×1080 單次混合實測（單執行緒以外未調整）：Normal ≈5–13 ms；
+不透明 Multiply／Screen／Difference ≈50–55 ms、Overlay ≈110 ms、
+Soft Light ≈145 ms；半透明輸入 ≈140–230 ms；HSL 系 ≈200–240 ms。
+規格的 25 ms 預算目前只有 Normal 達成，其他模式需要 ``ae-fast``（numba）
+或 GPU 後端（規格 §3.6／§10 已預留）。
+
+* Classic 模式的精確 AE 實作未公開，此處採「premultiplied 輸入」定義並
+  於 docstring 註明。
+* Luminescent Premul 與 Normal 相同（見上）。
+* Dissolve 的雜訊以圖層像素格對齊（相對圖層矩形），不是世界座標。
