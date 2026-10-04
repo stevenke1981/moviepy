@@ -1129,6 +1129,25 @@ class VideoClip(Clip):
         """
         self.layer_index = index
 
+    def to_ae_layer(self, name=None, **kwargs):
+        """Wrap this clip as an After Effects-style footage layer.
+
+        Thin hook returning ``moviepy.ae.AVLayer(self, name, **kwargs)`` so a
+        clip can be dropped into a ``moviepy.ae.Composition``. The clip mask,
+        if any, becomes the layer alpha. ``moviepy.ae`` is imported lazily.
+
+        Parameters
+        ----------
+        name : str, optional
+            Layer name; defaults to the clip name.
+        ``**kwargs``
+            Any ``moviepy.ae.Layer`` keyword (``transform``, ``start_time``,
+            ``blend_mode``...).
+        """
+        from moviepy.ae.layers.av import AVLayer
+
+        return AVLayer(self, name, **kwargs)
+
     def resized(self, new_size=None, height=None, width=None, apply_to_mask=True):
         """Returns a video clip that is a resized version of the clip.
         For info on the parameters, please see ``vfx.Resize``

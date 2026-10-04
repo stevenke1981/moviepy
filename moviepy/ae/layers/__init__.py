@@ -12,11 +12,13 @@ Examples
 
 from importlib import import_module
 
+
 _EXPORTS = {
     "Layer": "base",
     "AVLayer": "av",
     "NullLayer": "null",
     "SolidLayer": "solid",
+    "CompLayer": "comp",
 }
 __all__ = list(_EXPORTS)
 

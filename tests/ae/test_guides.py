@@ -7,7 +7,7 @@ import pytest
 
 
 GUIDE_DIR = Path(__file__).resolve().parents[2] / "docs" / "ae"
-GUIDES = ["ws02.rst", "ws04.rst"]
+GUIDES = ["ws02.rst", "ws03.rst", "ws04.rst"]
 _BLOCK = re.compile(r"^\.\. code-block:: python\n\n((?:(?:    .*)?\n)+)", re.MULTILINE)
 
 

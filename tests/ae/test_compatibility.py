@@ -67,8 +67,11 @@ def test_ae_import_is_deferred_from_moviepy():
         "import sys; import moviepy; "
         "assert 'moviepy.ae' not in sys.modules; "
         "import moviepy.ae as ae; "
-        "assert set(ae.__all__) == "
-        "{'Buffer', 'RenderContext', 'premultiply', 'unpremultiply'}"
+        "assert {'Buffer', 'RenderContext', 'premultiply', 'unpremultiply'} "
+        "<= set(ae.__all__); "
+        "assert 'moviepy.ae.composition' not in sys.modules; "
+        "assert 'moviepy.ae.blend.modes' not in sys.modules; "
+        "assert ae.Composition.__module__ == 'moviepy.ae.composition'"
     )
     completed = subprocess.run(
         [sys.executable, "-c", code], capture_output=True, text=True, timeout=30

@@ -1,0 +1,165 @@
+:orphan:
+
+WS-03 Composition 與 Renderer
+=============================
+
+本階段新增 ``moviepy.ae.composition``（``Composition``、``Marker``、
+``from_moviepy``）、``moviepy.ae.renderer``（``Renderer``）與
+``moviepy.ae.layers.CompLayer``（Pre-compose）。``Composition`` 是
+``VideoClip`` 子類，可直接 ``write_videofile``、放進 ``CompositeVideoClip``
+或套用既有 ``with_effects``。``moviepy.ae`` 也提供延遲載入的聚合 facade：
+``ae.Composition``、``ae.BlendMode``、``ae.Transform``、``ae.Property``…
+
+--------------
+
+建立合成
+--------------
+
+.. code-block:: python
+
+    import numpy as np
+    import moviepy.ae as ae
+    from moviepy import ColorClip
+
+    comp = ae.Composition(size=(64, 36), fps=24, duration=2, bg_color=(20, 20, 30))
+    bg = comp.add_solid("bg", color=(40, 60, 90))
+    footage = comp.add_clip(ColorClip(size=(16, 16), color=(250, 200, 10), duration=2))
+    footage.transform.position = ae.Property(
+        (32.0, 18.0), keyframes=[(0, (8.0, 18.0)), (2, (56.0, 18.0))]
+    )
+    footage.blend_mode = ae.BlendMode.SCREEN
+
+    assert comp.layers == (footage, bg)      # index 1 = 最上層
+    assert comp.layer("bg") is bg and comp.layer(1) is footage
+    frame = comp.get_frame(1.0)
+    assert frame.shape == (36, 64, 3)
+
+``layers`` 依 AE 時間軸由上到下排列（index 1 在最上）；``add_*``
+（``add_clip``／``add_solid``／``add_null``／``add_comp``／``add_layer``）
+都把新圖層放在最上層並回傳該圖層，``move_layer``／``remove_layer`` 可重排與
+移除（移除父層時子層自動解除 parenting）。``add_solid`` 預設大小等於合成。
+
+--------------
+
+渲染管線
+--------------
+
+``Renderer.render(comp, t, ctx)`` 由下而上處理每個在 ``t`` 有貢獻的圖層：
+``source_buffer`` → 變形（WS-02 世界矩陣 × resolution 縮放矩陣）→
+``blend``（WS-04，含 ``preserve_transparency``）。
+
+* 每個圖層直接重取樣到 ROI（預設是整個畫面）內，畫面外的像素不計算；
+  整數平移仍走 WS-02 的零複製路徑後再裁切。
+* ``enabled=False`` 的圖層不渲染（仍可當父層）；任何圖層 ``solo`` 時只渲染
+  solo 圖層；``guide`` 圖層預設排除（``Renderer(include_guides=True)`` 可包含）。
+* ``bg_color`` 只出現在 RGB 輸出，不屬於合成 alpha（與 AE 相同）。
+  ``transparent=True`` 時 frame 為 straight RGB、``mask`` 帶合成 alpha，
+  適合 PNG 序列／ProRes 4444／WebM alpha 或放進 ``CompositeVideoClip``。
+* ``RenderContext`` 的 ``quality``／``resolution_scale``／``rng_seed`` 由
+  ``comp.context`` 提供；``resolution_scale`` 以像素中心為準縮小渲染，
+  ``get_frame`` 會放大回完整尺寸。
+* 相同 (comp, t, ctx) 輸出位元相同。
+
+.. code-block:: python
+
+    import numpy as np
+    import moviepy.ae as ae
+
+    comp = ae.Composition(size=(20, 12), fps=10, duration=2, transparent=True)
+    comp.add_solid("half", color=(255, 0, 0), size=(10, 12))
+    full = comp.render_buffer(0.5)
+    roi = comp.render_buffer(0.5, bounds=(5, 2, 15, 10))
+    assert roi.bounds == (5, 2, 15, 10)
+    assert np.allclose(roi.rgba, full.crop((5, 2, 15, 10)).rgba)
+    assert np.allclose(comp.mask.get_frame(0.5)[0], [1] * 10 + [0] * 10)
+    half = comp.render_buffer(0.5, ae.RenderContext(resolution_scale=0.5))
+    assert half.size == (10, 6)
+
+--------------
+
+Pre-compose 與時間取樣
+--------------
+
+``add_comp(child)`` 建立 ``CompLayer``：子合成保有自己的尺寸、fps 與片長。
+來源時間會對齊**子合成自己的影格格點**（24 fps 子合成放在 30 fps 父合成裡
+會重複影格），超出片長時保持首／末格；``start_time``／``stretch``（含負值
+倒放）與一般圖層相同。巢狀循環在加入時拒絕。
+
+``collapse_transformations=True`` 時子合成不裁切到自身畫框，所以超出子合成
+範圍的內容在套用 CompLayer 變形後仍可見。
+
+.. code-block:: python
+
+    import numpy as np
+    import moviepy.ae as ae
+    from moviepy import VideoClip
+
+    counter = VideoClip(
+        lambda t: np.full((2, 2, 3), int(round(t * 24)), dtype=np.uint8), duration=2
+    ).with_fps(24)
+    inner = ae.Composition(size=(2, 2), fps=24, duration=2, name="inner")
+    inner.add_clip(counter)
+    outer = ae.Composition(size=(2, 2), fps=30, duration=2)
+    outer.add_comp(inner)
+    t = 11 / 30
+    assert outer.get_frame(t)[0, 0, 0] == int(np.floor(t * 24))
+
+    wide = ae.Composition(size=(4, 4), fps=10, duration=1)
+    wide.add_solid("wide", color=(255, 255, 255), size=(8, 4))
+    parent = ae.Composition(size=(12, 4), fps=10, duration=1)
+    layer = parent.add_comp(
+        wide, transform=ae.Transform(position=(2.0, 0.0), anchor_point=(0.0, 0.0))
+    )
+    assert parent.get_frame(0)[0, :, 0].tolist() == [0, 0] + [255] * 4 + [0] * 6
+    layer.collapse_transformations = True
+    assert parent.get_frame(0)[0, :, 0].tolist() == [0, 0] + [255] * 8 + [0] * 2
+
+--------------
+
+Markers、Work Area 與既有 MoviePy 互通
+--------------
+
+.. code-block:: python
+
+    import numpy as np
+    import moviepy.ae as ae
+    from moviepy import ColorClip, CompositeVideoClip
+
+    comp = ae.Composition(size=(8, 6), fps=10, duration=4)
+    comp.add_marker(3.0, "outro", chapter="End")
+    comp.add_marker(1.0, "intro", duration=0.5)
+    assert [marker.comment for marker in comp.markers] == ["intro", "outro"]
+    comp.work_area = (1.0, 2.5)
+    assert abs(comp.work_area_clip().duration - 1.5) < 1e-9
+
+    legacy = CompositeVideoClip(
+        [
+            ColorClip(size=(8, 6), color=(10, 20, 30), duration=1),
+            ColorClip(size=(3, 2), color=(200, 100, 50), duration=1).with_position((2, 1)),
+        ],
+        size=(8, 6),
+    )
+    converted = ae.from_moviepy(legacy)
+    delta = converted.get_frame(0.5).astype(int) - legacy.get_frame(0.5).astype(int)
+    assert np.abs(delta).max() <= 1
+
+    layer = ColorClip(size=(3, 2), color=(1, 2, 3), duration=1).to_ae_layer("footage")
+    assert isinstance(layer, ae.AVLayer)
+
+``from_moviepy`` 盡力轉換：每個子 clip 成為 ``AVLayer``，保留起訖時間、
+位置（靜態、``"center"`` 類字串、相對位置或 ``t -> (x, y)`` 函式）、mask、
+圖層順序與背景色。``VideoClip.to_ae_layer()`` 是 §9.4 允許的薄掛鉤。
+
+--------------
+
+已知限制
+--------------
+
+* ``add_adjustment``／``add_text``／``add_shape`` 屬於 WS-06／WS-21／WS-20，
+  尚未提供。
+* Collapse Transformations 只實作「不裁切子合成畫框」；子圖層的混合模式
+  仍在子合成內解決，不會與父合成圖層互動，也沒有省去二次重取樣。
+* 單次 render 內的 (layer, t) 快取與 RAM Preview 屬於 WS-28；目前只有
+  RGB 與 mask 對同一時間共用一次渲染結果。
+* 圖層物件是可變的，透過 ``with_*`` 衍生的 clip 會共用同一組圖層
+  （與 MoviePy 共用 ``frame_function`` 的語意一致）。
