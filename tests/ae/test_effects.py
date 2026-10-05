@@ -520,9 +520,11 @@ def test_registry_lookup():
     assert registry.get("gaussian-blur") is registry.get("GaussianBlur")
     assert registry.get("brightness & contrast") is ae.fx.BrightnessContrast
     with pytest.raises(KeyError):
-        registry.get("Glow")
+        registry.get("Unknown Effect")
     with pytest.raises(AttributeError):
-        ae.fx.Glow
+        ae.fx.UnknownEffect
+    assert registry.get("Glow") is ae.fx.Glow
+    assert registry.get("Drop Shadow") is ae.fx.DropShadow
     assert "GaussianBlur" in dir(ae.fx)
     names = [cls.name for cls in registry.list(category="Color Correction")]
     assert names == ["Brightness & Contrast", "Invert", "Tint"]
@@ -530,6 +532,8 @@ def test_registry_lookup():
         "Blur & Sharpen",
         "Color Correction",
         "Generate",
+        "Perspective",
+        "Stylize",
         "Time",
     ]
 

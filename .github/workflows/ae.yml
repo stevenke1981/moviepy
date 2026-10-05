@@ -1,0 +1,50 @@
+name: AE regression and style
+
+on:
+  push:
+    branches: [feat/ae-parity]
+  pull_request:
+    paths:
+      - "moviepy/**"
+      - "tests/**"
+      - "examples/ae*.py"
+      - "benchmarks/ae*.py"
+      - "docs/ae/**"
+      - "pyproject.toml"
+      - "setup.cfg"
+      - ".github/workflows/ae.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  PYTHONUTF8: "1"
+
+jobs:
+  ae:
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: ["3.9", "3.12"]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v7
+        with:
+          python-version: ${{ matrix.python }}
+          cache: pip
+      - name: Install declared test and lint dependencies
+        run: python -m pip install ".[test,lint]" "black==24.4.2"
+      - name: Run AE suite (local Blender/Godot/model checks are opt-in)
+        run: python -m pytest tests/ae -q
+      - name: Check Black
+        run: python -m black --check --diff .
+      - name: Check imports
+        run: python -m isort --check-only --diff moviepy docs/conf.py examples tests benchmarks/ae_motion_bench.py
+      - name: Check Flake8
+        run: python -m flake8 -v --show-source --ignore=E501 moviepy docs/conf.py examples tests benchmarks/ae_motion_bench.py

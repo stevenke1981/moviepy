@@ -48,6 +48,8 @@ _LAZY = {
     "from_moviepy_effect": "moviepy.ae.effects.bridge",
     "NullLayer": "moviepy.ae.layers.null",
     "SolidLayer": "moviepy.ae.layers.solid",
+    "TextLayer": "moviepy.ae.text.layer",
+    "ParticleLayer": "moviepy.ae.particles.layer",
     "Transform": "moviepy.ae.transform",
     "Property": "moviepy.ae.properties.property",
     "Keyframe": "moviepy.ae.properties.keyframe",

@@ -23,6 +23,8 @@ _BUILTINS = (
     "moviepy.ae.effects.color.invert",
     "moviepy.ae.effects.color.tint",
     "moviepy.ae.effects.generate.fill",
+    "moviepy.ae.effects.perspective.drop_shadow",
+    "moviepy.ae.effects.stylize.glow",
     "moviepy.ae.effects.time.echo",
 )
 _BY_NAME = {}

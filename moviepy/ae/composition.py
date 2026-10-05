@@ -255,6 +255,20 @@ class Composition(VideoClip):
         size = self.size if size is None else size
         return self.add_layer(AdjustmentLayer(name, size=size, **kwargs))
 
+    def add_text(self, text, name="Text", **kwargs):
+        """Add a raster title with optional deterministic entrance animation."""
+        from moviepy.ae.text import TextLayer
+
+        return self.add_layer(TextLayer(text, name, **kwargs))
+
+    def add_particles(self, name="Particles", *, size=None, **kwargs):
+        """Add an analytic particle burst/spray on a fixed canvas."""
+        from moviepy.ae.particles import ParticleLayer
+
+        return self.add_layer(
+            ParticleLayer(name, size=self.size if size is None else size, **kwargs)
+        )
+
     def add_null(self, name="Null", **kwargs):
         """Add a ``NullLayer`` controller."""
         return self.add_layer(NullLayer(name, **kwargs))

@@ -1,5 +1,7 @@
 """Gaussian Blur (Blur & Sharpen)."""
 
+from functools import lru_cache
+
 import cv2
 import numpy as np
 
@@ -81,23 +83,39 @@ class GaussianBlur(AEEffect):
         border = cv2.BORDER_REPLICATE
         if not values["repeat_edge_pixels"]:
             border = cv2.BORDER_CONSTANT
-        rgba = gaussian(src.rgba, sigma_x, sigma_y, border)
+        rgba = gaussian(
+            src.rgba, sigma_x, sigma_y, border, unit_range=src._unit_premultiplied
+        )
         return Buffer._publish(rgba, src.offset, src.color_space)
 
 
-def gaussian(rgba, sigma_x, sigma_y, border):
-    """Return a separable Gaussian blur of float32 RGBA (zero sigma = skip)."""
-    out = np.ascontiguousarray(rgba, dtype=np.float32)
-    for axis, sigma in ((1, sigma_x), (0, sigma_y)):
-        if sigma <= 0:
-            continue
-        radius = sigma_margin(sigma)
-        kernel = cv2.getGaussianKernel(2 * radius + 1, sigma, cv2.CV_32F)
-        kx, ky = (kernel, np.ones((1, 1), np.float32))
-        if axis == 0:
-            kx, ky = ky, kernel
-        out = cv2.sepFilter2D(out, -1, kx, ky, borderType=border)
-    # float32 kernels can overshoot by an ulp; keep a valid premultiplied range.
-    np.clip(out, 0.0, 1.0, out=out)
-    np.minimum(out[..., :3], out[..., 3:], out=out[..., :3])
+@lru_cache(maxsize=64)
+def _kernel(sigma):
+    """Cache only small immutable kernels, never rendered frames."""
+    if sigma <= 0:
+        result = np.ones((1, 1), np.float32)
+    else:
+        result = cv2.getGaussianKernel(2 * sigma_margin(sigma) + 1, sigma, cv2.CV_32F)
+    result.setflags(write=False)
+    return result
+
+
+def filter_pixels(pixels, sigma_x, sigma_y, border=cv2.BORDER_CONSTANT):
+    """Filter a plane or channels in one separable operation, without clipping."""
+    pixels = np.ascontiguousarray(pixels, dtype=np.float32)
+    if sigma_x <= 0 and sigma_y <= 0:
+        return pixels.copy()
+    return cv2.sepFilter2D(
+        pixels, -1, _kernel(float(sigma_x)), _kernel(float(sigma_y)), borderType=border
+    )
+
+
+def gaussian(rgba, sigma_x, sigma_y, border, *, unit_range=True):
+    """Blur RGBA; preserve signed/HDR color while keeping valid coverage."""
+    out = filter_pixels(rgba, sigma_x, sigma_y, border)
+    np.clip(out[..., 3], 0.0, 1.0, out=out[..., 3])
+    if unit_range:
+        np.maximum(out[..., :3], 0.0, out=out[..., :3])
+        np.minimum(out[..., :3], out[..., 3:], out=out[..., :3])
+    out[out[..., 3] == 0, :3] = 0
     return out
