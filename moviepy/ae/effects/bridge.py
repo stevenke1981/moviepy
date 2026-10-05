@@ -3,6 +3,7 @@
 import numpy as np
 
 from moviepy.ae.buffer import Buffer, premultiply
+from moviepy.ae.color import convert_buffer
 from moviepy.ae.effects.base import AEEffect
 from moviepy.Effect import Effect
 
@@ -43,7 +44,8 @@ class MoviePyEffect(AEEffect):
 
         if 0 in src.size:
             return src
-        straight = src.straight()
+        encoded = convert_buffer(src, "srgb") if src.color_space == "linear" else src
+        straight = encoded.straight()
         frame = straight[..., :3].astype(np.float64) * 255.0
         alpha = straight[..., 3].astype(np.float64)
         clip = VideoClip(lambda _: frame, duration=self.duration)
@@ -55,7 +57,10 @@ class MoviePyEffect(AEEffect):
         if processed.mask is not None:
             out_alpha = np.asarray(processed.mask.get_frame(time), dtype=np.float32)
         rgba = np.dstack([np.clip(rgb, 0.0, 1.0), np.clip(out_alpha, 0.0, 1.0)])
-        return Buffer._publish(premultiply(rgba), src.offset, src.color_space)
+        result = Buffer._publish(premultiply(rgba), src.offset, encoded.color_space)
+        return (
+            convert_buffer(result, "linear") if src.color_space == "linear" else result
+        )
 
     def __repr__(self):
         return f"MoviePyEffect({self.effect!r})"

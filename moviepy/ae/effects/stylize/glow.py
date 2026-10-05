@@ -3,6 +3,7 @@
 import numpy as np
 
 from moviepy.ae.buffer import Buffer, unpremultiply
+from moviepy.ae.effects._pixels import color01
 from moviepy.ae.effects.base import AEEffect, Param, sigma_margin
 from moviepy.ae.effects.blur.gaussian_blur import filter_pixels
 from moviepy.ae.effects.registry import register
@@ -51,7 +52,7 @@ class Glow(AEEffect):
         alpha = -np.expm1(-values["intensity"] * np.maximum(coverage, 0))
         alpha = alpha[..., None]
         rgba = np.array(src.rgba, copy=True)
-        halo = np.asarray(values["color"], np.float32) / 255 * alpha
+        halo = color01(values["color"], src.color_space) * alpha
         # Premultiplied Screen also illuminates an opaque dark backdrop.
         # Preserve values already above display white instead of dimming HDR.
         rgba[..., :3] += halo * np.maximum(1 - src.rgba[..., :3], 0)

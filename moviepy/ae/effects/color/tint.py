@@ -48,8 +48,8 @@ class Tint(AEEffect):
         amount = np.float32(values["amount_to_tint"] / 100.0)
         if amount == 0.0:
             return src
-        black = color01(values["map_black_to"])
-        white = color01(values["map_white_to"])
+        black = color01(values["map_black_to"], src.color_space)
+        white = color01(values["map_white_to"], src.color_space)
 
         def tint(rgb):
             mapped = black + (white - black) * luma(rgb)[..., None]

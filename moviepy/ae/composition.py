@@ -18,6 +18,7 @@ from numbers import Integral
 import numpy as np
 
 from moviepy.ae._geometry import validate_flag, validate_pixel_size
+from moviepy.ae.color import display_rgba, quantize_rgba
 from moviepy.ae.context import RenderContext
 from moviepy.ae.layers.adjustment import AdjustmentLayer
 from moviepy.ae.layers.av import AVLayer
@@ -372,6 +373,11 @@ class Composition(VideoClip):
 
     def _rgb_frame(self, t):
         buffer = self._frame_buffer(t)
+        if buffer.color_space != "srgb":
+            pixels = display_rgba(
+                buffer, background=None if self._transparent else self._bg
+            )
+            return quantize_rgba(pixels, bits=8)[..., :3]
         if self._transparent:
             return buffer.to_uint8_rgb()
         return buffer.to_uint8_rgb(bg=self._bg)

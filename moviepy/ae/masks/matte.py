@@ -86,7 +86,9 @@ def matte_values(buffer, mode, *, coefficients="rec709", linear=False):
     if member in (MatteMode.ALPHA, MatteMode.ALPHA_INVERTED):
         values = rgba[..., 3].astype(np.float32, copy=True)
     else:
-        values = _luma(rgba, coefficients, linear)
+        if linear and buffer.color_space not in ("srgb", "linear"):
+            raise ValueError("linear luma requires sRGB or linear sRGB pixels")
+        values = _luma(rgba, coefficients, linear and buffer.color_space != "linear")
     np.clip(values, 0.0, 1.0, out=values)
     return np.float32(1.0) - values if member.inverted else values
 

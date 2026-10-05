@@ -4,6 +4,11 @@ from functools import lru_cache
 
 import numpy as np
 
+from moviepy.ae.color import (
+    linear_to_srgb,
+    srgb_to_linear,
+    working_space as validate_working_space,
+)
 from moviepy.ae.motion.spec import integer
 from moviepy.ae.three_d.scene import number
 from moviepy.video.VideoClip import VideoClip
@@ -50,13 +55,16 @@ def transition_mask(request, *, frame_index=None, progress=None):
     return (ramp * ramp * (3 - 2 * ramp)).astype(np.float32)
 
 
-def transition_clip(first, second, rendered_mask):
+def transition_clip(first, second, rendered_mask, *, working_space="srgb"):
     """Blend two same-sized local timelines using premultiplied SDR color.
 
     Input clips remain owned by the caller. The returned clip has no audio;
     attach the chosen soundtrack explicitly. RGB is sRGB-encoded SDR and mask
     values are linear coverage. Both input alpha masks are preserved.
+    ``working_space="linear"`` decodes before mixing and returns floating
+    sRGB codes, retaining precision for an AE composition or 16-bit master.
     """
+    validate_working_space(working_space)
     if rendered_mask.metadata["effect"] != "transition":
         raise ValueError("rendered_mask must be a transition effect")
     size = tuple(rendered_mask.metadata["size"])
@@ -83,14 +91,21 @@ def transition_clip(first, second, rendered_mask):
             else second.mask.get_frame(t)[..., None]
         )
         alpha = aa * (1 - amount) + ab * amount
-        premultiplied = first.get_frame(t).astype(float) * aa * (1 - amount)
-        premultiplied += second.get_frame(t).astype(float) * ab * amount
+        first_rgb = first.get_frame(t).astype(float)
+        second_rgb = second.get_frame(t).astype(float)
+        if working_space == "linear":
+            first_rgb = srgb_to_linear(first_rgb / 255)
+            second_rgb = srgb_to_linear(second_rgb / 255)
+        premultiplied = first_rgb * aa * (1 - amount)
+        premultiplied += second_rgb * ab * amount
         rgb = np.divide(
             premultiplied, alpha, out=np.zeros_like(premultiplied), where=alpha > 0
         )
-        return np.rint(np.clip(rgb, 0, 255)).astype(np.uint8), np.clip(
-            alpha[..., 0], 0, 1
-        )
+        if working_space == "linear":
+            rgb = np.clip(linear_to_srgb(rgb), 0, 1) * 255
+        else:
+            rgb = np.rint(np.clip(rgb, 0, 255)).astype(np.uint8)
+        return rgb, np.clip(alpha[..., 0], 0, 1)
 
     clip = VideoClip(lambda t: sample(t)[0], duration=duration).with_fps(
         rendered_mask.fps

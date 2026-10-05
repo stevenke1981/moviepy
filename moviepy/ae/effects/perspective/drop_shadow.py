@@ -6,6 +6,7 @@ import cv2
 import numpy as np
 
 from moviepy.ae.buffer import Buffer
+from moviepy.ae.effects._pixels import color01
 from moviepy.ae.effects.base import AEEffect, Param, sigma_margin
 from moviepy.ae.effects.blur.gaussian_blur import filter_pixels
 from moviepy.ae.effects.registry import register
@@ -73,7 +74,7 @@ class DropShadow(AEEffect):
         alpha = cv2.warpAffine(alpha, matrix, src.size, flags=cv2.INTER_LINEAR)
         alpha = np.clip(alpha * (values["opacity"] / 100), 0, 1)[..., None]
         rgba = np.empty_like(src.rgba)
-        rgba[..., :3] = np.asarray(values["color"], np.float32) / 255 * alpha
+        rgba[..., :3] = color01(values["color"], src.color_space) * alpha
         rgba[..., 3:] = alpha
         if not values["shadow_only"]:
             rgba *= 1 - src.rgba[..., 3:]

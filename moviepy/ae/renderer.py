@@ -84,11 +84,11 @@ def _layers_under(comp, layer):
     return []
 
 
-def _transparent(bounds):
+def _transparent(bounds, color_space="srgb"):
     """Return a transparent Buffer covering a rectangle."""
     left, top, right, bottom = bounds
     array = np.zeros((bottom - top, right - left, 4), dtype=np.float32)
-    return Buffer._publish(array, (left, top), "srgb", (np.float32(0), 0.0, True))
+    return Buffer._publish(array, (left, top), color_space, (np.float32(0), 0.0, True))
 
 
 def _needs_full_effect_frame(effects):
@@ -196,7 +196,7 @@ class Renderer:
             roi = frame if bounds is None else validate_rectangle(bounds)
         accumulator = self._composite(comp, ctx, view, roi)
         if accumulator is None:
-            return _transparent((0, 0, 0, 0))
+            return _transparent((0, 0, 0, 0), ctx.working_space)
         if roi is None:
             return accumulator
         return accumulator.crop(roi).expand_to(roi)
@@ -211,6 +211,7 @@ class Renderer:
             context.fps,
             context.resolution_scale,
             context.quality,
+            context.working_space,
             context.rng_seed,
             id(context.shutter),
             tuple(view.ravel()),
@@ -232,7 +233,7 @@ class Renderer:
             layers = [layer for layer in layers if id(layer) in allowed]
         requested = roi
         roi = self._effect_roi(comp, layers, ctx, roi)
-        accumulator = None if roi is None else _transparent(roi)
+        accumulator = None if roi is None else _transparent(roi, ctx.working_space)
         for layer in layers:
             if layer.is_adjustment:
                 accumulator = self._adjust(comp, layer, accumulator, ctx, view, roi)
@@ -241,7 +242,7 @@ class Renderer:
             if rendered is None:
                 continue
             if accumulator is None:
-                accumulator = _transparent(rendered.bounds)
+                accumulator = _transparent(rendered.bounds, ctx.working_space)
             accumulator = blend(
                 accumulator,
                 rendered,
@@ -326,7 +327,11 @@ class Renderer:
             # time. Their animated margins may exceed the current margins.
             sample_roi = self._effect_roi(comp, [layer], when, roi)
             result = self._composite(comp, when, view, sample_roi, layer)
-            return _transparent(accumulator.bounds) if result is None else result
+            return (
+                _transparent(accumulator.bounds, ctx.working_space)
+                if result is None
+                else result
+            )
 
         return apply_adjustment(
             layer, accumulator, coverage, ctx._exact_time, ctx, source_at=below_at
@@ -405,7 +410,7 @@ class Renderer:
             matte_buffer = self._matted_layer(source, context, view, roi)
         bounds = rendered.bounds
         if matte_buffer is None:
-            matte_buffer = _transparent(bounds)
+            matte_buffer = _transparent(bounds, context.working_space)
         aligned = matte_buffer.crop(bounds).expand_to(bounds)
         values = matte.values(aligned)
         rgba = rendered.rgba * values[..., None]
@@ -426,4 +431,5 @@ class Renderer:
             rng_seed=context.rng_seed,
             cache=context.cache,
             shutter=context.shutter,
+            working_space=context.working_space,
         )

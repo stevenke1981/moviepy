@@ -420,8 +420,12 @@ class Layer:
 
     def _masked_source(self, local_t, context=None):
         """Return source pixels with masks at layer (source-local) time."""
+        from moviepy.ae.color import convert_buffer
+
         local_t = float(local_t)
         buffer = self.source_buffer(local_t, context)
+        if context is not None:
+            buffer = convert_buffer(buffer, context.working_space)
         if not len(self._masks):
             return buffer
         bindings = dict(self.expression_bindings)

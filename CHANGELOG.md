@@ -21,6 +21,7 @@ This mean you need to specifically set `bg_color=None` if you want to generate a
 - Fix incorrect handling of lines with a format different from "key: value" during FFmpeg infos parsing (see #2311, #1860, #2418, #2470)
 
 ### Added
+- Opt-in linear-light AE compositing and lossless SDR RGBA16 FFV1 masters with exact PCM audio, plus an original same-source quality comparison. See [color and export contract](docs/ae/linear_master.rst).
 - Reusable timed captions, Godot 3D title cards and audio-onset particles, alpha-correct wipe/iris transitions, and a verified content-addressed motion cache. See [motion module usage](docs/ae/motion_modules.rst).
 - Optional Godot 4.7+ Windows GPU backend with hidden Vulkan rendering, extruded text, seeded particle bursts, real 3D shadows, RGBA/WAV output and a MoviePy showcase. See [Godot usage and limits](docs/ae/godot_backend.rst).
 - AE motion tools preview: text entrance presets, deterministic particles, Glow and DropShadow, optional Blender Cycles/PBR image-sequence rendering, and explicit local U2Net ONNX background removal. See [usage and capability limits](docs/ae/motion_tools.rst).

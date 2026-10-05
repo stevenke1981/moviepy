@@ -4,6 +4,7 @@ import numpy as np
 
 from moviepy.ae.blend._formulas import REC709_LUMA
 from moviepy.ae.buffer import Buffer
+from moviepy.ae.color import srgb_to_linear
 
 
 _OPAQUE = (np.float32(1.0), 1.0, True)
@@ -60,6 +61,7 @@ def luma(rgb):
     return rgb @ REC709_LUMA
 
 
-def color01(code):
-    """Convert an RGB code triple in 0..255 to a float32 0..1 vector."""
-    return np.asarray(code[:3], dtype=np.float32) / np.float32(255.0)
+def color01(code, color_space="srgb"):
+    """Interpret authored RGB codes as sRGB, converting for linear projects."""
+    color = np.asarray(code[:3], dtype=np.float32) / np.float32(255.0)
+    return srgb_to_linear(color) if color_space == "linear" else color

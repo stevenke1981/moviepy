@@ -32,6 +32,8 @@ _LAZY = {
     "Marker": "moviepy.ae.composition",
     "from_moviepy": "moviepy.ae.composition",
     "Renderer": "moviepy.ae.renderer",
+    "write_master": "moviepy.ae.master",
+    "MasterRender": "moviepy.ae.master",
     "BlendMode": "moviepy.ae.blend.modes",
     "blend": "moviepy.ae.blend.modes",
     "Mask": "moviepy.ae.masks.mask",

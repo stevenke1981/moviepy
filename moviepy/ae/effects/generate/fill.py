@@ -44,5 +44,5 @@ class Fill(AEEffect):
         amount = np.float32(values["opacity"] / 100.0)
         if amount == 0.0:
             return src
-        color = color01(values["color"])
+        color = color01(values["color"], src.color_space)
         return map_straight(src, lambda rgb: rgb + (color - rgb) * amount)

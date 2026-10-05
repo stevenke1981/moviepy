@@ -10,6 +10,8 @@ from typing import Optional, Union
 
 from numpy.random import PCG64, Generator
 
+from moviepy.ae.color import working_space
+
 
 def _finite_real(value: Real, name: str) -> float:
     if isinstance(value, bool) or not isinstance(value, Real):
@@ -71,6 +73,10 @@ class RenderContext:
         Opaque cache reference. No cache operations are performed.
     shutter : object or None, optional
         Opaque shutter reference. No temporal sampling is performed.
+    working_space : {"srgb", "linear"}, optional
+        Blend, filter and resample encoded sRGB (legacy default) or decoded
+        linear sRGB. Alpha is linear coverage in both modes. Nested comps
+        inherit the active render context.
 
     Notes
     -----
@@ -103,9 +109,11 @@ class RenderContext:
     rng_seed: int = 0
     cache: Optional[object] = field(default=None, compare=False, hash=False)
     shutter: Optional[object] = field(default=None, compare=False, hash=False)
+    working_space: str = "srgb"
     _exact_time: Fraction = field(init=False, compare=False, hash=False, repr=False)
 
     def __post_init__(self) -> None:
+        working_space(self.working_space)
         original_time = self.t
         for name in ("t", "fps", "resolution_scale"):
             object.__setattr__(self, name, _finite_real(getattr(self, name), name))
