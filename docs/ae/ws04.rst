@@ -158,13 +158,22 @@ base 的 bounds。
 效能與已知限制
 --------------
 
-實作完全向量化（NumPy + OpenCV 通道拆併，無新依賴）。不透明圖層完全落在
-不透明背景內時走快速路徑（兩個 alpha 都是 1，結果就是 ``B(Cb, Cs)``）。
-本機 1920×1080 單次混合實測（單執行緒以外未調整）：Normal ≈5–13 ms；
-不透明 Multiply／Screen／Difference ≈50–55 ms、Overlay ≈110 ms、
-Soft Light ≈145 ms；半透明輸入 ≈140–230 ms；HSL 系 ≈200–240 ms。
-規格的 25 ms 預算目前只有 Normal 達成，其他模式需要 ``ae-fast``（numba）
-或 GPU 後端（規格 §3.6／§10 已預留）。
+實作以 NumPy 與 OpenCV 向量化，沒有新增依賴。bounds 對齊、不透明背景、
+來源具有固定 alpha 且兩者均可證明為 unit-premultiplied SDR 時，Multiply、
+Overlay 與 Hue 使用有限區塊的快速路徑。一般 alpha、signed/HDR 與極小
+subnormal alpha 保留原本的通用公式，輸入和已交付的輸出陣列維持不可變。
+
+Hue 保留原本的 float32 source normalization 與 W3C 色彩公式。SetSat
+所得顏色 ``S`` 的最小值為 0、最大值為 ``M``、亮度為 ``Ls``；背景亮度為
+``Lb``。SetLum 與 ClipColor 可合併為 ``Lb + (S-Ls)*f``，其中越過下界時
+乘上 ``Lb/Ls``，越過上界時乘上 ``(1-Lb)/(M-Ls)``。兩個修正都啟動時
+保留兩者乘積，再與來源 alpha 及背景做 source-over。平面堆疊的原地運算
+減少重複亮度計算和暫存陣列，沒有改用其他色彩空間或降低輸出精度。
+
+合併浮點運算不保證與原執行順序逐位元相同；回歸仍以獨立 sequential W3C
+參考值和 ``atol=1e-6, rtol=0`` 驗證，並核對實際輸出 metadata 的界限。
+固定 1080p、單 logical CPU、數值執行緒為 1、OpenCL 關閉、暖機 1 次及
+5 次計時中位數的基準下，Hue 仍未達 25 ms 目標，不宣稱完整 AE 像素等價。
 
 * Classic 模式的精確 AE 實作未公開，此處採「premultiplied 輸入」定義並
   於 docstring 註明。

@@ -28,64 +28,56 @@ def _overlay(backdrop, source, opacity, target):
 
 
 def _planes(rgba):
-    """Extract contiguous RGB planes without an interleaved RGB intermediate."""
+    """Extract a contiguous RGB plane stack without an interleaved intermediate."""
     planes = np.empty((3, *rgba.shape[:2]), np.float32)
     cv2.mixChannels([rgba], list(planes), [0, 0, 1, 1, 2, 2])
-    return list(planes)
+    return planes
 
 
 def _hue(backdrop, source, opacity, target):
-    """Keep W3C SetSat/SetLum/ClipColor in planes through alpha compositing."""
+    """Fuse the bounded W3C Hue affine steps on owned, contiguous planes."""
     cb, cs = _planes(backdrop), _planes(source)
-    inverse = np.float32(1) / opacity
-    for plane in cs:
-        plane *= inverse
-        np.clip(plane, 0, 1, out=plane)
+    cs *= np.float32(1) / opacity
+    np.clip(cs, 0, 1, out=cs)
     low = formulas._low(cs)
-    scale = formulas._safe_divide(
-        formulas._saturation(cb), formulas._high(cs) - low, 0.0
-    )
-    for plane in cs:
-        plane -= low
-        plane *= scale
-    delta = formulas._lum(cb) - formulas._lum(cs)
-    for plane in cs:
-        plane += delta
-    _clip_hue(cs)
-    for rgb, base in zip(cs, cb):
-        rgb *= opacity
-        rgb += (np.float32(1) - opacity) * base
-    cv2.mixChannels(cs, [target], [0, 0, 1, 1, 2, 2])
+    span = formulas._high(cs) - low
+    scale = formulas._safe_divide(formulas._saturation(cb), span, 0.0)
+    cs -= low
+    cs *= scale
+    level, target_level = formulas._lum(cs), formulas._lum(cb)
+    weight = _hue_weight(target_level, level, span * scale, opacity)
+    cs -= level
+    cs *= weight
+    cs += opacity * target_level
+    cb *= np.float32(1) - opacity
+    cs += cb
+    cv2.mixChannels(list(cs), [target], [0, 0, 1, 1, 2, 2])
     target[..., 3] = 1
 
 
-def _clip_hue(planes):
-    """Apply both W3C ClipColor corrections about the same luminance.
+def _hue_weight(target_level, level, high, opacity):
+    """Combine ClipColor's two factors and source opacity for bounded Hue.
 
-    Each correction is ``lum + (color - lum) * factor``. Their composition
-    multiplies the factors, so the three mutable planes need only one pass.
-    The extrema and luminance are those before either correction, as in the
-    general formula; signed/HDR inputs never enter this bounded SDR path.
+    SetSat gives colors S with minimum zero, maximum M and luminance Ls.
+    SetLum gives C = S + Lb - Ls, so ClipColor's factors are Lb/Ls below
+    zero and (1-Lb)/(M-Ls) above one. Both corrections have center Lb;
+    their product f gives Lb + (S-Ls)*f. Keep both factors, including when
+    float32 rounding activates both bounds. Only proven SDR enters here.
     """
-    low, high = formulas._low(planes), formulas._high(planes)
-    under, over = low < 0, high > 1
+    under = target_level < level
+    over = high + (target_level - level) > np.float32(1)
     has_under, has_over = under.any(), over.any()
-    if not has_under and not has_over:
-        return
-    lum = formulas._lum(planes)
     if has_under:
-        factor = formulas._safe_divide(lum, lum - low, 0.0)
+        factor = formulas._safe_divide(target_level, level, 0.0)
         factor[~under] = 1
     else:
-        factor = np.ones_like(lum)
+        factor = np.ones_like(level)
     if has_over:
-        push = formulas._safe_divide(np.float32(1) - lum, high - lum, 0.0)
+        push = formulas._safe_divide(np.float32(1) - target_level, high - level, 0.0)
         push[~over] = 1
         factor *= push
-    for plane in planes:
-        plane -= lum
-        plane *= factor
-        plane += lum
+    factor *= opacity
+    return factor
 
 
 def composite(base, source, formula):
