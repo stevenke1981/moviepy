@@ -48,6 +48,17 @@ class GodotRender:
     scene_path: Path
     log_path: Path
     metadata: dict
+    linear_frames: tuple = ()
+
+    def to_linear_layer(self, name="Godot Linear", **kwargs):
+        """Read optional scene-linear frames into an AE layer without uint8."""
+        from moviepy.ae.three_d._godot_linear import LinearSequenceLayer
+
+        if not self.linear_frames:
+            raise ValueError("render with linear_output=True for scene-linear footage")
+        return LinearSequenceLayer(
+            self.linear_frames, self.fps, self.duration, name, **kwargs
+        )
 
     def to_clip(self, *, with_audio=False):
         """Open the cached frames for arbitrary seeking; close audio separately."""
@@ -64,7 +75,7 @@ class GodotRender:
         return clip
 
 
-def _write_project(output, scene):
+def _write_project(output, scene, *, linear_output=False):
     # Resolve coverage ourselves: native MSAA resolves background RGB into
     # translucent pixels before tone mapping, producing fringes in a new comp.
     width, height = [value * 2 for value in scene["size"]]
@@ -93,6 +104,11 @@ movie_writer/speaker_mode=0
 """
     (output / "project.godot").write_text(project, encoding="utf-8")
     (output / "main.gd").write_text(GDSCRIPT, encoding="utf-8")
+    if linear_output:
+        from moviepy.ae.three_d._godot_capture import LINEAR_CAPTURE
+
+        (output / "linear_raw").mkdir()
+        (output / "linear_capture.gd").write_text(LINEAR_CAPTURE, encoding="utf-8")
     (output / "main.tscn").write_text(
         "[gd_scene load_steps=2 format=3]\n"
         '[ext_resource type="Script" path="res://main.gd" id="1"]\n'
@@ -207,14 +223,22 @@ def _verify_output(output, scene):
     return frames, metadata
 
 
-def render_godot_scene(scene, output_directory, *, executable=None, timeout=600):
+def render_godot_scene(
+    scene, output_directory, *, executable=None, timeout=600, linear_output=False
+):
     """Render a fresh RGBA sequence on Windows with Godot 4.7+ and Vulkan.
 
     Only the packaged GDScript runs. The scene cannot inject scripts, shaders
     or command-line arguments. Movie Maker advances sequentially at fixed fps;
     subsequent MoviePy seeks only read PNG files. This does not promise
     bit-identical particle results across GPUs or engine versions.
+
+    ``linear_output=True`` additionally retains pre-postprocessing RGBA16F EXRs
+    and resolved float32 linear frames. Use ``to_linear_layer`` to import them
+    without a display transform. The existing PNG/to_clip path stays SDR.
     """
+    if not isinstance(linear_output, bool):
+        raise TypeError("linear_output must be a bool")
     scene = validate_godot_scene(scene)
     binary = find_godot(executable)
     timeout = number(timeout, "timeout", 0.001)
@@ -239,7 +263,7 @@ def render_godot_scene(scene, output_directory, *, executable=None, timeout=600)
     scene_path.write_text(
         json.dumps(scene, ensure_ascii=False, indent=2), encoding="utf-8"
     )
-    _write_project(output, scene)
+    _write_project(output, scene, linear_output=linear_output)
     runtime = output / "runtime"
     runtime.mkdir()
     (output / "raw").mkdir()
@@ -298,6 +322,14 @@ def render_godot_scene(scene, output_directory, *, executable=None, timeout=600)
     try:
         _resolve_frames(output, scene)
         frames, metadata = _verify_output(output, scene)
+        linear_frames = ()
+        if linear_output:
+            from moviepy.ae.three_d._godot_linear import resolve_linear_frames
+
+            linear_frames, metadata["linear"] = resolve_linear_frames(output, scene)
+            (output / "runtime.json").write_text(
+                json.dumps(metadata, indent=2), encoding="utf-8"
+            )
     except (OSError, ValueError, RuntimeError, wave.Error) as error:
         raise RuntimeError(
             f"Godot output validation failed; {log_path}: {error}"
@@ -310,4 +342,5 @@ def render_godot_scene(scene, output_directory, *, executable=None, timeout=600)
         scene_path,
         log_path,
         metadata,
+        linear_frames,
     )

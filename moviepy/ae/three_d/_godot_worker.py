@@ -123,6 +123,16 @@ func _ready():
     camera.look_at(vec(spec.camera.target))
     camera.fov = spec.camera.fov
     camera.current = true
+    if FileAccess.file_exists("res://linear_capture.gd"):
+        # A nonblack clear color contaminates translucent RGB before the
+        # display pass. Native premultiplied capture needs a zero clear color.
+        if spec.transparent:
+            environment.background_color = Color.BLACK
+        var capture = load("res://linear_capture.gd").new()
+        capture.frame_limit = int(ceil(spec.duration * spec.fps))
+        var compositor = Compositor.new()
+        compositor.compositor_effects = [capture]
+        camera.compositor = compositor
 
     var materials = {}
     for id in spec.materials:

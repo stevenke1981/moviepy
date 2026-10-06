@@ -335,7 +335,9 @@ class AEEffect(Effect):
             if coverage is not None:
                 factor = coverage[..., None] * factor
         rgba = base.rgba + (processed.rgba - base.rgba) * factor
-        return Buffer._publish(rgba.astype(np.float32, copy=False), bounds[:2], "srgb")
+        return Buffer._publish(
+            rgba.astype(np.float32, copy=False), bounds[:2], original.color_space
+        )
 
     # -- MoviePy interop -------------------------------------------------------- #
 
