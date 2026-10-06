@@ -83,9 +83,14 @@ class GaussianBlur(AEEffect):
         border = cv2.BORDER_REPLICATE
         if not values["repeat_edge_pixels"]:
             border = cv2.BORDER_CONSTANT
-        rgba = gaussian(
-            src.rgba, sigma_x, sigma_y, border, unit_range=src._unit_premultiplied
-        )
+        if src._unit_premultiplied:
+            rgba = filter_pixels(src.rgba, sigma_x, sigma_y, border)
+            # The positive kernel preserves 0 <= RGB <= alpha channel-wise.
+            # Clipping all channels together therefore also preserves coverage,
+            # including exact transparent zeros, without strided RGB passes.
+            np.clip(rgba, 0.0, 1.0, out=rgba)
+        else:
+            rgba = gaussian(src.rgba, sigma_x, sigma_y, border, unit_range=False)
         return Buffer._publish(rgba, src.offset, src.color_space)
 
 
@@ -134,9 +139,29 @@ def filter_pixels(pixels, sigma_x, sigma_y, border=cv2.BORDER_CONSTANT):
 def gaussian(rgba, sigma_x, sigma_y, border, *, unit_range=True):
     """Blur RGBA; preserve signed/HDR color while keeping valid coverage."""
     out = filter_pixels(rgba, sigma_x, sigma_y, border)
-    np.clip(out[..., 3], 0.0, 1.0, out=out[..., 3])
     if unit_range:
-        np.maximum(out[..., :3], 0.0, out=out[..., :3])
-        np.minimum(out[..., :3], out[..., 3:], out=out[..., :3])
-    out[out[..., 3] == 0, :3] = 0
+        _project_unit(out)
+    else:
+        np.clip(out[..., 3], 0.0, 1.0, out=out[..., 3])
+        out[out[..., 3] == 0, :3] = 0
     return out
+
+
+def _project_unit(out):
+    """Apply the existing channel bounds with bounded contiguous temporaries."""
+    if out.size < 32768 * 4:
+        np.maximum(out, 0.0, out=out)
+        np.minimum(out[..., 3], 1.0, out=out[..., 3])
+        np.minimum(out, out[..., 3:], out=out)
+        return
+    rows = max(1, 32768 // out.shape[1])
+    ceiling = np.empty((min(rows, out.shape[0]), out.shape[1], 4), np.float32)
+    for top in range(0, out.shape[0], rows):
+        tile = out[top : top + rows]
+        limits = ceiling[: tile.shape[0]]
+        np.maximum(tile, 0.0, out=tile)
+        np.minimum(tile[..., 3], 1.0, out=tile[..., 3])
+        # Replicate clipped alpha once, then use a contiguous minimum instead
+        # of broadcasting a strided alpha read for each of the four channels.
+        cv2.mixChannels([tile], [limits], [3, 0, 3, 1, 3, 2, 3, 3])
+        cv2.min(tile, limits, dst=tile)

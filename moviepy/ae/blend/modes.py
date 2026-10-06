@@ -203,8 +203,8 @@ def blend(
         Blend mode member, token (``"color_burn"``) or AE label.
     opacity : float, optional
         Extra 0..1 factor applied to the layer, clamped like layer opacity.
-        Opacity 0 returns ``base`` unchanged (except Stencil modes, which then
-        hide everything); opacity 1 is identical to omitting it.
+        Opacity 0 returns ``base`` unchanged, including Stencil modes;
+        opacity 1 is identical to omitting it.
     preserve_underlying_transparency : bool, optional
         AE's "Preserve Underlying Transparency" switch: the layer is drawn
         only where the backdrop is opaque and the result keeps backdrop alpha.
@@ -230,17 +230,21 @@ def blend(
     color that exceeds alpha (the reason the mode exists in AE). Classic modes
     mix premultiplied colors directly; they equal the modern modes for opaque
     pixels apart from the Color Burn/Dodge pure-white/black backdrop rules.
+
+    Stencil opacity zero disables the matte under the user-selected project
+    policy. Positive opacity still multiplies matte coverage, so reaching zero
+    can produce a discontinuity. This policy has not been verified in Adobe AE.
     """
     member = BlendMode.coerce(mode)
     _check_buffers(base, layer)
     factor = min(1.0, max(0.0, finite_real(opacity, "opacity")))
     preserve = _flag(preserve_underlying_transparency)
     formula, kind = _SPECS[member][:2]
-    if kind == "silhouette" and (0 in layer.size or factor == 0.0):
+    if factor == 0.0 or kind == "silhouette" and 0 in layer.size:
         return base
     if kind in ("stencil", "silhouette"):
         return _matte(base, layer, factor, member, kind)
-    if 0 in layer.size or factor == 0.0:
+    if 0 in layer.size:
         return base
     source = _scaled(layer, factor)
     if kind == "normal" and not preserve:

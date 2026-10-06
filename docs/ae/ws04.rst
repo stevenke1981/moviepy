@@ -112,9 +112,22 @@ Alpha 規則、Opacity 與 Preserve Underlying Transparency
 
 除 Normal、Add、Alpha Add、Luminescent Premul 外，straight 顏色在混色前
 截斷到 ``[0, 1]``（對齊 AE 8/16 bpc 專案；32 bpc／線性光屬於 WS-26）。
-``opacity`` 為 0..1 的額外係數：0 時回傳原 base（Stencil 例外，會把全部
-遮掉）、1 時與未指定相同。``preserve_underlying_transparency=True``
+``opacity`` 為 0..1 的額外係數：0 時回傳原 base（包含 Stencil），
+1 時與未指定相同。``preserve_underlying_transparency=True``
 （AE 的 T 開關）改用 source-atop：``ao = ab``，圖層只畫在下方已有像素處。
+
+Stencil 的精確零點採使用者選定的本專案語義：圖層 opacity 為 0 時，
+視為停用遮罩並保留下層。直接 ``blend(..., opacity=0)`` 與 composition
+中的 ``Transform(opacity=0)`` 一致；前者使用 0..1，後者使用 0..100。
+此選擇尚未經 Adobe AE 實機對照，不宣稱是 AE 已驗證行為。
+
+正 opacity 仍依既有公式乘上 Alpha 或 Luma matte coverage，沒有改成
+在原 base 與遮罩結果之間插值。因此當 opacity 從極小正值變為 0 時，
+仍可能由幾乎透明跳回完整下層；keyframe 動畫也保留此不連續。
+素材本身 alpha 為 0 或位於畫面外，與「圖層 opacity 為 0」不同：
+只要圖層 opacity 大於 0，這些零 coverage 區域仍會遮掉下層。
+啟用 Shutter 時，此規則逐一套用至曝光樣本，再平均各樣本的合成結果；
+其中 opacity 為 0 的樣本保留下層，不能當成透明 matte 樣本。
 圖層的 ``preserve_transparency`` 旗標由 WS-03 Renderer 傳入。
 
 .. code-block:: python

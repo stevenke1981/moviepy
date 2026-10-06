@@ -1,6 +1,7 @@
 """Pre-composition layer: a nested ``Composition`` used as a layer source."""
 
 import math
+from dataclasses import replace
 
 from moviepy.ae.layers.base import Layer
 
@@ -64,6 +65,14 @@ class CompLayer(Layer):
 
     def source_buffer(self, t, context=None):
         """Render the nested composition at child time ``t``."""
+        if context is not None:
+            context = replace(
+                context,
+                t=context._exact_time,
+                shutter=self.comp.context.shutter,
+                _footage_offsets=(),
+                _exposure_center=None,
+            )
         return self.comp.render_buffer(
             self.child_time(t), context, clip=not self.collapse_transformations
         )

@@ -11,6 +11,7 @@ Examples
 (['bg'], True)
 """
 
+import copy as _copy
 import math
 from dataclasses import dataclass
 from numbers import Integral
@@ -140,6 +141,7 @@ class Composition(VideoClip):
         work_area=None,
         renderer=None,
         context=None,
+        motion_blur=None,
     ):
         super().__init__(duration=_positive(duration, "duration"))
         self.size = validate_pixel_size(size)
@@ -150,11 +152,60 @@ class Composition(VideoClip):
         self._markers = []
         self.renderer = Renderer() if renderer is None else renderer
         self.context = RenderContext() if context is None else context
+        self.motion_blur = (
+            self.context.shutter is not None if motion_blur is None else motion_blur
+        )
         self.work_area = work_area
         self.frame_function = self._rgb_frame
         self.transparent = transparent
+        self._auto_audio = True
+
+    def __copy__(self):
+        """Materialize audio before MoviePy changes a derived clip's timeline.
+
+        MoviePy's decorators transform audio after editing video duration. The
+        mixer must retain the original timeline until those audio transforms
+        run, just like an ordinary VideoClip's attached track.
+        """
+        result = super().__copy__()
+        result.audio = _copy.copy(self.audio)
+        return result
+
+    copy = __copy__
 
     # -- validated attributes ------------------------------------------------ #
+
+    @property
+    def audio(self):
+        """Mix current AVLayer audio unless MoviePy supplied an explicit track."""
+        if not getattr(self, "_auto_audio", False):
+            return self._audio_override
+        from moviepy.ae.audio import composition_audio
+
+        return composition_audio(self)
+
+    @audio.setter
+    def audio(self, value):
+        self._audio_override = value
+        self._auto_audio = False
+
+    def use_layer_audio(self):
+        """Restore automatic layer mixing after a manual audio override."""
+        self._auto_audio = True
+        return self
+
+    @property
+    def motion_blur(self):
+        """Return the composition shutter switch (off unless explicitly enabled).
+
+        Providing a shutter in the initial context also opts in. Assign False
+        to disable it while retaining all layer switches and shutter settings.
+        """
+        return self._motion_blur
+
+    @motion_blur.setter
+    def motion_blur(self, value):
+        self._motion_blur = validate_flag(value, "motion_blur")
 
     @property
     def bg_color(self):

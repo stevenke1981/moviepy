@@ -214,6 +214,8 @@ class Renderer:
             context.working_space,
             context.rng_seed,
             id(context.shutter),
+            context._footage_offsets,
+            context._exposure_center,
             tuple(view.ravel()),
             roi,
         )
@@ -240,6 +242,17 @@ class Renderer:
                     self._adjust(comp, layer, accumulator.snapshot(), ctx, view, roi)
                 )
                 continue
+            if (
+                layer.blend_mode in ("stencil_alpha", "stencil_luma")
+                and layer.motion_blur
+                and ctx.shutter is not None
+            ):
+                accumulator.replace(
+                    self._stencil_exposure(
+                        layer, accumulator.snapshot(), ctx, view, roi
+                    )
+                )
+                continue
             rendered = self._matted_layer(layer, ctx, view, roi)
             if rendered is None:
                 continue
@@ -255,6 +268,32 @@ class Renderer:
             return accumulator.crop(requested).expand_to(requested)
         return accumulator
 
+    def _stencil_exposure(self, layer, backdrop, context, view, roi):
+        """Apply zero-opacity opt-out inside each Stencil exposure sample."""
+        from moviepy.ae.blend import blend
+        from moviepy.ae.time.motion_blur import sample_layer
+
+        def render_one(sample):
+            instant = replace(sample, t=sample._exact_time, shutter=None)
+            source = self._matted_layer(layer, instant, view, roi)
+            if source is None:
+                return backdrop
+            return blend(
+                backdrop,
+                source,
+                layer.blend_mode,
+                preserve_underlying_transparency=layer.preserve_transparency,
+                context=instant,
+                layer_id=layer.id,
+            )
+
+        return sample_layer(
+            layer,
+            context,
+            render_one,
+            outside=_transparent(backdrop.bounds, backdrop.color_space),
+        )
+
     @staticmethod
     def _effect_roi(comp, layers, ctx, roi):
         """Include adjustment input dependencies, bounded by the canvas."""
@@ -266,7 +305,9 @@ class Renderer:
             if not layer.is_adjustment:
                 continue
             effects = layer.effects.active()
-            if _needs_full_effect_frame(effects):
+            if _needs_full_effect_frame(effects) or (
+                layer.motion_blur and ctx.shutter is not None
+            ):
                 # A nested temporal stage may replay a spatial effect at a
                 # time with a larger radius. The current margins cannot bound
                 # that demand, including when the current radius is zero.
@@ -315,7 +356,27 @@ class Renderer:
         """Apply an adjustment layer's effects to the accumulated backdrop."""
         if accumulator is None:
             return None
-        coverage = self._matted_layer(layer, ctx, view, roi)
+        if layer.motion_blur and ctx.shutter is not None:
+            from moviepy.ae.time.motion_blur import sample_layer
+
+            return sample_layer(
+                layer,
+                ctx,
+                lambda sample: self._adjust_at(
+                    comp, layer, accumulator, sample, view, roi, instantaneous=True
+                ),
+                outside=accumulator,
+            )
+        return self._adjust_at(comp, layer, accumulator, ctx, view, roi)
+
+    def _adjust_at(
+        self, comp, layer, accumulator, ctx, view, roi, *, instantaneous=False
+    ):
+        """Apply adjustment properties at one time to the current backdrop."""
+        coverage_context = (
+            replace(ctx, t=ctx._exact_time, shutter=None) if instantaneous else ctx
+        )
+        coverage = self._matted_layer(layer, coverage_context, view, roi)
 
         def below_at(local_t):
             time = (
@@ -356,6 +417,18 @@ class Renderer:
 
         Returns ``None`` when the layer has no pixels inside ``roi``.
         """
+        if layer.motion_blur and context.shutter is not None:
+            from moviepy.ae.time.motion_blur import sample_layer
+
+            return sample_layer(
+                layer,
+                context,
+                lambda sample: self._render_layer_at(layer, sample, view, roi),
+            )
+        return self._render_layer_at(layer, context, view, roi)
+
+    def _render_layer_at(self, layer, context, view, roi):
+        """Transform a single sample, without recursively applying its shutter."""
         t = context.t
         source = layer.prepared_source(t, context)
         if 0 in source.size:
@@ -367,7 +440,15 @@ class Renderer:
             matrix, source.size, source.offset, interpolation=interpolation
         )
         target = natural if roi is None else _intersection(natural, roi)
-        if target is None or opacity <= 0.0:
+        if opacity <= 0.0:
+            # Exact zero also disables Stencil under the selected project
+            # policy; positive-opacity empty coverage still masks the backdrop.
+            return None
+        if target is None:
+            if layer.blend_mode in ("stencil_alpha", "stencil_luma"):
+                # An enabled stencil still masks every underlying pixel when
+                # its coverage lies outside the requested rendering region.
+                return _transparent((0, 0, 0, 0), context.working_space)
             return None
         if target == natural or _integer_translation(matrix) is not None:
             # Whole layers and integer shifts keep warp_buffer's copy-free path;
@@ -389,6 +470,23 @@ class Renderer:
 
     def _matted_layer_uncached(self, layer, context, view, roi):
         """Render one layer and apply its track matte, if any."""
+        if layer.motion_blur and context.shutter is not None:
+            from moviepy.ae.time.motion_blur import sample_layer
+
+            return sample_layer(
+                layer,
+                context,
+                lambda sample: self._matted_layer_at(
+                    layer,
+                    replace(sample, t=sample._exact_time, shutter=None),
+                    view,
+                    roi,
+                ),
+            )
+        return self._matted_layer_at(layer, context, view, roi)
+
+    def _matted_layer_at(self, layer, context, view, roi):
+        """Apply a track matte inside the same instantaneous temporal sample."""
         rendered = self.render_layer(layer, context, view, roi)
         if rendered is not None and layer.track_matte is not None:
             rendered = self.apply_track_matte(layer, rendered, context, view, roi)
@@ -407,7 +505,16 @@ class Renderer:
         t = context.t
         matte_buffer = None
         if source.in_point <= t < source.out_point:
-            matte_buffer = self._matted_layer(source, context, view, roi)
+            sample_context = context
+            if context._exposure_center is not None:
+                from moviepy.ae.time.motion_blur import _sample_context
+
+                sample_context = _sample_context(
+                    source,
+                    context.with_time(context._exposure_center),
+                    context._exact_time,
+                )
+            matte_buffer = self._matted_layer(source, sample_context, view, roi)
         bounds = rendered.bounds
         if matte_buffer is None:
             matte_buffer = _transparent(bounds, context.working_space)
@@ -420,9 +527,14 @@ class Renderer:
     def _context(comp, t, context):
         """Bind the composition time and frame rate into a render context."""
         if context is None:
-            return RenderContext(t=t, fps=comp.fps)
+            context = RenderContext()
         if not isinstance(context, RenderContext):
             raise TypeError("context must be a RenderContext")
+        shutter = None
+        if comp.motion_blur:
+            from moviepy.ae.time.motion_blur import Shutter
+
+            shutter = Shutter.coerce(context.shutter)
         return RenderContext(
             t=t,
             fps=comp.fps,
@@ -430,6 +542,8 @@ class Renderer:
             quality=context.quality,
             rng_seed=context.rng_seed,
             cache=context.cache,
-            shutter=context.shutter,
+            shutter=shutter,
             working_space=context.working_space,
+            _footage_offsets=context._footage_offsets,
+            _exposure_center=context._exposure_center,
         )

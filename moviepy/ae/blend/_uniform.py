@@ -4,6 +4,7 @@ import cv2
 import numpy as np
 
 from moviepy.ae.blend import _formulas as formulas
+from moviepy.ae.blend._opaque import composite as opaque_composite
 from moviepy.ae.buffer import Buffer
 
 
@@ -65,6 +66,9 @@ def composite(base, source, formula, *, clamp, classic, preserve):
     ab, opacity = base._uniform_alpha, source._uniform_alpha
     if base.bounds != source.bounds or ab is None or opacity is None:
         return None
+    opaque = None if classic else opaque_composite(base, source, formula)
+    if opaque is not None:
+        return opaque
     native = None if classic else _premultiplied(base, source, formula, preserve)
     if native is not None:
         return native

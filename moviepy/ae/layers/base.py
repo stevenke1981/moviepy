@@ -423,7 +423,17 @@ class Layer:
         from moviepy.ae.color import convert_buffer
 
         local_t = float(local_t)
-        buffer = self.source_buffer(local_t, context)
+        sample_t = local_t
+        source_context = context
+        if context is not None:
+            for identity, center, sample, center_time in reversed(
+                context._footage_offsets
+            ):
+                if identity == id(self):
+                    sample_t = center + (local_t - sample)
+                    source_context = context.with_time(center_time)
+                    break
+        buffer = self.sampled_source(sample_t, source_context)
         if context is not None:
             buffer = convert_buffer(buffer, context.working_space)
         if not len(self._masks):
@@ -566,6 +576,10 @@ class Layer:
         """Return premultiplied source pixels at source-local time ``t``."""
         raise NotImplementedError("subclasses must define source_buffer")
 
+    def sampled_source(self, t, context=None):
+        """Read source pixels on the layer clock, including footage controls."""
+        return self.source_buffer(t, context)
+
     def render(self, t, context=None, *, bounds=None):
         """Return the transformed layer contribution, or None when inactive.
 
@@ -586,6 +600,18 @@ class Layer:
         """
         if not self.is_active(t):
             return None
+        if self.motion_blur and context is not None and context.shutter is not None:
+            from moviepy.ae.time.motion_blur import sample_layer
+
+            return sample_layer(
+                self,
+                context.with_time(t),
+                lambda sample: self._render_at(sample.t, sample, bounds=bounds),
+            )
+        return self._render_at(t, context, bounds=bounds)
+
+    def _render_at(self, t, context=None, *, bounds=None):
+        """Render one instantaneous sample for standalone layer rendering."""
         buffer = self.prepared_source(t, context)
         if 0 in buffer.size:
             # Delegate so an explicit region of interest is honoured for empty

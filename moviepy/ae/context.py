@@ -71,8 +71,9 @@ class RenderContext:
         Nonnegative integer random seed. Defaults to 0. Booleans are rejected.
     cache : object or None, optional
         Opaque cache reference. No cache operations are performed.
-    shutter : object or None, optional
-        Opaque shutter reference. No temporal sampling is performed.
+    shutter : Shutter, dict or None, optional
+        Shutter parameters consumed when composition and layer motion blur are
+        enabled. Transport remains opaque until rendering, for compatibility.
     working_space : {"srgb", "linear"}, optional
         Blend, filter and resample encoded sRGB (legacy default) or decoded
         linear sRGB. Alpha is linear coverage in both modes. Nested comps
@@ -111,6 +112,10 @@ class RenderContext:
     shutter: Optional[object] = field(default=None, compare=False, hash=False)
     working_space: str = "srgb"
     _exact_time: Fraction = field(init=False, compare=False, hash=False, repr=False)
+    _footage_offsets: tuple = field(default=(), compare=False, hash=False, repr=False)
+    _exposure_center: Optional[Fraction] = field(
+        default=None, compare=False, hash=False, repr=False
+    )
 
     def __post_init__(self) -> None:
         working_space(self.working_space)
