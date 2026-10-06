@@ -34,8 +34,8 @@ from dataclasses import replace
 
 import numpy as np
 
+from moviepy.ae._accumulator import _Accumulator
 from moviepy.ae._geometry import validate_flag, validate_rectangle
-from moviepy.ae.blend.modes import blend
 from moviepy.ae.buffer import Buffer
 from moviepy.ae.context import RenderContext, _exact_time
 from moviepy.ae.effects.adjustment import apply_adjustment
@@ -197,7 +197,7 @@ class Renderer:
         accumulator = self._composite(comp, ctx, view, roi)
         if accumulator is None:
             return _transparent((0, 0, 0, 0), ctx.working_space)
-        if roi is None:
+        if roi is None or accumulator.bounds == roi:
             return accumulator
         return accumulator.crop(roi).expand_to(roi)
 
@@ -233,24 +233,24 @@ class Renderer:
             layers = [layer for layer in layers if id(layer) in allowed]
         requested = roi
         roi = self._effect_roi(comp, layers, ctx, roi)
-        accumulator = None if roi is None else _transparent(roi, ctx.working_space)
+        accumulator = _Accumulator(roi, ctx.working_space)
         for layer in layers:
             if layer.is_adjustment:
-                accumulator = self._adjust(comp, layer, accumulator, ctx, view, roi)
+                accumulator.replace(
+                    self._adjust(comp, layer, accumulator.snapshot(), ctx, view, roi)
+                )
                 continue
             rendered = self._matted_layer(layer, ctx, view, roi)
             if rendered is None:
                 continue
-            if accumulator is None:
-                accumulator = _transparent(rendered.bounds, ctx.working_space)
-            accumulator = blend(
-                accumulator,
+            accumulator.blend(
                 rendered,
                 layer.blend_mode,
-                preserve_underlying_transparency=layer.preserve_transparency,
+                preserve=layer.preserve_transparency,
                 context=ctx,
                 layer_id=layer.id,
             )
+        accumulator = accumulator.snapshot()
         if requested is not None and roi != requested:
             return accumulator.crop(requested).expand_to(requested)
         return accumulator

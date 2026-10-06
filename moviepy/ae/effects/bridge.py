@@ -4,6 +4,7 @@ import numpy as np
 
 from moviepy.ae.buffer import Buffer, premultiply
 from moviepy.ae.color import convert_buffer
+from moviepy.ae.effects._pixels import extended_color
 from moviepy.ae.effects.base import AEEffect
 from moviepy.Effect import Effect
 
@@ -25,7 +26,8 @@ class MoviePyEffect(AEEffect):
     -----
     The effect sees a constant clip whose frame is the straight RGB of the
     input (float 0..255) with its alpha as the mask, evaluated at layer time.
-    Size changes are kept, anchored at the input's offset.
+    Size changes are kept, anchored at the input's offset. The bridge preserves
+    linear or already signed/HDR RGB; the wrapped effect can still clip itself.
     """
 
     name = "MoviePy Effect"
@@ -56,7 +58,9 @@ class MoviePyEffect(AEEffect):
         out_alpha = np.ones(rgb.shape[:2], dtype=np.float32)
         if processed.mask is not None:
             out_alpha = np.asarray(processed.mask.get_frame(time), dtype=np.float32)
-        rgba = np.dstack([np.clip(rgb, 0.0, 1.0), np.clip(out_alpha, 0.0, 1.0)])
+        if not extended_color(src):
+            np.clip(rgb, 0.0, 1.0, out=rgb)
+        rgba = np.dstack([rgb, np.clip(out_alpha, 0.0, 1.0)])
         result = Buffer._publish(premultiply(rgba), src.offset, encoded.color_space)
         return (
             convert_buffer(result, "linear") if src.color_space == "linear" else result

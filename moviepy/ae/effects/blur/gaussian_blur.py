@@ -105,9 +105,30 @@ def filter_pixels(pixels, sigma_x, sigma_y, border=cv2.BORDER_CONSTANT):
     pixels = np.ascontiguousarray(pixels, dtype=np.float32)
     if sigma_x <= 0 and sigma_y <= 0:
         return pixels.copy()
-    return cv2.sepFilter2D(
-        pixels, -1, _kernel(float(sigma_x)), _kernel(float(sigma_y)), borderType=border
-    )
+    kernel_x, kernel_y = _kernel(float(sigma_x)), _kernel(float(sigma_y))
+    radius_x, radius_y = len(kernel_x) // 2, len(kernel_y) // 2
+    if (
+        border == cv2.BORDER_CONSTANT
+        and max(radius_x, radius_y) >= 32
+        and pixels.shape[0] > 4 * radius_y
+        and pixels.shape[1] > 4 * radius_x
+    ):
+        # A full kernel radius of explicit zero padding makes the outer border
+        # irrelevant to the retained pixels. OpenCV's replicated-edge path is
+        # much faster for large RGBA kernels; the kernel and sampling stay exact.
+        padded = cv2.copyMakeBorder(
+            pixels, radius_y, radius_y, radius_x, radius_x, cv2.BORDER_CONSTANT
+        )
+        result = cv2.sepFilter2D(
+            padded, -1, kernel_x, kernel_y, borderType=cv2.BORDER_REPLICATE
+        )
+        return np.ascontiguousarray(
+            result[
+                radius_y : radius_y + pixels.shape[0],
+                radius_x : radius_x + pixels.shape[1],
+            ]
+        )
+    return cv2.sepFilter2D(pixels, -1, kernel_x, kernel_y, borderType=border)
 
 
 def gaussian(rgba, sigma_x, sigma_y, border, *, unit_range=True):

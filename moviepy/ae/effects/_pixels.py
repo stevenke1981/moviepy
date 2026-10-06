@@ -10,6 +10,16 @@ from moviepy.ae.color import srgb_to_linear
 _OPAQUE = (np.float32(1.0), 1.0, True)
 
 
+def extended_color(buffer):
+    """Keep signed/HDR RGB for linear work or already extended input values."""
+    if buffer.color_space == "linear":
+        return True
+    if buffer._unit_premultiplied:
+        return False
+    rgb, alpha = buffer.rgba[..., :3], buffer.rgba[..., 3:]
+    return bool(np.any(rgb < 0) or np.any(rgb > alpha))
+
+
 def is_opaque(buffer):
     """Return whether every pixel of ``buffer`` has alpha exactly 1."""
     return buffer._uniform_alpha is not None and buffer._uniform_alpha == 1

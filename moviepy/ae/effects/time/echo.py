@@ -6,6 +6,7 @@ import numpy as np
 
 from moviepy.ae.buffer import Buffer
 from moviepy.ae.context import _TemporalTime
+from moviepy.ae.effects._pixels import extended_color
 from moviepy.ae.effects.base import AEEffect, Param
 from moviepy.ae.effects.registry import register
 
@@ -42,8 +43,9 @@ class Echo(AEEffect):
     Operators work on premultiplied RGBA: ``add`` sums, ``maximum`` /
     ``minimum`` take extremes, ``screen`` is ``1 - prod(1 - w F)``,
     ``composite_in_back`` puts older echoes behind, ``composite_in_front``
-    in front, and ``blend`` averages. Results are clipped to [0, 1]. The
-    renderer supplies the other frames through ``temporal_window``.
+    in front, and ``blend`` averages. Normal sRGB inputs keep legacy [0, 1]
+    clipping. Linear or signed/HDR inputs preserve RGB, while alpha stays in
+    [0, 1]. The renderer supplies frames through ``temporal_window``.
     """
 
     name = "Echo"
@@ -89,9 +91,15 @@ class Echo(AEEffect):
             len(frames), dtype=np.float32
         )
         weighted = stack * weights.astype(np.float32)[:, None, None, None]
-        rgba = _OPERATIONS[values["echo_operator"]](weighted)
-        rgba = np.clip(rgba, 0.0, 1.0).astype(np.float32)
-        np.minimum(rgba[..., :3], rgba[..., 3:], out=rgba[..., :3])
+        with np.errstate(over="ignore", invalid="ignore"):
+            rgba = _OPERATIONS[values["echo_operator"]](weighted)
+        if not np.isfinite(rgba).all():
+            raise ValueError("Echo arithmetic must remain finite in float32")
+        np.clip(rgba[..., 3], 0, 1, out=rgba[..., 3])
+        if not any(extended_color(frame) for frame in frames):
+            np.clip(rgba, 0, 1, out=rgba)
+            np.minimum(rgba[..., :3], rgba[..., 3:], out=rgba[..., :3])
+        rgba[rgba[..., 3] == 0, :3] = 0
         return Buffer._publish(rgba, bounds[:2], frames[0].color_space)
 
 

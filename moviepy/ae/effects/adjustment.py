@@ -39,7 +39,8 @@ def apply_adjustment(layer, below, coverage, t, context=None, *, source_at=None)
     if coverage is None or 0 in coverage.size or 0 in below.size:
         return below
     bounds = below.bounds
-    alpha = coverage.crop(bounds).expand_to(bounds).rgba[..., 3:]
+    aligned_coverage = _align(coverage, bounds)
+    alpha = aligned_coverage.rgba[..., 3:]
     if not alpha.any() or not layer.effects.active():
         return below
     local_time = _TemporalTime(
@@ -55,13 +56,30 @@ def apply_adjustment(layer, below, coverage, t, context=None, *, source_at=None)
         source_at=source_at,
         pixel_scale=1.0 if context is None else context.resolution_scale,
     )
-    return _mix(layer, below, effected.crop(bounds).expand_to(bounds), alpha, context)
+    return _mix(
+        layer,
+        below,
+        _align(effected, bounds),
+        alpha,
+        context,
+        constant=aligned_coverage._uniform_alpha,
+    )
 
 
-def _mix(layer, below, effected, alpha, context):
+def _align(buffer, bounds):
+    """Crop and pad only when the immutable pixels do not already align."""
+    if buffer.bounds == bounds:
+        return buffer
+    clipped = buffer.crop(bounds)
+    return clipped if clipped.bounds == bounds else clipped.expand_to(bounds)
+
+
+def _mix(layer, below, effected, alpha, context, *, constant=None):
     """Mix aligned effected pixels into ``below`` through ``alpha``."""
     mode = BlendMode.coerce(layer.blend_mode)
     if mode is BlendMode.NORMAL and not layer.preserve_transparency:
+        if constant == 1:
+            return effected
         rgba = below.rgba + (effected.rgba - below.rgba) * alpha
         return Buffer._publish(
             rgba.astype(np.float32, copy=False), below.offset, below.color_space

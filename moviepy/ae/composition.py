@@ -151,7 +151,6 @@ class Composition(VideoClip):
         self.renderer = Renderer() if renderer is None else renderer
         self.context = RenderContext() if context is None else context
         self.work_area = work_area
-        self._memo = None
         self.frame_function = self._rgb_frame
         self.transparent = transparent
 
@@ -165,7 +164,6 @@ class Composition(VideoClip):
     @bg_color.setter
     def bg_color(self, value):
         self._bg = _color(value)
-        self._memo = None
 
     @property
     def transparent(self):
@@ -193,7 +191,6 @@ class Composition(VideoClip):
         if not isinstance(value, Renderer):
             raise TypeError("renderer must be a Renderer")
         self._renderer = value
-        self._memo = None
 
     @property
     def context(self):
@@ -205,7 +202,6 @@ class Composition(VideoClip):
         if not isinstance(value, RenderContext):
             raise TypeError("context must be a RenderContext")
         self._context = value
-        self._memo = None
 
     @property
     def work_area(self):
@@ -323,7 +319,6 @@ class Composition(VideoClip):
     def _reindex(self):
         for number, layer in enumerate(self._layers, start=1):
             layer.index = number
-        self._memo = None
 
     # -- markers ----------------------------------------------------------------- #
 
@@ -354,21 +349,18 @@ class Composition(VideoClip):
         context = self._context if context is None else context
         return self._renderer.render(self, t, context, bounds=bounds, clip=clip)
 
-    def _frame_buffer(self, t, *, reuse=False):
+    def _frame_buffer(self, t):
         """Render one full-size frame.
 
-        RGB requests always render (layers are mutable, so a cached frame
-        could be stale) and remember the result; the mask request for the
-        same time, which MoviePy issues right after the RGB one, reuses it.
+        Layers, properties and wrapped clips can change between RGB and mask
+        requests, even at the same time. Each request therefore renders from
+        current inputs; Renderer still reuses work within that single render.
         """
         time = float(t)
-        if reuse and self._memo is not None and self._memo[0] == time:
-            return self._memo[1]
         buffer = self.render_buffer(time)
         scale = self._context.resolution_scale
         if scale != 1.0:
             buffer = _upscale(buffer, self.size)
-        self._memo = (time, buffer)
         return buffer
 
     def _rgb_frame(self, t):
@@ -383,7 +375,7 @@ class Composition(VideoClip):
         return buffer.to_uint8_rgb(bg=self._bg)
 
     def _alpha_frame(self, t):
-        alpha = self._frame_buffer(t, reuse=True).rgba[..., 3]
+        alpha = self._frame_buffer(t).rgba[..., 3]
         return np.clip(alpha, 0.0, 1.0).astype(np.float64)
 
 

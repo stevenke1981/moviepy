@@ -17,6 +17,7 @@ from enum import Enum
 import numpy as np
 
 from moviepy.ae.blend import _formulas as formulas, alpha as rules
+from moviepy.ae.blend._uniform import TILE_PIXELS, composite as uniform_composite
 from moviepy.ae.buffer import Buffer
 from moviepy.ae.context import RenderContext
 from moviepy.ae.properties.values import finite_real
@@ -255,6 +256,11 @@ def blend(
         return _region(base, source, False, _alpha_add)
     clamp = kind not in ("unclamped", "normal", "alpha_add")
     formula = formula or formulas.normal
+    uniform = uniform_composite(
+        base, source, formula, clamp=clamp, classic=kind == "classic", preserve=preserve
+    )
+    if uniform is not None:
+        return uniform
     if _opaque_overlap(base, source):
         return _opaque_region(base, source, formula, clamp)
     composite = _separable(formula, clamp, kind == "classic")
@@ -335,14 +341,20 @@ def _region(base, source, preserve, composite, noise=None):
     left, top = clipped.offset[0] - bounds[0], clipped.offset[1] - bounds[1]
     width, height = clipped.size
     region = canvas[top : top + height, left : left + width]
-    arguments = (*rules.split(region), *rules.split(clipped.rgba))
-    with np.errstate(all="ignore"):
-        if noise is not None:
-            rgb, alpha = composite(*arguments, noise(clipped), preserve=preserve)
-        else:
-            rgb, alpha = composite(*arguments, preserve)
-    np.clip(alpha, 0, 1, out=alpha)
-    _merge_into(region, rgb, alpha)
+    noise_values = None if noise is None else noise(clipped)
+    rows = max(1, TILE_PIXELS // width)
+    for top in range(0, height, rows):
+        target = region[top : top + rows]
+        arguments = (*rules.split(target), *rules.split(clipped.rgba[top : top + rows]))
+        with np.errstate(all="ignore"):
+            if noise is not None:
+                rgb, alpha = composite(
+                    *arguments, noise_values[top : top + rows], preserve=preserve
+                )
+            else:
+                rgb, alpha = composite(*arguments, preserve)
+        np.clip(alpha, 0, 1, out=alpha)
+        _merge_into(target, rgb, alpha)
     return _publish(canvas, bounds[:2], base.color_space)
 
 
