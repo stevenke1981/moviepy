@@ -18,6 +18,7 @@ _EXPORTS = {
     "AVLayer": "av",
     "NullLayer": "null",
     "SolidLayer": "solid",
+    "SVGLayer": "svg",
     "CompLayer": "comp",
     "AdjustmentLayer": "adjustment",
 }

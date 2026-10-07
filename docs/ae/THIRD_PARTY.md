@@ -35,3 +35,44 @@ independent test oracle written for this project. The benchmark's Gaussian
 reference is an independent float64 convolution; production timing calls the
 installed cv2 primitive. Golden assets are synthetic and carry their own
 `tests/ae/assets/LICENSE-ASSETS.txt` notice.
+
+## Optional SVG backend (2026-10-07)
+
+The `svg` extra adds the following exact pins; it does not change core runtime
+dependencies. No upstream implementation, binary or font is copied into MoviePy.
+
+| Package | Source and license | Use |
+| --- | --- | --- |
+| `resvg-py==0.2.6` | [Official release and wheels](https://pypi.org/project/resvg-py/0.2.6/); wrapper `LICENSE` in its source distribution is MIT, copyright 2024 baseplate-admin. Its source `Cargo.lock` fixes `resvg` and `usvg` at 0.46.0; resvg offers [MIT](https://github.com/linebender/resvg/blob/v0.46.0/LICENSE-MIT) or [Apache-2.0](https://github.com/linebender/resvg/blob/v0.46.0/LICENSE-APACHE). | Lazy optional static SVG-to-PNG rasterizer. The selected release provides Windows x64 and Linux x64 wheels for both Python 3.9 and 3.12. Newer wrapper releases drop part of that matrix. |
+| `fonttools==4.59.2` | [Official release](https://pypi.org/project/fonttools/4.59.2/) and [versioned MIT license](https://github.com/fonttools/fonttools/blob/4.59.2/LICENSE). Supports Python >=3.9. No fontTools extras are selected. | Read supplied font family names and Unicode cmap coverage. Native font shaping remains in resvg. |
+
+The wrapper's source distribution SHA-256 is
+`dd8942159cbefd3f43389816e90065637dd1e89094f62bc9bd52e62513523444`.
+The accompanying `svg_dependency_lock.json` records official artifact URLs,
+SHA-256 digests for the four target wrapper wheels, the portable fontTools wheel,
+and license metadata for all 80 crates in this source distribution's Cargo.lock.
+Each crate license was checked against its exact-version crates.io record;
+the source checksum is preserved. That list includes build/target dependencies,
+so it is not a claim that every listed crate is linked into every wheel.
+
+The metadata uses MIT, Apache-2.0, BSD, Zlib and related permissive alternatives,
+plus Unicode-3.0 and Apache-2.0 WITH LLVM-exception where recorded. This is a
+source-lock and registry-license review, not a binary composition audit or a
+replacement for complete notices supplied with downloaded wheels. Inspect and
+preserve those notices before redistributing native binaries. A version upgrade
+must repeat provenance, platform, alpha and rendering checks.
+
+The approved Windows CPython 3.12 wrapper wheel and portable fontTools wheel
+were downloaded from the recorded official URLs and verified against their
+SHA-256 digests before installation. The wrapper wheel contains its MIT
+`licenses/LICENSE`; it does not contain a complete per-crate notice bundle.
+The fontTools wheel contains `licenses/LICENSE` and `LICENSE.external`; the
+latter includes SIL OFL-1.1 test-font notices, Adobe AGL/AGLFN BSD-3-Clause,
+cu2qu Apache-2.0, and PyFilesystem2 MIT notices. Keep both files when packaging
+that wheel. The integration does not redistribute either wheel or any of those
+upstream test fonts.
+
+SVG tests generate their small Latin/CJK test font from original geometric
+glyphs at runtime. User-provided production fonts retain their own licenses and
+are neither installed nor distributed by this integration. See `svg.rst` for
+the supported input subset and font handling.

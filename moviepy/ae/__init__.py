@@ -51,6 +51,7 @@ _LAZY = {
     "from_moviepy_effect": "moviepy.ae.effects.bridge",
     "NullLayer": "moviepy.ae.layers.null",
     "SolidLayer": "moviepy.ae.layers.solid",
+    "SVGLayer": "moviepy.ae.layers.svg",
     "TextLayer": "moviepy.ae.text.layer",
     "ParticleLayer": "moviepy.ae.particles.layer",
     "Transform": "moviepy.ae.transform",

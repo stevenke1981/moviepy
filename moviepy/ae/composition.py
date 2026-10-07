@@ -309,6 +309,14 @@ class Composition(VideoClip):
 
         return self.add_layer(TextLayer(text, name, **kwargs))
 
+    def add_svg(self, svg, name="SVG", *, size=None, **kwargs):
+        """Add editable SVG artwork with an explicit raster viewport."""
+        from moviepy.ae.layers.svg import SVGLayer
+
+        return self.add_layer(
+            SVGLayer(svg, name, size=self.size if size is None else size, **kwargs)
+        )
+
     def add_particles(self, name="Particles", *, size=None, **kwargs):
         """Add an analytic particle burst/spray on a fixed canvas."""
         from moviepy.ae.particles import ParticleLayer

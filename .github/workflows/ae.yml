@@ -40,6 +40,8 @@ jobs:
           cache: pip
       - name: Install declared test and lint dependencies
         run: python -m pip install ".[test,lint]" "black==24.4.2"
+      - name: Install pinned optional SVG backend wheels
+        run: python -m pip install --only-binary=:all: --no-deps resvg-py==0.2.6 fonttools==4.59.2
       - name: Run AE suite (local Blender/Godot/model checks are opt-in)
         run: python -m pytest tests/ae -q
       - name: Check Black

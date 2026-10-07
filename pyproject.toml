@@ -40,6 +40,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+svg = [
+    "resvg-py==0.2.6",
+    "fonttools==4.59.2",
+]
 doc = [
     "numpydoc<2.0",
     "Sphinx==6.*",
