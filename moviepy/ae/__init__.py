@@ -55,6 +55,8 @@ _LAZY = {
     "TextLayer": "moviepy.ae.text.layer",
     "ParticleLayer": "moviepy.ae.particles.layer",
     "Transform": "moviepy.ae.transform",
+    "CameraFraming": "moviepy.ae.camera",
+    "pan_zoom": "moviepy.ae.camera",
     "Property": "moviepy.ae.properties.property",
     "Keyframe": "moviepy.ae.properties.keyframe",
     "Ease": "moviepy.ae.properties.easing",
