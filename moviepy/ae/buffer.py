@@ -260,10 +260,33 @@ def _aligned_mask(mask, shape):
 
 def _rgb_rgba(frame, mask):
     """Import numeric RGB codes once, retaining fractional code precision."""
+    if mask is None:
+        return _opaque_rgb_rgba(frame)
     result = np.empty((*frame.shape[:2], 4), dtype=np.float32)
-    result[..., 3] = 1 if mask is None else mask
+    result[..., 3] = mask
     np.divide(frame, np.float32(255), out=result[..., :3], casting="unsafe")
     result[..., :3] *= result[..., 3:4]
+    return result
+
+
+def _opaque_rgb_rgba(frame):
+    """Normalize RGB in bounded contiguous tiles before adding opaque alpha."""
+    import cv2
+
+    result = np.empty((*frame.shape[:2], 4), dtype=np.float32)
+    if not frame.size:
+        return result
+    rows = max(1, 32768 // frame.shape[1])
+    rgb = np.empty((min(rows, frame.shape[0]), frame.shape[1], 3), dtype=np.float32)
+    for top in range(0, frame.shape[0], rows):
+        target = result[top : top + rows]
+        normalized = rgb[: len(target)]
+        # Keep divide's input dtype and float32 output rounding, including
+        # fractional float64 codes; an early cast or reciprocal changes them.
+        np.divide(
+            frame[top : top + rows], np.float32(255), out=normalized, casting="unsafe"
+        )
+        cv2.cvtColor(normalized, cv2.COLOR_RGB2RGBA, dst=target)
     return result
 
 

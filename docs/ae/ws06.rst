@@ -215,8 +215,14 @@ M1 範例
 效能（參考機型，1080p、單執行緒 numpy／OpenCV）
 -----------------------------------------------
 
-* Gaussian Blur ``blurriness=40``（σ=20）約 80–100 ms（純 ``cv2.GaussianBlur``
-  約 55 ms，差額為外擴與夾值）。
+* R93900X 的固定 1080p 基準（單 logical CPU、數值執行緒 1、OpenCL 關閉、
+  暖機 1 次、5 次計時中位數）：Gaussian σ=20 單體約 234 ms；
+  Adjustment + ``GaussianBlur(blurriness=40)`` 約 443 ms，40／150 ms 預算
+  均未達成。kernel、完整解析度採樣、HDR 與邊界規則維持不變。
+* 本輪 Adjustment 的改善來自無遮罩 RGB 影格匯入：保留原輸入 dtype 的
+  除以 255 運算及 float32 輸出捨入，在連續暫存中正規化後加入不透明 alpha。
+  暫存以 32768 像素為上限分列處理；單列更寬時以一列為單位。分數 code、
+  非連續與唯讀來源均保留，含遮罩的既有 premultiply 運算不變。
 * 色彩效果：不透明輸入約 45–90 ms，含 alpha 輸入約 110–155 ms。
 * 調整圖層的混合本身為一次逐像素線性內插；整體成本由效果決定。
 * 尚未有 draft 降階；GPU（``render_gpu``）屬 P3。
