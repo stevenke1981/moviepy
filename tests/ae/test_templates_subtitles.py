@@ -1,0 +1,349 @@
+"""Tests for moviepy.ae.templates.subtitles."""
+
+from pathlib import Path
+
+import pytest
+
+from moviepy.ae.templates.presets import get_preset
+from moviepy.ae.templates.subtitles import (
+    Cue,
+    LayoutError,
+    SubtitleTiming,
+    break_lines,
+    burn_subtitles,
+    check_timing,
+    find_bad_breaks,
+    parse_srt,
+    subtitle_layer,
+    to_ass,
+    to_srt,
+    to_vtt,
+)
+
+
+def m10(text):
+    return 10.0 * len(text)
+
+
+KAIU = Path("C:/Windows/Fonts/kaiu.ttf")
+
+
+# -- Cue ----------------------------------------------------------------- #
+
+
+@pytest.mark.parametrize(
+    "args",
+    [(2, 1, "x"), (-1, 1, "x"), (0, 1, "  "), (float("nan"), 1, "x"), (0, True, "x")],
+)
+def test_cue_validation(args):
+    with pytest.raises(ValueError):
+        Cue(*args)
+
+
+def test_cue_lang_validation_and_normalization():
+    with pytest.raises(ValueError):
+        Cue(0, 1, "x", lang=" ")
+    assert Cue(0, 1, " a \n b ").text == "a\nb"
+
+
+# -- line breaking --------------------------------------------------------- #
+
+
+def test_cjk_break_after_punctuation_and_balanced():
+    for jieba in (True, False):
+        lines = break_lines("今天天氣很好，我們去公園散步。", m10, 100, use_jieba=jieba)
+        assert lines == ["今天天氣很好，", "我們去公園散步。"]
+
+
+def test_cjk_fits_one_line():
+    assert break_lines("你好，世界。", m10, 500) == ["你好，世界。"]
+
+
+def test_protected_term_never_split():
+    term = "臺北故宮博物院"
+    text = "他在臺北故宮博物院裡等候直到夜深了才離開"
+    lines = break_lines(text, m10, 130, protected=[term], allow_char_breaks=True)
+    assert "".join(lines) == text
+    assert any(term in line for line in lines)
+    assert find_bad_breaks(lines, [term]) == []
+    bad = find_bad_breaks(["他在臺北故宮", "博物院裡等候"], [term])
+    assert bad and bad[0].reason == "inside_protected"
+
+
+def test_digit_and_year_runs_not_split():
+    lines = break_lines(
+        "事情發生於2024年十二月之後無人再提", m10, 110, allow_char_breaks=True
+    )
+    joined = "|".join(lines)
+    assert "2024年" in joined and "十二月" in joined
+
+
+def test_kinsoku():
+    text = "「你好」，他說。「再見」，她答。"
+    lines = break_lines(text, m10, 90, allow_char_breaks=True)
+    for line in lines:
+        assert line[0] not in "，。」』"
+        assert line[-1] not in "「『"
+    assert find_bad_breaks(["他說「", "你好」"])[0].reason == "line_end_forbidden"
+    assert find_bad_breaks(["你好", "，他說"])[0].reason == "line_start_forbidden"
+
+
+def test_cjk_without_boundary_raises_unless_opted_in():
+    text = "這是一段沒有任何標點的很長句子必須要換行才行"
+    with pytest.raises(LayoutError):
+        break_lines(text, m10, 130, use_jieba=False)
+    assert len(break_lines(text, m10, 130, allow_char_breaks=True)) == 2
+
+
+def test_english_breaks_at_spaces_only():
+    text = "the quick brown fox jumps over the lazy dog"
+    lines = break_lines(text, len, 25, lang="en")
+    assert " ".join(lines) == text
+    assert all(len(line) <= 25 for line in lines)
+    assert len(lines) == 2
+    assert abs(len(lines[0]) - len(lines[1])) <= 6
+
+
+def test_english_protected_name_and_hyphen_kept():
+    lines = break_lines(
+        "she met Lin Yuqing near the well-known bridge",
+        len,
+        24,
+        lang="en",
+        protected=["Lin Yuqing"],
+    )
+    assert any("Lin Yuqing" in line for line in lines)
+    assert any("well-known" in line for line in lines)
+    assert find_bad_breaks(["she met Lin", "Yuqing today"], ["Lin Yuqing"])
+
+
+def test_layout_error_never_truncates():
+    with pytest.raises(LayoutError):
+        break_lines("aaa bbb ccc ddd eee", len, 7, lang="en")
+    with pytest.raises(LayoutError):
+        break_lines("supercalifragilistic", len, 10, lang="en")
+    with pytest.raises(LayoutError):
+        break_lines("a b c d", len, 3, lang="en", max_lines=1)
+
+
+def test_forced_newlines_respected():
+    assert break_lines("one\ntwo", len, 20, lang="en") == ["one", "two"]
+    with pytest.raises(LayoutError):
+        break_lines("one\ntwo\nthree", len, 20, lang="en")
+
+
+def test_find_bad_breaks_accepts_cues_and_blocks():
+    cues = [Cue(0, 2, "你好，\n世界"), Cue(2, 4, "ab\ncd", "en")]
+    assert find_bad_breaks(cues) == []
+    assert find_bad_breaks(["Lin\\NYuqing"], ["Lin Yuqing"])[0].block == 0
+    assert find_bad_breaks([]) == []
+
+
+# -- formats --------------------------------------------------------------- #
+
+FIXTURE = [Cue(0.5, 3.5, "你好，\n世界", "zh-TW"), Cue(3.5, 5.0, "A & B", "en")]
+
+
+def test_srt_exact():
+    assert to_srt(FIXTURE) == (
+        "1\n00:00:00,500 --> 00:00:03,500\n你好，\n世界\n\n"
+        "2\n00:00:03,500 --> 00:00:05,000\nA & B\n\n"
+    )
+    assert "A &amp; B" in to_srt(FIXTURE, escape=True)
+
+
+def test_vtt_exact():
+    assert to_vtt(FIXTURE) == (
+        "WEBVTT\n\n"
+        "00:00:00.500 --> 00:00:03.500\n你好，\n世界\n\n"
+        "00:00:03.500 --> 00:00:05.000\nA &amp; B\n\n"
+    )
+
+
+def test_ass_exact_lines():
+    style = get_preset("nightlamp_story").subtitles
+    lines = to_ass(FIXTURE, style, (1920, 1080)).splitlines()
+    assert "PlayResX: 1920" in lines and "PlayResY: 1080" in lines
+    assert (
+        "Style: Primary,Microsoft JhengHei,72,&H00FFFFFF,&H00FFFFFF,&H00000000,"
+        "&H00000000,0,0,0,0,100,100,0,0,1,4,0,2,134,134,60,1"
+    ) in lines
+    assert (
+        "Style: Secondary,Microsoft JhengHei,42,&H00EBEBEB,&H00EBEBEB,&H00000000,"
+        "&H00000000,0,0,0,0,100,100,0,0,1,4,0,2,134,134,60,1"
+    ) in lines
+    assert "Dialogue: 0,0:00:00.50,0:00:03.50,Primary,,0,0,60,,你好，\\N世界" in lines
+    assert "Dialogue: 0,0:00:03.50,0:00:05.00,Secondary,,0,0,60,,A & B" in lines
+    half = to_ass(FIXTURE, style, (1280, 720))
+    assert "Style: Primary,Microsoft JhengHei,48," in half
+
+
+def test_ass_lifts_primary_over_overlapping_secondary():
+    style = get_preset("nightlamp_story").subtitles
+    cues = [Cue(0, 2, "主", "zh-TW"), Cue(0, 2, "sub", "en")]
+    ass = to_ass(cues, style)
+    assert "Primary,,0,0,60,," not in ass
+    assert "Secondary,,0,0,60,,sub" in ass
+
+
+def test_ass_rejects_control_codes():
+    style = get_preset("nightlamp_story").subtitles
+    with pytest.raises(ValueError):
+        to_ass([Cue(0, 1, "a{b}")], style)
+
+
+def test_srt_round_trip():
+    back = parse_srt(to_srt(FIXTURE), "zh-TW")
+    assert [(c.start, c.end, c.text) for c in back] == [
+        (c.start, c.end, c.text) for c in FIXTURE
+    ]
+    crlf = "\ufeff" + to_srt(FIXTURE).replace("\n", "\r\n")
+    assert len(parse_srt(crlf)) == 2
+    with pytest.raises(ValueError):
+        parse_srt("1\nnot a time\ntext\n")
+
+
+# -- timing ---------------------------------------------------------------- #
+
+
+def test_timing_checks():
+    cues = [
+        Cue(0, 0.5, "short", "en"),
+        Cue(1, 9, "long one", "en"),
+        Cue(10, 11, "x" * 20, "en"),
+        Cue(10.5, 13, "overlap", "en"),
+        Cue(10.5, 13, "不同語言可以重疊", "zh-TW"),
+        Cue(20, 21, "這是一個很長的字幕超過十二字每秒", "zh-TW"),
+    ]
+    kinds = {(i.index, i.kind) for i in check_timing(cues)}
+    assert (0, "too_short") in kinds
+    assert (1, "too_long") in kinds
+    assert (2, "cps") in kinds
+    assert (3, "overlap") in kinds
+    assert (5, "cps") in kinds
+    assert not any(i == 4 for i, _ in kinds)
+
+
+def test_timing_defaults_match_r23_profile():
+    t = SubtitleTiming()
+    assert (t.min_duration, t.max_duration) == (1.0, 7.0)
+    assert (t.limit_cps("zh-TW"), t.limit_cps("zh-CN"), t.limit_cps("en")) == (
+        12.0,
+        12.0,
+        17.0,
+    )
+    prof = {"min_duration": 0.8, "languages": {"en": {"max_cps": 15}}}
+    assert SubtitleTiming.from_profile(prof).limit_cps("en") == 15.0
+    assert check_timing([Cue(0, 2, "fine", "en")]) == []
+
+
+# -- layer ------------------------------------------------------------------ #
+
+
+@pytest.fixture
+def preset():
+    return get_preset("nightlamp_story")
+
+
+def test_layer_transparent_between_cues_and_opaque_when_active(preset):
+    size = (640, 360)
+    layer = subtitle_layer(
+        [Cue(1, 2, "Hello there"), Cue(3, 4, "Second line")],
+        preset,
+        font="default",
+        size=size,
+    )
+    assert layer.render(0.5) is None  # outside the layer window
+    gap = layer.render(2.5)
+    assert gap is not None and gap.rgba[..., 3].max() == 0.0
+    active = layer.render(1.5)
+    assert active.rgba[..., 3].max() == 1.0
+    x0, y0 = active.offset
+    assert y0 >= size[1] // 2  # bottom region
+    assert y0 + active.size[1] <= size[1]
+    assert 0 <= x0 and x0 + active.size[0] <= size[0]
+    solid = active.rgba[..., 3] > 0.99
+    brightness = active.rgba[..., :3].max(axis=-1)
+    assert (brightness[solid] < 0.1).any()  # black outline
+    assert (brightness > 0.99).any()  # white fill
+
+
+def test_bilingual_primary_above_secondary(preset):
+    size = (640, 360)
+    layer = subtitle_layer(
+        [Cue(0, 2, "Primary text")],
+        preset,
+        secondary=[Cue(0, 2, "Secondary text", "en")],
+        font="default",
+        size=size,
+    )
+    both = layer.render(1.0)
+    solo = subtitle_layer(
+        [Cue(0, 2, "Primary text")], preset, font="default", size=size
+    ).render(1.0)
+    assert both.size[1] > solo.size[1]
+    assert both.offset[1] < solo.offset[1]  # taller block grows upward
+    assert both.offset[1] + both.size[1] == solo.offset[1] + solo.size[1]
+
+
+def test_layer_cache_reuse(preset):
+    layer = subtitle_layer(
+        [Cue(0, 4, "Cached cue")], preset, font="default", size=(640, 360)
+    )
+    first = layer.source_buffer(1.0)
+    for t in (1.1, 2.0, 3.9):
+        assert layer.source_buffer(t) is first
+    assert layer.rasters == 1
+    hits, misses, _, _ = layer.cache_info()
+    assert (hits, misses) == (3, 1)
+
+
+def test_layer_lru_eviction(preset):
+    cues = [Cue(i, i + 0.5, f"cue {i}") for i in range(6)]
+    layer = subtitle_layer(cues, preset, font="default", size=(640, 360), cache_size=2)
+    for i in range(6):
+        layer.source_buffer(i + 0.1)
+    assert layer.cache_info()[2] == 2
+
+
+def test_layer_wraps_long_cue_and_raises_when_impossible(preset):
+    text = "word " * 12
+    layer = subtitle_layer(
+        [Cue(0, 3, text.strip(), "en")], preset, font="default", size=(640, 360)
+    )
+    assert 1 < len(layer._lanes["primary"]["lines"][0]) <= 2
+    with pytest.raises(LayoutError):
+        subtitle_layer(
+            [Cue(0, 3, "x" * 400, "en")], preset, font="default", size=(640, 360)
+        )
+
+
+def test_missing_font_raises(preset):
+    with pytest.raises(FileNotFoundError):
+        subtitle_layer([Cue(0, 1, "x")], preset, font="Z:/nope/missing.ttf")
+
+
+def test_burn_subtitles_renders_frames(preset):
+    from moviepy.ae.composition import Composition
+
+    comp = Composition(size=(320, 180), fps=10, duration=3, bg_color=(0, 0, 0))
+    out = burn_subtitles(comp, [Cue(1, 2, "Burned in")], preset, font="default")
+    assert out is comp
+    blank = comp.get_frame(0.2)
+    shown = comp.get_frame(1.5)
+    assert blank.max() == 0
+    assert shown[90:].max() > 200 and shown[:90].max() == 0
+
+
+@pytest.mark.skipif(not KAIU.is_file(), reason="kaiu.ttf not installed")
+def test_cjk_layer_with_kaiu(preset):
+    layer = subtitle_layer(
+        [Cue(0, 3, "林雨晴慢慢讀信，窗外的燈火一盞一盞亮起。")],
+        preset,
+        secondary=[Cue(0, 3, "Lin Yuqing reads the letter slowly.", "en")],
+        font=str(KAIU),
+        size=(1280, 720),
+    )
+    buf = layer.render(1.0)
+    assert buf.rgba[..., 3].max() == 1.0
+    assert buf.offset[1] > 360
