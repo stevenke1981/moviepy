@@ -740,6 +740,19 @@ FFmpeg（影片編碼）
 
 正式輸出使用 preset 的尺寸與幀率（1920×1080，24 fps）。
 
+並行渲染與硬體編碼
+~~~~~~~~~~~~~~~~~~
+
+``render`` 預設以多個程序並行渲染各幀，並由單一 FFmpeg 依序編碼，因此輸出畫面與單程序渲染逐幀相同。``--workers`` 預設為 ``min(CPU 核心數 - 1, 12)``；``--workers 1`` 回到單程序。
+
+``--encoder auto``（預設）會實際試編一小段影片確認 NVIDIA NVENC 可用，可用時採 ``h264_nvenc``，否則退回 ``libx264``。也可明確指定 ``libx264``、``h264_nvenc``、``hevc_nvenc`` 或 ``libx265``。
+
+.. code-block:: console
+
+    python -m moviepy.ae.templates render E:\episodes\ep012\episode.json E:\episodes\ep012\final --workers 8 --encoder h264_nvenc
+
+1080p 實測（16 核心、RTX 3070 Ti、51.6 秒成片）：單程序 libx264 約 75 秒，並行＋NVENC 約 38 秒，約快 2 倍。單幀合成已大量使用記憶體頻寬，工作程序超過約 8 個後幾乎不再加速；每個工作程序啟動時會各自組裝一次 episode（約 2 秒）。``libx264`` 的品質預設為 CRF 18（較舊版的 23 檔案大、畫質高）。
+
 無損母帶
 ~~~~~~~~
 

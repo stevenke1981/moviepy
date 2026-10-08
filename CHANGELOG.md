@@ -23,6 +23,7 @@ This mean you need to specifically set `bg_color=None` if you want to generate a
 - Fix incorrect handling of lines with a format different from "key: value" during FFmpeg infos parsing (see #2311, #1860, #2418, #2470)
 
 ### Added
+- Parallel AE frame rendering (`moviepy.ae.parallel`) feeding one FFmpeg encoder in order, with automatic NVENC detection and libx264 fallback; `render --workers/--encoder`. A 1080p episode exports about 2x faster with byte-identical frames.
 - Production templates in `moviepy.ae.templates` distilled from the Night Lamp workflows: channel presets, episode-media title bookends, subtitle layout/burn-in/SRT/VTT/ASS, sub-pixel Ken Burns with a motion check, chapter tags, vertical quotes on bamboo or paper, and a declarative `episode.json` build with narration/music mixing and a `python -m moviepy.ae.templates init|validate|render` CLI. See [new episode workflow](docs/ae/episode_workflow.rst) and [templates](docs/ae/templates.rst).
 - Godot requirements as data (`GODOT_REQUIREMENTS`, `[tool.moviepy.godot]`) with a non-raising `python -m moviepy.ae.three_d.requirements` environment check.
 - 21 new AE effects across nine categories: Directional/Radial Blur, Sharpen, Unsharp Mask; Exposure, Hue/Saturation, Levels, Vibrance; Wave Warp, Twirl, Mirror, Spherize; Noise; Posterize, Mosaic, Vignette; Linear/Radial/Iris Wipe, Venetian Blinds and world-anchored Block Dissolve. All are premultiplied-alpha correct, deterministic and identity at default strength.
