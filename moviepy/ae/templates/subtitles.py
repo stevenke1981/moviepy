@@ -12,7 +12,8 @@ active cue(s) at time ``t`` from an LRU cache of rendered blocks.
 Notes
 -----
 CJK text may only break at word boundaries. When ``jieba`` is importable it
-supplies them (protected terms are added to its dictionary); otherwise a
+supplies them (its global dictionary is never mutated: protected terms are
+segmented around, not added); otherwise a
 deterministic fallback trusts punctuation, closing brackets, spaces and
 CJK/Latin script changes only. A long unpunctuated sentence then raises
 ``LayoutError`` instead of being cut mid-word; pass ``allow_char_breaks=True``
@@ -185,20 +186,37 @@ def _protected_spans(text, protected, ignore_case):
     return spans
 
 
-def _jieba_bounds(text, protected):
+def _merge_spans(spans):
+    merged = []
+    for start, end in sorted(spans):
+        if merged and start <= merged[-1][1]:
+            merged[-1] = (merged[-1][0], max(end, merged[-1][1]))
+        else:
+            merged.append((start, end))
+    return merged
+
+
+def _jieba_bounds(text, spans):
+    """Word boundaries from jieba, or None when it is not installed.
+
+    jieba's dictionary is process-global, so protected terms are *not* added
+    to it. Instead the text is cut at the protected spans and each remaining
+    piece is segmented on its own; a span's edges are boundaries by
+    construction, and cuts inside a span are rejected by the caller.
+    """
     try:
         import jieba
     except ImportError:
         return None
     jieba.setLogLevel(60)
-    for term in protected:
-        term = str(term).strip()
-        if len(term) >= 2:
-            jieba.add_word(term, freq=2_000_000)
     bounds, pos = set(), 0
-    for word in jieba.lcut(text, HMM=False):
-        pos += len(word)
-        bounds.add(pos)
+    for start, end in [*_merge_spans(spans), (len(text), len(text))]:
+        offset = pos
+        for word in jieba.lcut(text[pos:start], HMM=False):
+            offset += len(word)
+            bounds.add(offset)
+        bounds.add(end)
+        pos = end
     return bounds
 
 
@@ -227,7 +245,7 @@ class _CJKAnalysis:
         self.latin = [
             m.span() for m in _LATIN_RUN.finditer(text) if m.end() - m.start() > 1
         ]
-        bounds = _jieba_bounds(text, protected) if use_jieba else None
+        bounds = _jieba_bounds(text, self.protected) if use_jieba else None
         self.bounds = bounds if bounds is not None else set()
         self.bounds |= _fallback_bounds(text) if bounds is None else set()
 
@@ -391,8 +409,9 @@ def break_lines(
     if not segments:
         raise ValueError("text must not be empty")
     result = []
-    for segment in segments:
-        budget = max_lines - len(result) - (len(segments) - 1 - len(result))
+    for n, segment in enumerate(segments):
+        # Every segment still to come needs at least one line.
+        budget = max_lines - len(result) - (len(segments) - 1 - n)
         if budget < 1:
             raise LayoutError(
                 f"cannot fit {text!r} in {max_lines} lines of width {max_width:g}"
@@ -663,6 +682,13 @@ def _escape(text):
 def to_srt(cues, *, escape=False):
     """Serialize cues as SubRip text (millisecond times, UTF-8 friendly).
 
+    SRT has no escape syntax and players (VLC, mpv, YouTube, Premiere) show
+    the characters literally, so the text is written **verbatim** by default;
+    HTML-escaping would display ``&amp;`` on screen. R23 always escapes
+    (``html.escape(quote=False)``) because its SRT feeds an HTML-aware
+    importer; pass ``escape=True`` for that behaviour. WebVTT *is* markup, so
+    ``to_vtt`` always escapes, exactly like R23.
+
     >>> print(to_srt([Cue(0, 1.5, "a\\nb")]), end="")
     1
     00:00:00,000 --> 00:00:01,500
@@ -758,6 +784,8 @@ def to_ass(
     primary_lang=None,
     font_name="Microsoft JhengHei",
     secondary_font_name=None,
+    font=None,
+    secondary_font=None,
 ):
     """Serialize cues as an ASS script that mirrors the burned-in layout.
 
@@ -772,6 +800,15 @@ def to_ass(
     primary_lang : str, optional
         Language drawn large and above; defaults to the first cue's language.
         Every other language uses the secondary style, placed at the bottom.
+    font_name, secondary_font_name : str, optional
+        Font *family names* written into the ASS styles (what the player loads).
+    font, secondary_font : str, path or PIL font, optional
+        Font *files* (or ``"default"``) used only to measure line heights. With
+        a ``font`` the lift of a primary cue over an overlapping secondary cue
+        equals the burned-in ``SubtitleLayer`` stack exactly (line height,
+        1.1 leading, stroke padding and ``line_gap`` from the real metrics);
+        without one a ``1.2 * size`` per row approximation is used.
+        ``secondary_font`` defaults to ``font``.
 
     Examples
     --------
@@ -800,6 +837,12 @@ def to_ass(
         )
 
     secondary = [c for c in cues if c.lang != primary_lang]
+    measured = None
+    if font is not None:
+        sec_font = _load_font(
+            secondary_font if secondary_font is not None else font, secondary_px
+        )
+        measured = (sec_font, int(round(style.outline_width * scale)), int(round(gap)))
     lines = [
         "[Script Info]",
         "; Generated by moviepy.ae.templates.subtitles",
@@ -838,7 +881,11 @@ def to_ass(
             for other in secondary:
                 if other.start < cue.end and cue.start < other.end:
                     rows = other.text.count("\n") + 1
-                    lift = max(lift, int(round(rows * secondary_px * 1.2 + gap)))
+                    if measured is None:
+                        height = rows * secondary_px * 1.2 + gap
+                    else:
+                        height = _block_height(*measured[:2], rows) + measured[2]
+                    lift = max(lift, int(round(height)))
         lines.append(
             f"Dialogue: 0,{_ass_clock(cue.start)},{_ass_clock(cue.end)},"
             f"{'Primary' if is_primary else 'Secondary'},,0,0,{margin + lift},,"
@@ -864,6 +911,19 @@ def _load_font(spec, px):
     return spec  # an already-built PIL font object
 
 
+def _block_metrics(font, stroke):
+    """Return ``(line_height, line_step, pad)`` of one rasterised text block."""
+    ascent, descent = font.getmetrics()
+    line_h = ascent + descent
+    return line_h, int(round(line_h * 1.1)), stroke + 2
+
+
+def _block_height(font, stroke, rows):
+    """Pixel height of a ``rows``-line block exactly as ``_raster`` draws it."""
+    line_h, step, pad = _block_metrics(font, stroke)
+    return step * (rows - 1) + line_h + 2 * pad
+
+
 class SubtitleLayer(Layer):
     """AE layer that draws the cue(s) active at ``t`` from a cached raster set.
 
@@ -886,7 +946,10 @@ class SubtitleLayer(Layer):
     protected : iterable of str, optional
         Glossary terms that line breaking must keep whole.
     cache_size : int, optional
-        LRU capacity for composed frames and rendered blocks.
+        LRU capacity for composed frames and rendered blocks. A composed
+        1080p frame is about 2-7 MB (float32 RGBA of the text box only), so the
+        default 16 bounds the layer near 100 MB while still covering sequential
+        playback; raise it for scrubbing across many cues.
 
     Notes
     -----
@@ -905,7 +968,7 @@ class SubtitleLayer(Layer):
         secondary_font=None,
         size=None,
         protected=(),
-        cache_size=64,
+        cache_size=16,
         name="Subtitles",
         **kwargs,
     ):
@@ -930,6 +993,7 @@ class SubtitleLayer(Layer):
             "secondary": _load_font(secondary_font, self._px["secondary"]),
         }
         self._protected = tuple(protected)
+        self._widths = {}
         self._max_width = style.max_width * self._size[0]
         self._lanes = {
             "primary": self._prepare(cues, "primary"),
@@ -952,7 +1016,15 @@ class SubtitleLayer(Layer):
 
     def _measure(self, role):
         font, pad = self._fonts[role], 2 * self._stroke
-        return lambda text: font.getlength(text) + pad
+        cache = self._widths.setdefault(role, {})
+
+        def measure(text):
+            width = cache.get(text)
+            if width is None:
+                width = cache[text] = font.getlength(text) + pad
+            return width
+
+        return measure
 
     def _lines_for(self, cue, role):
         measure = self._measure(role)
@@ -1038,12 +1110,9 @@ class SubtitleLayer(Layer):
             if role == "primary"
             else (self._style.secondary_color)
         )
-        ascent, descent = font.getmetrics()
-        line_h = ascent + descent
-        pad = stroke + 2
-        step = int(round(line_h * 1.1))
+        line_h, step, pad = _block_metrics(font, stroke)
         width = int(math.ceil(max(font.getlength(line) for line in lines))) + 2 * pad
-        height = step * (len(lines) - 1) + line_h + 2 * pad
+        height = _block_height(font, stroke, len(lines))
         outline_mask = Image.new("L", (width, height), 0)
         fill_mask = Image.new("L", (width, height), 0)
         d_out, d_fill = ImageDraw.Draw(outline_mask), ImageDraw.Draw(fill_mask)

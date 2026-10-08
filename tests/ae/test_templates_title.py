@@ -451,3 +451,83 @@ def test_cjk_card_with_preset_font():
     assert box[1] >= my and box[3] <= 1080 - my
     for line in comp.title_report["title_lines"]:
         assert line[0] not in NO_LINE_START and line[-1] not in NO_LINE_END
+
+
+# --------------------------------------------------------------------------- #
+# review regressions
+# --------------------------------------------------------------------------- #
+
+
+def test_blank_lines_and_whitespace_copy_do_not_add_layers_or_height():
+    preset = small_preset((320, 180))
+    clean = build_title_card(TitleCardSpec(title="Night"), preset, fonts=LATIN)
+    padded = build_title_card(
+        TitleCardSpec(title="\nNight\n ", brand="  ", subtitle=" \n "),
+        preset,
+        fonts=LATIN,
+    )
+    assert padded.title_report["title_lines"] == ["Night"]
+    assert padded.title_report["subtitle_lines"] == []
+    assert [layer.name for layer in padded.layers] == [
+        layer.name for layer in clean.layers
+    ]
+    assert padded.title_report["ink_boxes"] == clean.title_report["ink_boxes"]
+
+
+def test_fit_lines_drops_blank_explicit_lines():
+    assert fit_lines("a\n\n b \n", None, 1000, 20, 10) == (["a", "b"], 20)
+    assert fit_lines("\n  \n", None, 1000, 20, 10) == ([], 20)
+
+
+def test_entrance_ease_survives_a_zero_start_time():
+    preset = small_preset((320, 180))
+    spec = TitleCardSpec(title="Hi", title_start=0.0, title_duration=1.0)
+    title = next(
+        layer
+        for layer in build_title_card(spec, preset, fonts=LATIN).layers
+        if layer.name == "Title"
+    )
+    # Ease-out cubic is well ahead of linear a quarter of the way in.
+    assert title.transform.opacity.value_at(0.25) > 60.0
+
+
+def test_non_finite_float_frames_are_rejected():
+    preset = small_preset()
+    frame = np.full((36, 64, 3), 100.0)
+    frame[3, 3, 1] = np.nan
+    with pytest.raises(ValueError, match="finite"):
+        media_background(frame, preset)
+
+
+@pytest.mark.parametrize("size", [(1081, 607), (641, 361)])
+def test_odd_canvas_with_background_stays_inside_scaled_margin(size):
+    base = get_preset("nightlamp_story")
+    preset = base.with_overrides(size=size)
+    assert preset.safe_margin[1] == pytest.approx(base.safe_margin[1] * size[1] / 1080)
+    frame = np.random.default_rng(1).integers(0, 255, (50, 120, 3), dtype=np.uint8)
+    background = media_background(frame, preset)
+    spec = TitleCardSpec(title="Night Lamp", brand="LAMP", subtitle="A quiet hook.")
+    comp = build_title_card(spec, preset, background, fonts=LATIN)
+    mx, my = preset.safe_margin
+    for box in comp.title_report["ink_boxes"].values():
+        assert box[0] >= mx - 1 and box[2] <= size[0] - mx + 1
+        assert box[1] >= my - 1 and box[3] <= size[1] - my + 1
+    out = comp.get_frame(2.0)
+    assert out.shape == (size[1], size[0], 3)
+
+
+def test_baked_cover_matches_transform_cover():
+    preset = small_preset((96, 54))
+    rng = np.random.default_rng(5)
+    base = rng.integers(0, 255, (9, 16, 3), dtype=np.uint8)
+    frame = np.kron(base, np.ones((20, 20, 1), np.uint8))  # 320x180 smooth blocks
+    baked = media_background(frame, preset, overlay_opacity=0.0)
+    live = media_background(frame, preset, overlay_opacity=0.0, bake=False)
+    assert baked.footage.source_size == preset.size
+    assert live.footage.source_size == (320, 180)
+    a = compose(baked.layers, preset).get_frame(0.0).astype(int)
+    b = compose(live.layers, preset).get_frame(0.0).astype(int)
+    assert np.abs(a - b).mean() < 6.0
+    # Same provenance either way; the bake is an implementation detail.
+    assert baked.provenance["crop_box"] == live.provenance["crop_box"]
+    assert baked.provenance["baked"] is True and live.provenance["baked"] is False

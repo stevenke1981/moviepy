@@ -201,7 +201,8 @@ def fit_lines(
     is tried; wrapping (at most ``max_lines`` lines, balanced) only happens at
     ``min_size``. Breaks obey the R23 ``NO_LINE_START``/``NO_LINE_END``
     punctuation rules, ASCII words break only at spaces, and ``keep_together``
-    terms are never split. Explicit newlines are kept as given.
+    terms are never split. Explicit newlines are kept as given; blank lines and
+    surrounding spaces are dropped (they would only add empty height).
 
     Parameters
     ----------
@@ -239,12 +240,12 @@ def fit_lines(
     >>> size, len(lines) > 1
     (20, True)
     """
-    if not text:
-        return [], int(size)
     size, min_size = int(size), int(min_size)
     if min_size > size or min_size < 1:
         raise ValueError("min_size must be in [1, size]")
-    explicit = text.split("\n")
+    explicit = [line.strip() for line in text.split("\n") if line.strip()]
+    if not explicit:
+        return [], size
     if len(explicit) > max_lines:
         raise ValueError(f"text has more than {max_lines} lines")
     for current in range(size, min_size - 1, -1):
@@ -254,7 +255,9 @@ def fit_lines(
     measure = _Measure(font_path, min_size, tracking, font_index)
     if len(explicit) == 1:
         for n_lines in range(2, max_lines + 1):
-            lines = _wrap(text, measure, max_width, n_lines, tuple(keep_together))
+            lines = _wrap(
+                explicit[0], measure, max_width, n_lines, tuple(keep_together)
+            )
             if lines is not None:
                 return lines, min_size
     raise ValueError(
@@ -391,9 +394,9 @@ class TitleCardSpec:
     def entrance_end(self):
         """Time at which the last entrance finishes."""
         ends = [self.title_start + self.title_duration]
-        if self.brand:
+        if self.brand.strip():
             ends.append(self.brand_start + self.brand_duration)
-        if self.subtitle:
+        if self.subtitle.strip():
             ends.append(self.subtitle_start + self.subtitle_duration)
         return max(ends)
 
@@ -477,10 +480,17 @@ def _text_layer(name, lines, font_path, size, tracking, leading, color, align, p
 
 
 def _keys(items):
-    """Build strictly increasing keyframes, dropping duplicate times."""
+    """Build strictly increasing keyframes, merging duplicate times.
+
+    A repeated time with the same value only contributes its outgoing ease
+    (so ``title_start=0`` keeps the entrance curve instead of going linear); a
+    repeated time with a different value is dropped.
+    """
     result, last = [], -math.inf
     for time, value, ease in items:
         if time <= last + 1e-9:
+            if ease is not None and result and result[-1].value == value:
+                result[-1] = Keyframe(result[-1].time, value, out_ease=ease)
             continue
         result.append(Keyframe(time, value, out_ease=ease))
         last = time
@@ -552,6 +562,7 @@ def build_title_card(spec, preset, background=None, *, fonts=None, transparent=F
     ((1920, 1080), ['Title', 'Rule', 'Brand'])
     """
     size_w, size_h = preset.size
+    brand, subtitle = spec.brand.strip(), spec.subtitle.strip()
     s = preset.scale
     margin_x, margin_y = preset.safe_margin
     token = {**TOKENS["common"], **TOKENS[spec.role]}
@@ -569,7 +580,7 @@ def build_title_card(spec, preset, background=None, *, fonts=None, transparent=F
     title_font = _resolve_font(preset, fonts, "title")
     body_font = _resolve_font(preset, fonts, "body")
     _check_glyphs(spec.title, title_font, "title")
-    _check_glyphs(spec.brand + spec.subtitle, body_font, "body text")
+    _check_glyphs(brand + subtitle, body_font, "body text")
 
     def px(value):
         return value * s
@@ -584,9 +595,9 @@ def build_title_card(spec, preset, background=None, *, fonts=None, transparent=F
         keep_together=spec.title_keep_together,
     )
     sub_lines, sub_size = [], 0
-    if spec.subtitle:
+    if subtitle:
         sub_lines, sub_size = fit_lines(
-            spec.subtitle,
+            subtitle,
             body_font,
             col_w,
             round(px(token["subtitle_size"])),
@@ -602,10 +613,10 @@ def build_title_card(spec, preset, background=None, *, fonts=None, transparent=F
     accent = tuple(preset.color("lamp", (217, 164, 95)))
 
     entries = []  # (name, layer, info, gap_before, timing, rise)
-    if spec.brand:
+    if brand:
         layer, info = _text_layer(
             "Brand",
-            [spec.brand],
+            [brand],
             body_font,
             round(px(token["brand_size"])),
             px(token["brand_tracking"]),
@@ -629,7 +640,7 @@ def build_title_card(spec, preset, background=None, *, fonts=None, transparent=F
         max(1, round(px(token["rule_height"]))),
     )
     if spec.rule:
-        gap = px(token["brand_rule_gap"]) if spec.brand else 0
+        gap = px(token["brand_rule_gap"]) if brand else 0
         rule = SolidLayer("Rule", color=accent, size=(rule_w, rule_h))
         info = {
             "size": (rule_w, rule_h),

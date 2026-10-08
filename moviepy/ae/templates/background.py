@@ -109,6 +109,10 @@ def _opaque_rgb(array, label):
             )
         array = array[..., :3]
     if array.dtype != np.uint8:
+        if array.dtype.kind not in "fiub":
+            raise ValueError(f"{label} must have a numeric dtype")
+        if array.dtype.kind == "f" and not np.all(np.isfinite(array)):
+            raise ValueError(f"{label} must contain only finite values")
         array = np.clip(np.rint(array), 0, 255).astype(np.uint8)
     return np.ascontiguousarray(array)
 
@@ -165,6 +169,9 @@ class MediaBackground:
         focal point, sizes and overlay settings.
     frame : numpy.ndarray
         The uint8 RGB still, shared by every layer set built from it.
+    bake : bool
+        Whether layers carry the cover crop pre-resampled to the canvas (see
+        ``media_background``); baked canvas-size frames are cached per size.
     """
 
     footage: AVLayer
@@ -174,6 +181,8 @@ class MediaBackground:
     size: tuple = (1920, 1080)
     focal_point: tuple = (0.5, 0.5)
     overlay_color: tuple = (0, 0, 0)
+    bake: bool = True
+    _baked: dict = field(default_factory=dict, repr=False, compare=False)
 
     @property
     def layers(self):
@@ -202,6 +211,7 @@ class MediaBackground:
             self.overlay_color,
             self.overlay.transform.opacity,
             duration,
+            self._baked if self.bake else None,
         )
         return footage, overlay
 
@@ -212,11 +222,54 @@ def _axis_scale(dest, crop):
     return dest / crop
 
 
-def _build_layers(frame, size, focal_point, color, opacity, duration):
+def _bake_cover(frame, box, size):
+    """Resample the crop ``box`` of ``frame`` once to exactly ``size`` pixels.
+
+    The box is widened to whole source pixels (under one pixel of drift) and
+    resized with an area filter when shrinking, linear when enlarging. Doing
+    this once instead of inside every rendered frame keeps a 4000x3000 still
+    as cheap as a 1080p one.
+    """
+    import cv2
+
+    height, width = frame.shape[:2]
+    x0, y0 = (
+        max(0, int(math.floor(box[0] + 1e-6))),
+        max(0, int(math.floor(box[1] + 1e-6))),
+    )
+    x1 = min(width, max(x0 + 1, int(math.ceil(box[2] - 1e-6))))
+    y1 = min(height, max(y0 + 1, int(math.ceil(box[3] - 1e-6))))
+    region = frame[y0:y1, x0:x1]
+    shrink = size[0] <= region.shape[1] and size[1] <= region.shape[0]
+    out = cv2.resize(
+        region,
+        (int(size[0]), int(size[1])),
+        interpolation=cv2.INTER_AREA if shrink else cv2.INTER_LINEAR,
+    )
+    out = np.ascontiguousarray(out)
+    out.setflags(write=False)
+    return out
+
+
+def _build_layers(frame, size, focal_point, color, opacity, duration, bake=None):
     from moviepy import ImageClip
 
     height, width = frame.shape[:2]
     box = cover_crop((width, height), size, focal_point)
+    if bake is not None:
+        key = (tuple(size), tuple(focal_point))
+        if key not in bake:
+            bake[key] = _bake_cover(frame, box, size)
+        clip = ImageClip(bake[key], duration=duration)
+        footage = AVLayer(
+            clip, "Episode media", transform=Transform(anchor_point=(0, 0))
+        )
+        overlay = SolidLayer("Media overlay", color=color, size=size)
+        overlay.transform.opacity = opacity
+        if duration is not None:
+            footage.out_point = duration
+            overlay.out_point = duration
+        return footage, overlay
     # Align the first and last destination pixel centres with the crop's first
     # and last source pixel centres, so edge pixels sample inside the footage
     # (no half-transparent border). The per-axis difference from the exact
@@ -253,6 +306,7 @@ def media_background(
     overlay_opacity=None,
     overlay_color=None,
     duration=None,
+    bake=True,
 ):
     """Build the episode background for ``preset`` from required media.
 
@@ -275,6 +329,14 @@ def media_background(
         RGB codes or ``#RRGGBB``; defaults to ``preset.overlay_color``.
     duration : float, optional
         Layer length in seconds; ``None`` leaves the layers open ended.
+    bake : bool, optional
+        ``True`` (default) resamples the cover crop once to the canvas size, so
+        the footage layer has an identity ``Transform`` and every frame only
+        blits canvas-sized pixels (about 2-4x faster per 1080p frame than
+        re-scaling a 2000x1200 or 4000x3000 still each time). ``False`` keeps
+        the full still and covers the canvas with ``Transform.scale`` and
+        ``position``, which stay editable (for example to push in on the
+        footage); ``frame`` always holds the original still either way.
 
     Returns
     -------
@@ -363,10 +425,15 @@ def media_background(
         frame_sha256=hashlib.sha256(frame.tobytes()).hexdigest(),
         overlay={"opacity": opacity, "color": list(color)},
     )
+    bake = bool(bake)
+    provenance["baked"] = bake
+    cache = {}
     footage, overlay = _build_layers(
-        frame, size, focal, color, opacity * 100.0, duration
+        frame, size, focal, color, opacity * 100.0, duration, cache if bake else None
     )
-    return MediaBackground(footage, overlay, provenance, frame, size, focal, color)
+    return MediaBackground(
+        footage, overlay, provenance, frame, size, focal, color, bake, cache
+    )
 
 
 def _luminance(rgb):

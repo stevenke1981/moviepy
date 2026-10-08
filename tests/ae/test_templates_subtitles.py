@@ -347,3 +347,73 @@ def test_cjk_layer_with_kaiu(preset):
     buf = layer.render(1.0)
     assert buf.rgba[..., 3].max() == 1.0
     assert buf.offset[1] > 360
+
+
+# -- review regressions ------------------------------------------------------ #
+
+
+def test_protected_terms_do_not_mutate_global_jieba():
+    jieba = pytest.importorskip("jieba")
+    jieba.setLogLevel(60)
+    term = "測試專屬詞彙甲乙丙"
+    before = jieba.lcut("今天" + term + "很好", HMM=False)
+    freq_before = len(jieba.dt.FREQ) if jieba.dt.initialized else None
+    lines = break_lines(
+        "今天" + term + "很好，我們去公園散步。",
+        m10,
+        120,
+        protected=[term],
+    )
+    assert any(term in line for line in lines)  # kept whole
+    assert term not in jieba.dt.FREQ
+    assert jieba.lcut("今天" + term + "很好", HMM=False) == before
+    if freq_before is not None:
+        assert len(jieba.dt.FREQ) == freq_before
+    find_bad_breaks(["今天" + term, "很好"], [term])
+    assert term not in jieba.dt.FREQ
+
+
+def test_protected_term_edges_are_word_boundaries():
+    # The term is glued to neighbours that jieba would otherwise merge with it.
+    text = "他說林雨晴慢慢讀信，窗外的燈火亮起。"
+    lines = break_lines(text, m10, 110, protected=["林雨晴"])
+    assert "".join(lines) == text
+    assert all("林雨晴" in line or "林" not in line for line in lines)
+
+
+def test_forced_newlines_never_exceed_total_line_budget():
+    text = "aaaa bbbb cccc dddd\neeee ffff gggg hhhh"
+    with pytest.raises(LayoutError):
+        break_lines(text, len, 10, lang="en", max_lines=3)
+    ok = break_lines("aaaa bbbb cccc dddd\neeee", len, 10, lang="en", max_lines=3)
+    assert len(ok) <= 3
+
+
+def test_srt_text_is_literal_by_default_and_escape_is_opt_in():
+    cue = Cue(0, 1, "Tom & Jerry <3 >_<")
+    assert "Tom & Jerry <3 >_<\n" in to_srt([cue])
+    assert "Tom &amp; Jerry &lt;3 &gt;_&lt;\n" in to_srt([cue], escape=True)
+    assert "Tom &amp; Jerry &lt;3 &gt;_&lt;" in to_vtt([cue])  # VTT is markup
+
+
+def test_ass_lift_follows_font_metrics():
+    from moviepy.ae.templates.subtitles import SubtitleLayer  # noqa: F401
+
+    preset = get_preset("nightlamp_story")
+    size = (1920, 1080)
+    cues = [Cue(0, 2, "Primary text")]
+    sec = [Cue(0, 2, "Secondary text\nsecond row", "en")]
+    both = subtitle_layer(cues, preset, secondary=sec, font="default", size=size)
+    solo = subtitle_layer(cues, preset, font="default", size=size)
+    raised = solo.render(1.0).offset[1] - both.render(1.0).offset[1]
+    ass = to_ass(cues + sec, preset.subtitles, size, font="default")
+    margin = next(
+        int(line.split(",")[7])
+        for line in ass.splitlines()
+        if line.startswith("Dialogue") and ",Primary," in line
+    )
+    base = int(round(preset.subtitles.margin_bottom))
+    assert margin - base == raised
+    # Without a font the documented approximation is kept.
+    approx = to_ass(cues + sec, preset.subtitles, size)
+    assert approx != ass
