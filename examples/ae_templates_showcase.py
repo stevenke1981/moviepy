@@ -33,6 +33,7 @@ from moviepy.ae.templates.quote import vertical_quote
 from moviepy.ae.templates.subtitles import Cue, burn_subtitles
 from moviepy.ae.templates.title_card import TitleCardSpec, build_title_card
 
+
 EXIT_MISSING_FONT = 2
 
 

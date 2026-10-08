@@ -9,8 +9,9 @@ import wave
 from pathlib import Path
 
 import numpy as np
-import pytest
 from PIL import Image
+
+import pytest
 
 from moviepy.ae.templates import episode as ep
 from moviepy.ae.templates.episode import (

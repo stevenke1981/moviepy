@@ -6,6 +6,7 @@ from moviepy.ae.effects._pixels import is_opaque, publish_straight, straight_rgb
 from moviepy.ae.effects.base import AEEffect, Param
 from moviepy.ae.effects.registry import register
 
+
 NOISE_TYPES = ("color", "mono")
 _SEED_LIMIT = 2**31 - 1
 

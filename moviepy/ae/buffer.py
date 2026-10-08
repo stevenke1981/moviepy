@@ -233,9 +233,11 @@ def _export_uint8(buffer, background):
                 alpha,
                 background,
                 rgb[:n],
-                None
-                if weight is None
-                else tuple(None if item is None else item[:n] for item in weight),
+                (
+                    None
+                    if weight is None
+                    else tuple(None if item is None else item[:n] for item in weight)
+                ),
                 result[top : top + n],
             )
     return result

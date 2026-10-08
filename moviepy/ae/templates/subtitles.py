@@ -120,14 +120,14 @@ def _finite(value, name):
 
 @dataclass(frozen=True)
 class Cue:
-    """One timed subtitle text in a single language.
+    r"""One timed subtitle text in a single language.
 
     Parameters
     ----------
     start, end : float
         Seconds on the final timeline, ``0 <= start < end``.
     text : str
-        Non-empty text (NFC normalized); ``"\\n"`` separates lines.
+        Non-empty text (NFC normalized); ``"\n"`` separates lines.
     lang : str, optional
         BCP-47-like tag. Defaults to ``"zh-TW"``.
 
@@ -353,12 +353,12 @@ def break_lines(
     use_jieba=True,
     allow_char_breaks=False,
 ):
-    """Break ``text`` into balanced lines without splitting words or names.
+    r"""Break ``text`` into balanced lines without splitting words or names.
 
     Parameters
     ----------
     text : str
-        Subtitle text; explicit ``"\\n"`` are treated as forced line ends.
+        Subtitle text; explicit ``"\n"`` are treated as forced line ends.
     measure : callable
         ``measure(str) -> float`` pixel width of one line.
     max_width : float
@@ -466,10 +466,10 @@ def _blocks(items):
 
 
 def find_bad_breaks(lines_or_cues, protected=(), *, use_jieba=True):
-    """Report line breaks that split words, protected terms or break kinsoku.
+    r"""Report line breaks that split words, protected terms or break kinsoku.
 
     Port of the NLH ``breaks`` command. ``lines_or_cues`` is an iterable of
-    ``Cue`` or text blocks (``"\\n"`` or ASS ``"\\N"`` separate lines). A plain
+    ``Cue`` or text blocks (``"\n"`` or ASS ``"\N"`` separate lines). A plain
     list of strings without any newline is treated as the lines of one block.
 
     Returns
@@ -513,9 +513,9 @@ def find_bad_breaks(lines_or_cues, protected=(), *, use_jieba=True):
 
 
 def grapheme_count(text):
-    """Approximate grapheme count: marks, joiners and newlines are not counted.
+    r"""Approximate grapheme count: marks, joiners and newlines are not counted.
 
-    >>> grapheme_count("é\\nab")
+    >>> grapheme_count("é\nab")
     3
     """
     text = unicodedata.normalize("NFC", text)
@@ -680,7 +680,7 @@ def _escape(text):
 
 
 def to_srt(cues, *, escape=False):
-    """Serialize cues as SubRip text (millisecond times, UTF-8 friendly).
+    r"""Serialize cues as SubRip text (millisecond times, UTF-8 friendly).
 
     SRT has no escape syntax and players (VLC, mpv, YouTube, Premiere) show
     the characters literally, so the text is written **verbatim** by default;
@@ -689,7 +689,7 @@ def to_srt(cues, *, escape=False):
     importer; pass ``escape=True`` for that behaviour. WebVTT *is* markup, so
     ``to_vtt`` always escapes, exactly like R23.
 
-    >>> print(to_srt([Cue(0, 1.5, "a\\nb")]), end="")
+    >>> print(to_srt([Cue(0, 1.5, "a\nb")]), end="")
     1
     00:00:00,000 --> 00:00:01,500
     a
@@ -734,9 +734,9 @@ def _srt_seconds(h, m, s, ms):
 
 
 def parse_srt(text, lang="zh-TW"):
-    """Parse SubRip text into cues (BOM, CRLF and missing indexes tolerated).
+    r"""Parse SubRip text into cues (BOM, CRLF and missing indexes tolerated).
 
-    >>> parse_srt("1\\n00:00:01,000 --> 00:00:02,500\\nHi\\n", "en")
+    >>> parse_srt("1\n00:00:01,000 --> 00:00:02,500\nHi\n", "en")
     [Cue(start=1.0, end=2.5, text='Hi', lang='en')]
     """
     text = text.lstrip("\ufeff").replace("\r\n", "\n").replace("\r", "\n")

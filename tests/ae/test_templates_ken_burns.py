@@ -2,8 +2,9 @@
 
 import cv2
 import numpy as np
-import pytest
 from PIL import Image
+
+import pytest
 
 from moviepy import ImageClip
 from moviepy.ae.templates.ken_burns import (
@@ -14,6 +15,7 @@ from moviepy.ae.templates.ken_burns import (
     motion_smoothness,
 )
 from moviepy.ae.templates.presets import ChannelPreset
+
 
 SIZE = (160, 90)
 PRESET = ChannelPreset(name="ken-burns-test", size=SIZE, fps=24, safe_margin=(8, 6))

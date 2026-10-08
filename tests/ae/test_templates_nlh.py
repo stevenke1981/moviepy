@@ -4,6 +4,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+
 import pytest
 
 from moviepy.ae.templates.chapter_tag import chapter_tag

@@ -1,5 +1,6 @@
 """Tests for moviepy.ae.templates.subtitles."""
 
+import importlib.util
 from pathlib import Path
 
 import pytest
@@ -65,7 +66,12 @@ def test_protected_term_never_split():
     lines = break_lines(text, m10, 130, protected=[term], allow_char_breaks=True)
     assert "".join(lines) == text
     assert any(term in line for line in lines)
-    assert find_bad_breaks(lines, [term]) == []
+    problems = find_bad_breaks(lines, [term])
+    assert not [p for p in problems if p.reason == "inside_protected"]
+    if importlib.util.find_spec("jieba") is not None:
+        # Without jieba, character breaks cannot be confirmed as word
+        # boundaries, so only the protected-term rule is checked above.
+        assert problems == []
     bad = find_bad_breaks(["他在臺北故宮", "博物院裡等候"], [term])
     assert bad and bad[0].reason == "inside_protected"
 

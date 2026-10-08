@@ -3,6 +3,7 @@
 import zlib
 
 import numpy as np
+
 import pytest
 
 from moviepy.ae import Buffer

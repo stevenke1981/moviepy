@@ -207,6 +207,7 @@ def fit_lines(
     Parameters
     ----------
     text : str
+        Text to fit; explicit newlines are kept.
     font_path : str or None
         Font file; ``None`` uses Pillow's default (Latin-only) font.
     max_width : float
@@ -218,6 +219,7 @@ def fit_lines(
     keep_together : sequence of str, optional
         Terms that must stay on one line.
     max_lines : int, optional
+        Most lines allowed before raising ``ValueError``.
     font_index : int, optional
         Face index for ``.ttc`` collections.
 
@@ -328,6 +330,7 @@ class TitleCardSpec:
     brand, title, subtitle : str
         ``subtitle`` is the hook line(s); ``hook`` is an alias.
     layout : {"right_column", "center"}
+        R23's right text column or a centered stack.
     role : {"intro", "outro"}
         Chooses R23's intro or smaller outro title tokens.
     title_keep_together, subtitle_keep_together : tuple of str
@@ -532,6 +535,7 @@ def build_title_card(spec, preset, background=None, *, fonts=None, transparent=F
     Parameters
     ----------
     spec : TitleCardSpec
+        Text, layout and timing of the card.
     preset : ChannelPreset
         Canvas, fps, palette, ``safe_margin`` (pixels at ``preset.size``) and
         fonts. R23 sizes (124/86 title, 38 brand, ...) are scaled by

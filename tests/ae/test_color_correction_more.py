@@ -12,6 +12,7 @@ from moviepy.ae.effects.color.levels import Levels
 from moviepy.ae.effects.color.vibrance import Vibrance
 from moviepy.ae.effects.registry import get
 
+
 REC709 = np.array([0.2126, 0.7152, 0.0722], dtype=np.float32)
 
 

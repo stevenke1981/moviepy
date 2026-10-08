@@ -645,9 +645,13 @@ class EpisodeSpec:
     background : BackgroundSpec or None
         Media under the cards; without it cards sit on the dip colour.
     intro, outro : BookendSpec or None
+        Opening and closing title cards.
     shots : sequence of ShotSpec
+        Picture segments in time order.
     chapters, quotes : sequences of ChapterSpec / QuoteSpec
+        Overlays placed on the built timeline.
     subtitles : SubtitleSpec or None
+        Burned-in subtitle files, drawn above every other layer.
     audio : AudioSpec or None
         Narration/music mix attached to the composition (see ``AudioSpec``).
     chapter_period : float
@@ -718,9 +722,11 @@ class EpisodeSpec:
                 self,
                 name,
                 tuple(
-                    item
-                    if isinstance(item, cls)
-                    else _from_dict(cls, item, f"{name}[{k}]", renames)
+                    (
+                        item
+                        if isinstance(item, cls)
+                        else _from_dict(cls, item, f"{name}[{k}]", renames)
+                    )
                     for k, item in enumerate(items)
                 ),
             )
@@ -786,9 +792,9 @@ class EpisodeSpec:
             "preset": self.preset,
             "preset_overrides": _to_plain(self.preset_overrides),
             "fonts": dict(self.fonts),
-            "background": None
-            if self.background is None
-            else _spec_dict(self.background),
+            "background": (
+                None if self.background is None else _spec_dict(self.background)
+            ),
             "intro": None if self.intro is None else _spec_dict(self.intro),
             "outro": None if self.outro is None else _spec_dict(self.outro),
             "shots": [_spec_dict(s, _RENAMES) for s in self.shots],
@@ -1450,7 +1456,7 @@ def build_episode(spec):
                 "items": list(c.items),
             }
             for k, c, _ in chapter_tags
-        ],  # fmt: skip
+        ],
         "quotes": [
             {
                 "name": f"Quote {k:02d}",
@@ -1459,7 +1465,7 @@ def build_episode(spec):
                 "medium": qc.quote_meta["medium"],
             }
             for k, q, qc in quote_comps
-        ],  # fmt: skip
+        ],
         "subtitles": {
             lane: {
                 "cues": len(cues),
@@ -1612,6 +1618,7 @@ def render_episode(
         makes an integral sample count impossible, the master is written
         silent and ``notes`` says so.
     overwrite : bool
+        Allow writing into a non-empty ``output_dir``.
 
     Returns
     -------

@@ -1,6 +1,7 @@
 """Tests for Directional Blur, Radial Blur, Sharpen and Unsharp Mask."""
 
 import numpy as np
+
 import pytest
 
 from moviepy.ae import Buffer, Property

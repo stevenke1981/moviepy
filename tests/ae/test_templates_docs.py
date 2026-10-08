@@ -12,6 +12,7 @@ from pathlib import Path
 
 import pytest
 
+
 REPO = Path(__file__).resolve().parents[2]
 DOC = REPO / "docs" / "ae" / "templates.rst"
 EXAMPLE = REPO / "examples" / "ae_templates_showcase.py"

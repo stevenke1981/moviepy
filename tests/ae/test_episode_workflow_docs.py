@@ -18,6 +18,7 @@ from pathlib import Path
 
 import pytest
 
+
 REPO = Path(__file__).resolve().parents[2]
 DOC = REPO / "docs" / "ae" / "episode_workflow.rst"
 TEMPLATES_DOC = REPO / "docs" / "ae" / "templates.rst"
@@ -254,9 +255,9 @@ def test_field_tables_match_dataclasses(doc_text):
         assert len(names) == len(set(names)), f"duplicate rows under {heading}"
         expected = _dataclass_json_names(cls)
         unknown = set(names) - expected
-        assert not unknown, (
-            f"{section}: not fields of {cls.__name__}: {sorted(unknown)}"
-        )
+        assert (
+            not unknown
+        ), f"{section}: not fields of {cls.__name__}: {sorted(unknown)}"
         missing = expected - set(names)
         assert not missing, f"{section}: undocumented fields: {sorted(missing)}"
         seen.add(section)

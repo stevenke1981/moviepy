@@ -5,8 +5,6 @@ to print the requirements and check the Godot executable that would be used.
 The check never raises for a missing or unsupported Godot; it reports problems.
 """
 
-from __future__ import annotations
-
 import argparse
 import json
 import os
@@ -14,8 +12,10 @@ import re
 import subprocess
 import sys
 from dataclasses import asdict, dataclass
+from typing import Optional, Tuple
 
 from moviepy.ae.three_d.godot import find_godot
+
 
 GODOT_REQUIREMENTS = {
     "engine": "Godot",
@@ -47,9 +47,9 @@ class GodotCheck:
     """Outcome of ``check_godot``; ``ok`` is True only when no problem exists."""
 
     ok: bool
-    executable: str | None
-    version: str | None
-    version_tuple: tuple[int, ...] | None
+    executable: Optional[str]
+    version: Optional[str]
+    version_tuple: Optional[Tuple[int, ...]]
     platform_ok: bool
     version_ok: bool
     problems: list[str]

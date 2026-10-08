@@ -39,6 +39,7 @@ from moviepy.ae.templates.paper import CachedAVLayer
 from moviepy.ae.templates.presets import ChannelPreset, get_preset
 from moviepy.video.VideoClip import ImageClip
 
+
 try:  # OpenCV is optional for import; motion measurement needs it.
     import cv2
 except ImportError:  # pragma: no cover - exercised only without OpenCV

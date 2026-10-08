@@ -1,6 +1,7 @@
 """Tests for Posterize, Mosaic, Vignette and Noise (Add Grain) effects."""
 
 import numpy as np
+
 import pytest
 
 from moviepy.ae import Buffer, Property, RenderContext

@@ -9,6 +9,7 @@ import pytest
 from moviepy.ae.motion.magic import PRESETS, build_magic_scene
 from moviepy.ae.three_d._godot_scene import validate_godot_scene
 
+
 NEW_PRESETS = ("spark_burst", "orbit_rings", "rising_embers", "pulse_orb")
 PARTICLE_PRESETS = ("spark_burst", "rising_embers")
 OBJECT_PRESETS = ("orbit_rings", "pulse_orb")

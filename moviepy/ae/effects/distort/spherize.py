@@ -1,10 +1,10 @@
 """Spherical bulge or pinch inside a circle (Distort)."""
 
 import numpy as np
-from scipy.ndimage import map_coordinates
 
 from moviepy.ae.buffer import Buffer
 from moviepy.ae.effects.base import AEEffect, Param
+from moviepy.ae.effects.distort._sampling import sample_bilinear as _sample
 from moviepy.ae.effects.registry import register
 
 
@@ -62,16 +62,3 @@ class Spherize(AEEffect):
         ratio = np.where(inside, ratio, 1.0)
         rgba = _sample(src.rgba, cx + dx * ratio, cy + dy * ratio)
         return Buffer._publish(rgba, src.offset, src.color_space)
-
-
-def _sample(rgba, xs, ys):
-    """Bilinear, zero-filled premultiplied lookup at pixel-center coordinates."""
-    # Round away float noise (e.g. cos(90 deg) = 6e-17): scipy "constant"
-    # mode zeroes points a hair outside the array, even at the true edge.
-    coords = np.round(np.stack((ys - 0.5, xs - 0.5)), 9)
-    out = np.empty(rgba.shape, dtype=np.float32)
-    for channel in range(4):
-        out[..., channel] = map_coordinates(
-            rgba[..., channel], coords, order=1, mode="constant", cval=0.0
-        )
-    return out

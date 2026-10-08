@@ -4,8 +4,9 @@ import hashlib
 import os
 
 import numpy as np
-import pytest
 from PIL import Image
+
+import pytest
 
 from moviepy import VideoClip
 from moviepy.ae import Composition

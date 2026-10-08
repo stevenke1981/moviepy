@@ -11,6 +11,7 @@ from moviepy.ae.effects.transition._coverage import (
     pixel_centers,
 )
 
+
 WIPES = ("clockwise", "counterclockwise", "both")
 
 

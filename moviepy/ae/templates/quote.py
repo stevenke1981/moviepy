@@ -171,9 +171,9 @@ def _vchar(char, fpath):
 
 
 def split_columns(text, per_column):
-    """Split ``text`` into columns of at most about ``per_column`` characters.
+    r"""Split ``text`` into columns of at most about ``per_column`` characters.
 
-    ``\\n`` or ``|`` force a column break. Closing punctuation never starts a
+    ``\n`` or ``|`` force a column break. Closing punctuation never starts a
     column; it is pulled onto the previous one (up to two extra characters).
     Columns are listed in reading order, i.e. right to left on screen.
 
@@ -213,16 +213,16 @@ def split_columns(text, per_column):
 
 
 def split_quote_pages(text, per_column=10, max_columns=12):
-    """Split a long quotation into pages of at most ``max_columns`` columns.
+    r"""Split a long quotation into pages of at most ``max_columns`` columns.
 
     A page break prefers the end of a sentence (。！？；) among the last three
-    columns of a page. Pages are returned as text with ``\\n`` between columns,
+    columns of a page. Pages are returned as text with ``\n`` between columns,
     so each one can be passed straight back to ``vertical_quote``.
 
     Examples
     --------
     >>> split_quote_pages("甲乙。丙丁。戊己。庚辛。", per_column=3, max_columns=2)
-    ['甲乙。\\n丙丁。', '戊己。\\n庚辛。']
+    ['甲乙。\n丙丁。', '戊己。\n庚辛。']
     """
     if max_columns < 1:
         raise ValueError("max_columns must be at least 1")
@@ -454,7 +454,7 @@ def vertical_quote(
     dim=0.35,
     seed=7,
 ):
-    """Build a vertical right-to-left quotation composition.
+    r"""Build a vertical right-to-left quotation composition.
 
     Columns read right to left: optional ``title`` (vermilion), the body
     columns, then ``source`` bottom-aligned in the leftmost column with the
@@ -465,7 +465,7 @@ def vertical_quote(
     Parameters
     ----------
     text : str
-        Quotation; ``\\n`` or ``|`` force column breaks. Quote verbatim.
+        Quotation; ``\n`` or ``|`` force column breaks. Quote verbatim.
     source : str or None
         Attribution such as ``"《史記·項羽本紀》"``.
     preset : ChannelPreset or str, optional

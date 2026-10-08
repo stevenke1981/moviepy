@@ -3,10 +3,10 @@
 import math
 
 import numpy as np
-from scipy.ndimage import map_coordinates
 
 from moviepy.ae.buffer import Buffer
 from moviepy.ae.effects.base import AEEffect, Param
+from moviepy.ae.effects.distort._sampling import sample_bilinear as _sample
 from moviepy.ae.effects.registry import register
 
 
@@ -14,13 +14,13 @@ from moviepy.ae.effects.registry import register
 class Mirror(AEEffect):
     """Replace the pixels on one side of a line by their mirror image.
 
-    ==================  ==================  ===========================
-    Parameter           AE panel name       Notes
-    ==================  ==================  ===========================
-    reflection_center_x Reflection Center X 0..1 of width, default 0.5
-    reflection_center_y Reflection Center Y 0..1 of height, default 0.5
-    reflection_angle    Reflection Angle    degrees, default 0
-    ==================  ==================  ===========================
+    ===================  ===================  ===========================
+    Parameter            AE panel name        Notes
+    ===================  ===================  ===========================
+    reflection_center_x  Reflection Center X  0..1 of width, default 0.5
+    reflection_center_y  Reflection Center Y  0..1 of height, default 0.5
+    reflection_angle     Reflection Angle     degrees, default 0
+    ===================  ===================  ===========================
 
     Notes
     -----
@@ -64,16 +64,3 @@ class Mirror(AEEffect):
         sampled = _sample(src.rgba, mirror_x, mirror_y)
         rgba = np.where(reflected[..., None], sampled, src.rgba)
         return Buffer._publish(rgba.astype(np.float32), src.offset, src.color_space)
-
-
-def _sample(rgba, xs, ys):
-    """Bilinear, zero-filled premultiplied lookup at pixel-center coordinates."""
-    # Round away float noise (e.g. cos(90 deg) = 6e-17): scipy "constant"
-    # mode zeroes points a hair outside the array, even at the true edge.
-    coords = np.round(np.stack((ys - 0.5, xs - 0.5)), 9)
-    out = np.empty(rgba.shape, dtype=np.float32)
-    for channel in range(4):
-        out[..., channel] = map_coordinates(
-            rgba[..., channel], coords, order=1, mode="constant", cval=0.0
-        )
-    return out

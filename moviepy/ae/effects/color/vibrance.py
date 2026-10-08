@@ -11,12 +11,12 @@ from moviepy.ae.effects.registry import register
 class Vibrance(AEEffect):
     """Scale color saturation, favoring pixels that are already dull.
 
-    ============  ============  ==========================
-    Parameter     AE panel name Notes
-    ============  ============  ==========================
-    vibrance      Vibrance      -100..100 %, default 0
-    saturation    Saturation    -100..100 %, default 0
-    ============  ============  ==========================
+    ============  =============  ==========================
+    Parameter     AE panel name  Notes
+    ============  =============  ==========================
+    vibrance      Vibrance       -100..100 %, default 0
+    saturation    Saturation     -100..100 %, default 0
+    ============  =============  ==========================
 
     Notes
     -----
