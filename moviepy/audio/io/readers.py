@@ -232,10 +232,12 @@ class FFMPEG_AudioReader:
             max_frame_threshold = fr_min + self.buffersize // 2
             threshold_idx = np.searchsorted(frames, max_frame_threshold, side="right")
             if threshold_idx != len(frames):
-                in_time_head = in_time[0:threshold_idx]
-                in_time_tail = in_time[threshold_idx:]
+                # Split the *timestamps* (not the boolean mask) at the first
+                # in-range sample past the buffer window; out-of-range entries
+                # stay at their positions and are zero-filled by each half.
+                split = np.flatnonzero(in_time)[threshold_idx]
                 return np.concatenate(
-                    [self.get_frame(in_time_head), self.get_frame(in_time_tail)]
+                    [self.get_frame(tt[:split]), self.get_frame(tt[split:])]
                 )
 
             if not (0 <= (fr_min - self.buffer_startframe) < len(self.buffer)):
