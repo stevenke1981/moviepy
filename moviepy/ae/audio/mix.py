@@ -52,7 +52,13 @@ def _mapped_times(layer, times, context, audio_duration, fps):
     ):
         endpoint = mapped == audio_duration
         # Match the source's finite audio sample grid, never its video fps.
-        last = max(0, int(audio_duration * fps) - 1) / fps
+        # A duration derived from count / fps can round to either side of count.
+        sample_count = math.ceil(math.nextafter(audio_duration * fps, 0.0))
+        last_index = max(0, sample_count - 1)
+        last = last_index / fps
+        # Scalar readers truncate time * fps; division can round below the index.
+        if last * fps < last_index:
+            last = math.nextafter(last, math.inf)
         mapped[endpoint] = min(last, math.nextafter(audio_duration, 0.0))
     return mapped
 
