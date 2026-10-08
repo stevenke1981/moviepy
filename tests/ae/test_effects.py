@@ -527,14 +527,25 @@ def test_registry_lookup():
     assert registry.get("Drop Shadow") is ae.fx.DropShadow
     assert "GaussianBlur" in dir(ae.fx)
     names = [cls.name for cls in registry.list(category="Color Correction")]
-    assert names == ["Brightness & Contrast", "Invert", "Tint"]
+    assert names == [
+        "Brightness & Contrast",
+        "Exposure",
+        "Hue/Saturation",
+        "Invert",
+        "Levels",
+        "Tint",
+        "Vibrance",
+    ]
     assert registry.categories() == [
         "Blur & Sharpen",
         "Color Correction",
+        "Distort",
         "Generate",
+        "Noise & Grain",
         "Perspective",
         "Stylize",
         "Time",
+        "Transition",
     ]
 
 

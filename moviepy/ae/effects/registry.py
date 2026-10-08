@@ -8,7 +8,7 @@ Examples
 >>> registry.get("gaussianblur") is registry.get("GaussianBlur")
 True
 >>> [cls.name for cls in registry.list(category="Blur & Sharpen")]
-['Gaussian Blur']
+['Directional Blur', 'Gaussian Blur', 'Radial Blur', 'Sharpen', 'Unsharp Mask']
 """
 
 import json
@@ -26,6 +26,26 @@ _BUILTINS = (
     "moviepy.ae.effects.perspective.drop_shadow",
     "moviepy.ae.effects.stylize.glow",
     "moviepy.ae.effects.time.echo",
+    "moviepy.ae.effects.blur.directional_blur",
+    "moviepy.ae.effects.blur.radial_blur",
+    "moviepy.ae.effects.blur.sharpen",
+    "moviepy.ae.effects.color.exposure",
+    "moviepy.ae.effects.color.hue_saturation",
+    "moviepy.ae.effects.color.levels",
+    "moviepy.ae.effects.color.vibrance",
+    "moviepy.ae.effects.distort.mirror",
+    "moviepy.ae.effects.distort.spherize",
+    "moviepy.ae.effects.distort.twirl",
+    "moviepy.ae.effects.distort.wave_warp",
+    "moviepy.ae.effects.noise.add_grain",
+    "moviepy.ae.effects.stylize.mosaic",
+    "moviepy.ae.effects.stylize.posterize",
+    "moviepy.ae.effects.stylize.vignette",
+    "moviepy.ae.effects.transition.block_dissolve",
+    "moviepy.ae.effects.transition.iris_wipe",
+    "moviepy.ae.effects.transition.linear_wipe",
+    "moviepy.ae.effects.transition.radial_wipe",
+    "moviepy.ae.effects.transition.venetian_blinds",
 )
 _BY_NAME = {}
 _BY_CLASS = {}
