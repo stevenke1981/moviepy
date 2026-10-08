@@ -83,9 +83,13 @@ __all__ = [
     "ChapterSpec",
     "QuoteSpec",
     "SubtitleSpec",
+    "AudioSpec",
     "EpisodeSpec",
     "build_episode",
     "episode_report",
+    "render_episode",
+    "init_episode",
+    "main",
 ]
 
 TRANSITIONS = ("cut", "crossfade", "dip")
@@ -240,12 +244,25 @@ class BackgroundSpec:
         object.__setattr__(self, "overlay_opacity", opacity)
 
 
+_CARD_TIMING = (
+    "brand_start",
+    "brand_duration",
+    "title_start",
+    "title_duration",
+    "subtitle_start",
+    "subtitle_duration",
+)
+
+
 @dataclass(frozen=True)
 class BookendSpec:
     """Intro or outro card: ``TitleCardSpec`` copy fields plus its transition.
 
     ``transition`` joins this card to the previous segment (default ``cut``);
-    the card's own entrance/fade-out timing is that of ``TitleCardSpec``.
+    the card's own timing fields (``brand_*``, ``title_*``, ``subtitle_*``
+    start/duration, ``fade_out``, ``auto_extend``) are those of
+    ``TitleCardSpec`` and share its defaults (R23's entrance), so a channel can
+    retime its cards from JSON without touching code.
     """
 
     title: str
@@ -260,6 +277,12 @@ class BookendSpec:
     subtitle_keep_together: tuple = ()
     transition: str = "cut"
     transition_duration: float = None
+    brand_start: float = 0.2
+    brand_duration: float = 0.55
+    title_start: float = 0.55
+    title_duration: float = 0.85
+    subtitle_start: float = 1.05
+    subtitle_duration: float = 0.65
 
     def __post_init__(self):
         _str(self.title, "title")
@@ -270,6 +293,8 @@ class BookendSpec:
             self, "duration", _num(self.duration, "duration", positive=True)
         )
         object.__setattr__(self, "fade_out", _num(self.fade_out, "fade_out", low=0))
+        for name in _CARD_TIMING:
+            object.__setattr__(self, name, _num(getattr(self, name), name, low=0))
         for name in ("rule", "auto_extend"):
             if not isinstance(getattr(self, name), bool):
                 raise EpisodeError(f"{name} must be true or false")
@@ -295,6 +320,57 @@ class BookendSpec:
             return TitleCardSpec(role=role, **kwargs)
         except ValueError as error:
             raise EpisodeError(str(error)) from None
+
+
+@dataclass(frozen=True)
+class AudioSpec:
+    """Narration and optional music mixed into the episode soundtrack.
+
+    ``narration`` is required whenever the section exists: an episode with
+    music but no voice is a different product and is left to ``Composition``
+    layer audio. It starts at ``narration_offset`` seconds with
+    ``narration_gain_db``. ``music`` (optional) is mixed at ``music_gain_db``
+    (-18 dB keeps it a bed under speech) and is lowered a further
+    ``music_duck_db`` (-8 dB, a constant, not a follower) while the narration
+    plays, with 0.3 s ramps just outside the narration so speech onset is never
+    attenuated. ``music_loop`` repeats a short track to the timeline length;
+    otherwise it simply ends. ``fade_in`` / ``fade_out`` shape the whole mix.
+
+    Audio longer than the timeline is a mistake (the tail would be cut off
+    silently), so ``build_episode`` raises ``EpisodeError`` unless
+    ``trim_audio`` is true, which then truncates the mix to the timeline.
+    """
+
+    narration: str
+    narration_offset: float = 0.0
+    narration_gain_db: float = 0.0
+    music: str = None
+    music_gain_db: float = -18.0
+    music_duck_db: float = -8.0
+    music_loop: bool = False
+    fade_in: float = 0.0
+    fade_out: float = 0.0
+    trim_audio: bool = False
+
+    def __post_init__(self):
+        _str(self.narration, "narration")
+        _opt_str(self.music, "music")
+        object.__setattr__(
+            self,
+            "narration_offset",
+            _num(self.narration_offset, "narration_offset", low=0),
+        )
+        for name in ("narration_gain_db", "music_gain_db"):
+            object.__setattr__(self, name, _num(getattr(self, name), name))
+        duck = _num(self.music_duck_db, "music_duck_db")
+        if duck > 0:
+            raise EpisodeError("music_duck_db must be <= 0 (a reduction)")
+        object.__setattr__(self, "music_duck_db", duck)
+        for name in ("fade_in", "fade_out"):
+            object.__setattr__(self, name, _num(getattr(self, name), name, low=0))
+        for name in ("music_loop", "trim_audio"):
+            if not isinstance(getattr(self, name), bool):
+                raise EpisodeError(f"{name} must be true or false")
 
 
 @dataclass(frozen=True)
@@ -572,6 +648,8 @@ class EpisodeSpec:
     shots : sequence of ShotSpec
     chapters, quotes : sequences of ChapterSpec / QuoteSpec
     subtitles : SubtitleSpec or None
+    audio : AudioSpec or None
+        Narration/music mix attached to the composition (see ``AudioSpec``).
     chapter_period : float
         Default seconds per chapter item (NLH: 5.5).
     dip_color : tuple
@@ -597,6 +675,7 @@ class EpisodeSpec:
     chapter_period: float = 5.5
     dip_color: tuple = (0, 0, 0)
     seed: int = 7
+    audio: AudioSpec = None
 
     def __post_init__(self):
         _str(self.name, "name")
@@ -622,6 +701,7 @@ class EpisodeSpec:
             ("intro", BookendSpec),
             ("outro", BookendSpec),
             ("subtitles", SubtitleSpec),
+            ("audio", AudioSpec),
         ):
             value = getattr(self, name)
             if value is not None and not isinstance(value, cls):
@@ -718,6 +798,7 @@ class EpisodeSpec:
             "chapter_period": self.chapter_period,
             "dip_color": list(self.dip_color),
             "seed": self.seed,
+            "audio": None if self.audio is None else _spec_dict(self.audio),
         }
         return value
 
@@ -790,6 +871,7 @@ def _resolve_paths(data, base):
     fix_in(data.get("fonts"), tuple(data.get("fonts") or ()))
     for shot in data.get("shots") or ():
         fix_in(shot, ("image", "video"))
+    fix_in(data.get("audio"), ("narration", "music"))
     subs = data.get("subtitles")
     if isinstance(subs, dict):
         fix_in(subs, ("primary", "secondary"))
@@ -883,6 +965,115 @@ def _transition_window(kind, duration, previous):
     return 0.0, None, None
 
 
+_DUCK_RAMP = 0.3  # seconds of music ramp just outside the narration
+
+
+def _db_gain(value):
+    return 10.0 ** (value / 20.0)
+
+
+def _audio_file(path, label, sources, clips):
+    from moviepy import AudioFileClip
+
+    _check_file(path, label)
+    sources[str(path)] = _sha256(path)
+    try:
+        clip = AudioFileClip(str(path))
+    except Exception as error:  # ffmpeg/moviepy raise assorted types
+        raise EpisodeError(f"{label} cannot be read as audio: {error}") from None
+    clips.append(clip)
+    if not clip.duration or clip.duration <= 0:
+        raise EpisodeError(f"{label} is empty")
+    return clip
+
+
+def _build_audio(audio, total, sources, clips):
+    """Mix ``AudioSpec`` for a ``total`` second timeline -> ``(clip, info)``."""
+    import numpy as np
+
+    from moviepy import CompositeAudioClip
+    from moviepy.audio import fx as afx
+
+    narration = _audio_file(audio.narration, "audio.narration", sources, clips)
+    start = audio.narration_offset
+    end = start + narration.duration
+    if start >= total - _EPS:
+        raise EpisodeError(
+            f"audio.narration_offset {start:g} s is past the {total:g} s timeline"
+        )
+    if end > total + 1e-3 and not audio.trim_audio:
+        raise EpisodeError(
+            f"audio.narration ends at {end:g} s, past the {total:g} s timeline; "
+            "lengthen the shots or set audio.trim_audio to true"
+        )
+    voice = narration
+    if audio.narration_gain_db:
+        voice = voice.with_effects(
+            [afx.MultiplyVolume(_db_gain(audio.narration_gain_db))]
+        )
+    voice = voice.with_start(start)
+    parts = [voice]
+    info = {
+        "narration": {
+            "path": str(audio.narration),
+            "sha256": sources[str(audio.narration)],
+            "duration": float(narration.duration),
+            "offset": start,
+            "gain_db": audio.narration_gain_db,
+        },
+        "music": None,
+        "fade_in": audio.fade_in,
+        "fade_out": audio.fade_out,
+        "trim_audio": audio.trim_audio,
+    }
+    if audio.music is not None:
+        music = _audio_file(audio.music, "audio.music", sources, clips)
+        if audio.music_loop and music.duration < total:
+            music = music.with_effects([afx.AudioLoop(duration=total)])
+        if music.duration > total:
+            music = music.subclipped(0, total)
+        music = music.with_effects([afx.MultiplyVolume(_db_gain(audio.music_gain_db))])
+        duck = _db_gain(audio.music_duck_db)
+        duck_from, duck_to = start, min(end, total)
+        if duck < 1.0:
+            ramp = _DUCK_RAMP
+
+            def ducked(get_frame, t, _a=duck_from, _b=duck_to, _g=duck):
+                times = np.asarray(t, dtype=float)
+                inside = np.minimum(
+                    (times - (_a - ramp)) / ramp, ((_b + ramp) - times) / ramp
+                )
+                gain = 1.0 - (1.0 - _g) * np.clip(inside, 0.0, 1.0)
+                frame = get_frame(t)
+                return frame * (gain if times.ndim == 0 else gain[:, None])
+
+            music = music.transform(ducked, keep_duration=True)
+        parts.insert(0, music)
+        info["music"] = {
+            "path": str(audio.music),
+            "sha256": sources[str(audio.music)],
+            "duration": float(min(music.duration, total)),
+            "gain_db": audio.music_gain_db,
+            "duck_db": audio.music_duck_db,
+            "duck_span": [duck_from, duck_to],
+            "loop": audio.music_loop,
+        }
+    if audio.fade_in + audio.fade_out > total + _EPS:
+        raise EpisodeError("audio.fade_in + audio.fade_out exceed the timeline")
+    mix = CompositeAudioClip(parts)
+    mix.fps = max(int(getattr(c, "fps", 0) or 0) for c in parts) or 44100
+    mix = mix.with_duration(total)
+    fades = []
+    if audio.fade_in:
+        fades.append(afx.AudioFadeIn(audio.fade_in))
+    if audio.fade_out:
+        fades.append(afx.AudioFadeOut(audio.fade_out))
+    if fades:
+        mix = mix.with_effects(fades)
+    info["duration"] = float(total)
+    return mix, info
+
+
 def build_episode(spec):
     """Assemble ``spec`` into a ``Composition`` at the preset size and fps.
 
@@ -894,7 +1085,8 @@ def build_episode(spec):
     -------
     Composition
         Layers (top first): ``Subtitles``, ``Outro``, ``Intro``,
-        ``Chapter NN``, ``Quote NN``, ``Shot NN``. ``comp.episode`` holds the
+        ``Chapter NN``, ``Quote NN``, ``Shot NN``. With ``spec.audio`` the
+        mixed soundtrack is attached as ``comp.audio``. ``comp.episode`` holds the
         timeline and provenance used by ``episode_report``; ``comp.preset`` is
         the resolved ``ChannelPreset`` and ``comp.episode_clips`` the opened
         media clips (close them with ``clip.close()`` when finished).
@@ -904,7 +1096,8 @@ def build_episode(spec):
     EpisodeError
         For missing files, transitions that leave the previous focus hold,
         overlays that leave the timeline or overlap a card, overlapping
-        quotes and cues outside the timeline.
+        quotes, cues outside the timeline, and narration longer than the
+        timeline (unless ``audio.trim_audio``).
 
     Examples
     --------
@@ -1148,6 +1341,10 @@ def build_episode(spec):
         if spec.fonts[role] is not None:
             note(spec.fonts[role], f"fonts.{role}")
 
+    mix, audio_info = (None, None)
+    if spec.audio is not None:
+        mix, audio_info = _build_audio(spec.audio, total, sources, clips)
+
     # -- 4. composition, bottom to top ------------------------------------- #
     comp = Composition(
         size=size,
@@ -1233,6 +1430,8 @@ def build_episode(spec):
                 "hold": seg["hold"],
             }
         )
+    if mix is not None:
+        comp.audio = mix
     comp.preset = preset
     comp.spec = spec
     comp.episode_clips = clips
@@ -1271,6 +1470,8 @@ def build_episode(spec):
         },
         "sources": dict(sorted(sources.items())),
     }
+    if audio_info is not None:
+        comp.episode["audio"] = audio_info
     return comp
 
 
@@ -1281,7 +1482,9 @@ def episode_report(comp):
     ``size``, ``fps``, ``duration``, ``frames``, ``timeline`` (segments with
     start/end/transition), ``chapters``, ``quotes``, ``subtitles`` (cue counts
     and span), ``layers`` (top first: name, type, in/out), ``sources`` (path ->
-    sha256 of every media, SRT and font file) and ``top_layer``.
+    sha256 of every media, SRT, audio and font file), ``audio`` (only when the
+    spec has audio: narration/music path, sha256, duration, gains) and
+    ``top_layer``.
 
     Examples
     --------
@@ -1311,3 +1514,338 @@ def episode_report(comp):
         top_layer=layers[0]["name"] if layers else None,
     )
     return report
+
+
+# --------------------------------------------------------------------------- #
+# rendering
+# --------------------------------------------------------------------------- #
+
+PREVIEW_SIZE = (480, 270)
+PREVIEW_FPS = 12
+_MASTER_RATE = 48000
+
+
+def _default_stills(info, duration):
+    """``[(label, time)]``: intro/outro middle, chapter start+1 s, quote middle."""
+    out = []
+    for seg in info["timeline"]:
+        if seg["kind"] == "intro":
+            out.append(("intro", (seg["start"] + seg["end"]) / 2))
+    for k, chapter in enumerate(info["chapters"], 1):
+        out.append((f"chapter{k:02d}", min(chapter["start"] + 1.0, chapter["end"])))
+    for k, quote in enumerate(info["quotes"], 1):
+        out.append((f"quote{k:02d}", (quote["start"] + quote["end"]) / 2))
+    for seg in info["timeline"]:
+        if seg["kind"] == "outro":
+            out.append(("outro", (seg["start"] + seg["end"]) / 2))
+    if not out:
+        out.append(("mid", duration / 2))
+    return out
+
+
+def _export_wav(audio, path, count, fps, rate=_MASTER_RATE):
+    """Write ``audio`` as exact-length 16-bit PCM for ``count`` frames at ``fps``.
+
+    Returns False (writing nothing) when ``count`` frames hold no whole number
+    of samples at ``rate``.
+    """
+    import wave
+    from fractions import Fraction
+
+    import numpy as np
+
+    samples = Fraction(count) * rate / Fraction(str(fps)).limit_denominator(1000000)
+    if samples.denominator != 1:
+        return False
+    samples = int(samples)
+    channels = 2
+    chunk = rate  # one second at a time keeps memory flat
+    with wave.open(str(path), "wb") as handle:
+        handle.setnchannels(channels)
+        handle.setsampwidth(2)
+        handle.setframerate(rate)
+        for first in range(0, samples, chunk):
+            last = min(first + chunk, samples)
+            times = np.arange(first, last) / rate
+            block = np.zeros((last - first, channels))
+            live = times < audio.duration - 1e-9
+            if live.any():
+                data = np.asarray(audio.get_frame(times[live]), dtype=float)
+                if data.ndim == 1:
+                    data = data[:, None]
+                block[live] = data if data.shape[1] == 2 else np.repeat(data, 2, 1)
+            pcm = (np.clip(block, -1.0, 1.0) * 32767.0).astype("<i2")
+            handle.writeframes(pcm.tobytes())
+    return True
+
+
+def render_episode(
+    spec_or_path,
+    output_dir,
+    *,
+    preview=False,
+    stills=None,
+    master=False,
+    overwrite=False,
+):
+    """Render an episode into ``output_dir`` and return what was written.
+
+    Parameters
+    ----------
+    spec_or_path : EpisodeSpec, dict or path
+        A spec, its ``to_dict`` form or an ``episode.json`` path.
+    output_dir : path
+        Created if missing. A non-empty directory is refused (``EpisodeError``)
+        unless ``overwrite`` is true, which replaces files of the same name.
+    preview : bool
+        Draft render: size is forced to 480x270 and fps to 12 (a fraction of
+        the pixels and half the frames of a 24 fps 1080p episode, so a layout
+        check takes seconds). Fonts, timing and audio are unchanged.
+    stills : sequence of float, optional
+        Times (s) of ``stills/*.png``. ``None`` (default) picks the intro and
+        outro middles, each chapter start + 1 s and each quote middle; ``()``
+        writes none. Times are clamped inside the timeline.
+    master : bool
+        Also write the lossless RGBA16 master with ``moviepy.ae.write_master``
+        into ``master/``. It needs an exact-length PCM WAV, so the mixed audio
+        is exported to ``master_audio.wav`` (48 kHz stereo); if the frame rate
+        makes an integral sample count impossible, the master is written
+        silent and ``notes`` says so.
+    overwrite : bool
+
+    Returns
+    -------
+    dict
+        ``video`` (``episode.mp4``: libx264, aac, yuv420p, ``comp.fps``),
+        ``report`` (``report.json``), ``stills`` (list of paths), ``master``
+        (directory or ``None``), ``notes``, ``preview`` and ``timings``
+        (seconds for ``build``, ``stills``, ``video``, ``master``, ``total``).
+        Every opened clip is closed, also on failure.
+    """
+    import dataclasses
+    import shutil
+    import time
+
+    if isinstance(spec_or_path, EpisodeSpec):
+        spec = spec_or_path
+    elif isinstance(spec_or_path, dict):
+        spec = EpisodeSpec.from_dict(spec_or_path)
+    else:
+        spec = EpisodeSpec.from_json(Path(spec_or_path))
+    out = Path(output_dir)
+    if out.exists() and not out.is_dir():
+        raise EpisodeError(f"output path is not a directory: {out}")
+    if out.is_dir() and any(out.iterdir()) and not overwrite:
+        raise EpisodeError(f"output directory is not empty: {out} (use overwrite)")
+    if preview:
+        spec = dataclasses.replace(
+            spec,
+            preset_overrides={
+                **spec.preset_overrides,
+                "size": list(PREVIEW_SIZE),
+                "fps": PREVIEW_FPS,
+            },
+        )
+    out.mkdir(parents=True, exist_ok=True)
+    timings, notes = {}, []
+    began = time.perf_counter()
+    comp = None
+    try:
+        mark = time.perf_counter()
+        comp = build_episode(spec)
+        timings["build"] = time.perf_counter() - mark
+        report = episode_report(comp)
+        report_path = out / "report.json"
+        report_path.write_text(
+            json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8"
+        )
+
+        mark = time.perf_counter()
+        if stills is None:
+            wanted = _default_stills(comp.episode, comp.duration)
+        else:
+            wanted = [(None, _num(t, "still time", low=0)) for t in stills]
+        last = max(comp.duration - 1.0 / comp.fps, 0.0)
+        still_paths = []
+        if wanted:
+            (out / "stills").mkdir(exist_ok=True)
+        for label, t in wanted:
+            t = min(t, last)
+            name = f"{label or 't'}_{int(round(t * 1000)):07d}ms.png"
+            comp.save_frame(str(out / "stills" / name), t=t)
+            still_paths.append(str(out / "stills" / name))
+        timings["stills"] = time.perf_counter() - mark
+
+        mark = time.perf_counter()
+        video = out / "episode.mp4"
+        comp.write_videofile(
+            str(video),
+            fps=comp.fps,
+            codec="libx264",
+            audio_codec="aac",
+            ffmpeg_params=["-pix_fmt", "yuv420p"],
+            logger=None,
+        )
+        timings["video"] = time.perf_counter() - mark
+
+        master_dir = None
+        if master:
+            from fractions import Fraction
+
+            from moviepy.ae.master import write_master
+
+            mark = time.perf_counter()
+            audio = comp.audio
+            wav = None
+            if audio is None:
+                notes.append("master: composition has no audio; master is silent")
+            else:
+                fps = Fraction(str(comp.fps)).limit_denominator(1000000)
+                count = math.ceil(math.nextafter(comp.duration * float(fps), -math.inf))
+                wav = out / "master_audio.wav"
+                if not _export_wav(audio, wav, count, comp.fps):
+                    wav = None
+                    notes.append(
+                        f"master: {comp.fps:g} fps gives no whole sample count at "
+                        f"{_MASTER_RATE} Hz; master written without audio"
+                    )
+            master_dir = out / "master"
+            if master_dir.exists():
+                shutil.rmtree(master_dir)  # only reached with overwrite
+            write_master(comp, master_dir, audio_path=wav)
+            timings["master"] = time.perf_counter() - mark
+    finally:
+        for clip in getattr(comp, "episode_clips", ()):
+            try:
+                clip.close()
+            except Exception:  # noqa: BLE001 - best-effort cleanup
+                pass
+    timings["total"] = time.perf_counter() - began
+    return {
+        "video": str(video),
+        "report": str(report_path),
+        "stills": still_paths,
+        "master": None if master_dir is None else str(master_dir),
+        "notes": notes,
+        "preview": bool(preview),
+        "timings": timings,
+    }
+
+
+# --------------------------------------------------------------------------- #
+# project scaffolding and command line
+# --------------------------------------------------------------------------- #
+
+CHANNELS = ("story", "history")
+
+_README = """\
+夜燈 episode 專案（頻道：{channel}）
+
+製作清單
+[ ] 1. 把圖片放入 media/，背景圖亦然（取代 PLACEHOLDER_*.jpg）。
+[ ] 2. 把旁白放入 media/（取代 PLACEHOLDER_narration.wav）；
+       音樂（選用）放入 media/，並在 episode.json 的 audio.music 填路徑。
+[ ] 3. 把字幕 SRT 放入 subtitles/（取代 PLACEHOLDER_*.srt）。
+[ ] 4. 編輯 episode.json：標題、鏡頭秒數、章節、引文、audio。
+       所有相對路徑皆相對於 episode.json 所在資料夾。
+[ ] 5. 檢查：  python -m moviepy.ae.templates validate episode.json
+[ ] 6. 預覽：  python -m moviepy.ae.templates render episode.json out --preview
+[ ] 7. 正式輸出：python -m moviepy.ae.templates render episode.json final
+       （加 --master 另存無損母帶）
+注意：旁白若長於時間軸會報錯；請加長鏡頭，或於 audio 設 "trim_audio": true。
+"""
+
+
+def init_episode(directory, channel):
+    """Create an episode project folder from the ``channel`` config.
+
+    ``directory`` must not exist or be empty. It receives ``episode.json`` (the
+    shipped config with PLACEHOLDER paths), empty ``media/`` and ``subtitles/``
+    folders and a Traditional Chinese ``README.txt`` checklist. Returns the
+    path of ``episode.json``.
+
+    Examples
+    --------
+    >>> init_episode("x", "tv")
+    Traceback (most recent call last):
+    ...
+    moviepy.ae.templates.episode.EpisodeError: channel must be one of ['story', 'history'], got 'tv'
+    """
+    _choice(channel, "channel", CHANNELS)
+    target = Path(directory)
+    if target.exists() and (not target.is_dir() or any(target.iterdir())):
+        raise EpisodeError(f"directory exists and is not empty: {target}")
+    source = Path(__file__).parent / "configs" / f"nightlamp_{channel}.json"
+    target.mkdir(parents=True, exist_ok=True)
+    (target / "media").mkdir()
+    (target / "subtitles").mkdir()
+    config = target / "episode.json"
+    config.write_text(source.read_text(encoding="utf-8"), encoding="utf-8")
+    (target / "README.txt").write_text(
+        _README.format(channel=channel), encoding="utf-8"
+    )
+    return str(config)
+
+
+def main(argv=None):
+    """Command line entry: ``init``, ``validate`` and ``render``.
+
+    Returns the process exit status (0 success, 1 on any error), so it can be
+    called from tests; ``python -m moviepy.ae.templates`` exits with it.
+    """
+    import argparse
+    import sys
+
+    parser = argparse.ArgumentParser(
+        prog="python -m moviepy.ae.templates", description="Episode project tools."
+    )
+    sub = parser.add_subparsers(dest="command", required=True)
+    p_init = sub.add_parser("init", help="create a project folder")
+    p_init.add_argument("directory")
+    p_init.add_argument("--channel", choices=CHANNELS, required=True)
+    p_val = sub.add_parser("validate", help="load and build the timeline only")
+    p_val.add_argument("episode")
+    p_ren = sub.add_parser("render", help="render episode.mp4, report and stills")
+    p_ren.add_argument("episode")
+    p_ren.add_argument("output")
+    p_ren.add_argument("--preview", action="store_true")
+    p_ren.add_argument("--master", action="store_true")
+    p_ren.add_argument("--overwrite", action="store_true")
+    p_ren.add_argument("--still", type=float, nargs="+", action="extend", default=None)
+    args = parser.parse_args(argv)
+    try:
+        if args.command == "init":
+            print(f"created {init_episode(args.directory, args.channel)}")
+        elif args.command == "validate":
+            spec = EpisodeSpec.from_json(Path(args.episode))
+            comp = build_episode(spec)
+            try:
+                report = episode_report(comp)
+            finally:
+                for clip in comp.episode_clips:
+                    clip.close()
+            print(
+                f"OK {report['name']}: {report['size'][0]}x{report['size'][1]} "
+                f"@ {report['fps']:g} fps, {report['duration']:.2f} s, "
+                f"{len(report['timeline'])} segments, "
+                f"{len(report['chapters'])} chapters, {len(report['quotes'])} quotes"
+                + (", audio" if "audio" in report else ", no audio")
+            )
+        else:
+            result = render_episode(
+                args.episode,
+                args.output,
+                preview=args.preview,
+                stills=args.still,
+                master=args.master,
+                overwrite=args.overwrite,
+            )
+            print(json.dumps(result, ensure_ascii=False, indent=2))
+    except (EpisodeError, OSError, ValueError) as error:
+        print(f"ERROR: {error}", file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

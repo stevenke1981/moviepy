@@ -3,6 +3,9 @@
 import hashlib
 import json
 import shutil
+import subprocess
+import sys
+import wave
 from pathlib import Path
 
 import numpy as np
@@ -28,6 +31,20 @@ SMALL = {"size": [320, 180], "fps": 12, "hold": 1.0}
 def _image(path, color, size=(160, 90)):
     Path(path).parent.mkdir(parents=True, exist_ok=True)
     Image.fromarray(np.full((size[1], size[0], 3), color, np.uint8)).save(path)
+    return str(path)
+
+
+def _wav(path, seconds, amplitude, rate=22050, freq=440.0, channels=2):
+    """Write a sine WAV (16-bit PCM) and return its path."""
+    Path(path).parent.mkdir(parents=True, exist_ok=True)
+    t = np.arange(int(seconds * rate)) / rate
+    wave_ = np.sin(2 * np.pi * freq * t) * amplitude
+    data = np.repeat(wave_[:, None], channels, 1)
+    with wave.open(str(path), "wb") as handle:
+        handle.setnchannels(channels)
+        handle.setsampwidth(2)
+        handle.setframerate(rate)
+        handle.writeframes((data * 32767).astype("<i2").tobytes())
     return str(path)
 
 
@@ -420,6 +437,8 @@ def test_shipped_configs_build(name, tmp_path):
     sources = [spec.background.source] + [s.image for s in spec.shots]
     for k, path in enumerate(sources):
         _image(path, list(COLORS.values())[k % 3])
+    assert spec.audio is not None and spec.audio.music is None
+    _wav(spec.audio.narration, 1.0, 0.3)
     small = {**spec.preset_overrides, **SMALL}
 
     # Pass 1 without subtitles gives the built timeline length for the SRTs.
@@ -448,3 +467,322 @@ def test_shipped_configs_build(name, tmp_path):
         assert [c["number"] for c in report["chapters"]] == [1, 2]
         assert len(report["quotes"]) == 1
     assert comp.get_frame(report["duration"] / 2).shape == (180, 320, 3)
+
+
+# --------------------------------------------------------------------------- #
+# audio, bookend timing, render_episode, init_episode and the CLI
+# --------------------------------------------------------------------------- #
+
+RATE = 22050
+
+
+def _mini(media, **extra):
+    """8 s Latin episode (fixed-length cards) cheap enough to render for real."""
+    data = _data(media)
+    card = {"duration": 3, "auto_extend": False, "title_start": 0.0,
+            "title_duration": 0.2, "fade_out": 0.1}  # fmt: skip
+    data["intro"] = {"title": "Open", **card}
+    data["outro"] = {"title": "Close", **card}
+    data["shots"] = [{"image": str(media / "a.png"), "duration": 2, "move": "push"}]
+    data["subtitles"] = None
+    data.update(extra)
+    return EpisodeSpec.from_dict(data)
+
+
+def _rms(comp, start, end):
+    # Short windows: AudioFileClip.get_frame mis-handles spans over ~2.2 s.
+    t = np.arange(int(start * RATE), int(end * RATE)) / RATE
+    parts = [
+        np.asarray(comp.audio.get_frame(t[k : k + RATE // 2]), dtype=float)
+        for k in range(0, len(t), RATE // 2)
+    ]
+    return float(np.sqrt(np.mean(np.concatenate(parts) ** 2)))
+
+
+def _audio(media, narration_s=2.0, **extra):
+    section = {"narration": _wav(media / "voice.wav", narration_s, 0.5, RATE)}
+    section.update(extra)
+    return section
+
+
+def _sha(path):
+    return hashlib.sha256(Path(path).read_bytes()).hexdigest()
+
+
+def _close(comp):
+    for clip in comp.episode_clips:
+        clip.close()
+
+
+def test_audio_mix_duration_and_narration_gain(media):
+    spec = _mini(media, audio=_audio(media, narration_offset=1.0, narration_gain_db=-6))
+    comp = build_episode(spec)
+    try:
+        assert comp.audio.duration == pytest.approx(comp.duration)
+        expected = 0.5 / np.sqrt(2) * 10 ** (-6 / 20)
+        assert _rms(comp, 1.2, 2.8) == pytest.approx(expected, rel=0.03)
+        assert _rms(comp, 0.0, 0.9) < 1e-4  # before the offset
+        assert _rms(comp, 3.2, 7.9) < 1e-4  # after the narration
+        report = episode_report(comp)
+        assert report["audio"]["narration"]["duration"] == pytest.approx(2.0, abs=0.01)
+        assert report["audio"]["narration"]["sha256"] == _sha(media / "voice.wav")
+        assert report["audio"]["duration"] == pytest.approx(comp.duration)
+        assert str(media / "voice.wav") in report["sources"]
+    finally:
+        _close(comp)
+
+
+def test_music_gain_and_constant_duck_during_narration(media):
+    music = _wav(media / "music.wav", 10.0, 0.5, RATE, freq=220.0)
+    # Narration is muted by gain so only the music bed is measured.
+    audio = _audio(
+        media, narration_offset=2.0, music=music, music_gain_db=-6,
+        music_duck_db=-12, narration_gain_db=-200,
+    )  # fmt: skip
+    comp = build_episode(_mini(media, audio=audio))
+    try:
+        bed = 0.5 / np.sqrt(2) * 10 ** (-6 / 20)
+        assert _rms(comp, 0.2, 1.5) == pytest.approx(bed, rel=0.03)
+        assert _rms(comp, 2.4, 3.8) == pytest.approx(bed * 10 ** (-12 / 20), rel=0.03)
+        assert _rms(comp, 4.6, 7.9) == pytest.approx(bed, rel=0.03)
+        info = episode_report(comp)["audio"]["music"]
+        assert info["duck_span"] == [2.0, 4.0] and info["duck_db"] == -12
+    finally:
+        _close(comp)
+
+
+def test_music_loop_and_no_duck(media):
+    music = _wav(media / "music.wav", 1.0, 0.4, RATE)
+    audio = _audio(media, music=music, music_duck_db=0, music_loop=True)
+    comp = build_episode(_mini(media, audio=audio))
+    try:
+        assert _rms(comp, 6.5, 7.9) == pytest.approx(
+            0.4 / 2**0.5 * 10 ** (-18 / 20), rel=0.05
+        )
+        assert episode_report(comp)["audio"]["music"]["duration"] == pytest.approx(8.0)
+    finally:
+        _close(comp)
+
+
+def test_audio_fades(media):
+    music = _wav(media / "music.wav", 10.0, 0.5, RATE)
+    audio = _audio(
+        media, music=music, fade_in=1.0, fade_out=1.0, narration_gain_db=-200
+    )
+    comp = build_episode(_mini(media, audio=audio))
+    try:
+        assert _rms(comp, 0.0, 0.2) < 0.3 * _rms(comp, 2.5, 2.7)
+        assert _rms(comp, 7.8, 8.0) < 0.3 * _rms(comp, 2.5, 2.7)
+    finally:
+        _close(comp)
+
+
+def test_narration_longer_than_timeline(media):
+    long_audio = _audio(media, narration_s=11.0)
+    with pytest.raises(EpisodeError, match="trim_audio"):
+        build_episode(_mini(media, audio=long_audio))
+    comp = build_episode(_mini(media, audio={**long_audio, "trim_audio": True}))
+    try:
+        assert comp.audio.duration == pytest.approx(comp.duration)
+        assert _rms(comp, 7.0, 7.9) > 0.2
+    finally:
+        _close(comp)
+    with pytest.raises(EpisodeError, match="past the"):
+        build_episode(_mini(media, audio=_audio(media, narration_offset=8.5)))
+
+
+@pytest.mark.parametrize(
+    "audio, message",
+    [
+        ({}, "missing required key"),
+        ({"narration": "nope.wav"}, "audio.narration not found"),
+        ({"narration": "x", "bogus": 1}, "unknown key"),
+        ({"narration": "x", "music_duck_db": 3}, "music_duck_db must be <= 0"),
+        ({"narration": "x", "fade_in": -1}, "fade_in must be >= 0"),
+        ({"narration": "x", "trim_audio": "yes"}, "trim_audio must be true"),
+        ({"narration": "x", "narration_gain_db": "loud"}, "must be a number"),
+    ],
+)
+def test_audio_validation_errors(media, audio, message):
+    with pytest.raises(EpisodeError, match=message):
+        build_episode(_mini(media, audio=audio))
+
+
+def test_audio_missing_music_and_roundtrip(media):
+    with pytest.raises(EpisodeError, match="audio.music not found"):
+        build_episode(_mini(media, audio=_audio(media, music=str(media / "no.wav"))))
+    spec = _mini(media, audio=_audio(media, music=None, fade_out=1.5))
+    assert EpisodeSpec.from_json(spec.to_json()) == spec
+    assert _mini(media).audio is None  # old specs stay valid
+
+
+def test_audio_relative_paths_resolve_against_json_folder(tmp_path):
+    folder = tmp_path / "proj"
+    data = {
+        "shots": [{"image": "a.png", "duration": 1}],
+        "audio": {"narration": "v.wav", "music": "m.wav"},
+    }
+    spec = EpisodeSpec.from_dict(data, base_dir=folder)
+    assert spec.audio.narration == str(folder / "v.wav")
+    assert spec.audio.music == str(folder / "m.wav")
+
+
+def test_bookend_timing_passthrough(media):
+    timing = {
+        "brand_start": 0.1, "brand_duration": 0.3, "title_start": 0.4,
+        "title_duration": 0.5, "subtitle_start": 0.9, "subtitle_duration": 0.4,
+        "fade_out": 0.2, "rule": False, "auto_extend": False,
+        "title_keep_together": ["Open"], "subtitle_keep_together": ["x"],
+    }  # fmt: skip
+    data = _data(media)
+    data["intro"] = {"title": "Open", "duration": 2, **timing}
+    spec = EpisodeSpec.from_dict(data)
+    card = spec.intro.card_spec("intro")
+    for key, value in timing.items():
+        assert getattr(card, key) == (
+            tuple(value) if isinstance(value, list) else value
+        )
+    assert EpisodeSpec.from_json(spec.to_json()) == spec
+    assert spec.outro.card_spec("outro").title_start == 0.55  # defaults kept
+    data["intro"]["title_start"] = -1
+    with pytest.raises(EpisodeError, match="title_start"):
+        EpisodeSpec.from_dict(data)
+
+
+def _ffprobe(path):
+    out = subprocess.run(
+        ["ffprobe", "-v", "error", "-show_entries", "stream=codec_name,codec_type,"
+         "pix_fmt,width,height,r_frame_rate:format=duration", "-of", "json", str(path)],
+        capture_output=True, text=True, check=True,
+    ).stdout  # fmt: skip
+    return json.loads(out)
+
+
+def test_render_episode_preview_and_overwrite(media, tmp_path):
+    narration = _wav(media / "voice.wav", 2.0, 0.3, RATE)
+    spec = _mini(media, audio={"narration": narration})
+    out = tmp_path / "out"
+    result = ep.render_episode(spec, out, preview=True)
+    assert result["preview"] is True and result["master"] is None
+    report = json.loads(Path(result["report"]).read_text(encoding="utf-8"))
+    assert report["size"] == [480, 270] and report["fps"] == 12.0
+    assert report["audio"]["narration"]["path"] == narration
+    names = sorted(Path(p).name for p in result["stills"])
+    assert len(names) == 2 and names[0].startswith("intro_")
+    assert names[1].startswith("outro_")
+    for path in result["stills"]:
+        assert Image.open(path).size == (480, 270)
+    assert {"build", "stills", "video", "total"} <= set(result["timings"])
+    if shutil.which("ffprobe"):
+        info = _ffprobe(result["video"])
+        kinds = {s["codec_type"]: s for s in info["streams"]}
+        assert kinds["video"]["codec_name"] == "h264"
+        assert kinds["video"]["pix_fmt"] == "yuv420p"
+        assert kinds["video"]["r_frame_rate"] == "12/1"
+        assert kinds["audio"]["codec_name"] == "aac"
+        assert float(info["format"]["duration"]) == pytest.approx(
+            report["duration"], abs=0.15
+        )
+    with pytest.raises(EpisodeError, match="not empty"):
+        ep.render_episode(spec, out, preview=True)
+    again = ep.render_episode(spec, out, preview=True, stills=(1.0,), overwrite=True)
+    assert [Path(p).name for p in again["stills"]] == ["t_0001000ms.png"]
+
+
+def test_render_episode_from_json_path_without_audio(media, tmp_path):
+    path = tmp_path / "episode.json"
+    _mini(media).to_json(path)
+    result = ep.render_episode(path, tmp_path / "o", preview=True, stills=())
+    assert result["stills"] == []
+    assert Path(result["video"]).stat().st_size > 0
+
+
+def test_render_episode_master(media, tmp_path):
+    spec = _mini(media, audio=_audio(media, narration_s=2.0))
+    result = ep.render_episode(
+        spec, tmp_path / "o", preview=True, master=True, stills=()
+    )
+    master = Path(result["master"])
+    assert (master / "master.mkv").is_file() and (master / "manifest.json").is_file()
+    with wave.open(str(tmp_path / "o" / "master_audio.wav")) as handle:
+        assert handle.getnframes() == 96 * 48000 // 12
+
+
+def test_render_episode_closes_clips_on_failure(media, tmp_path, monkeypatch):
+    closed = []
+    original = ep.build_episode
+
+    def spy(spec):
+        comp = original(spec)
+        for clip in comp.episode_clips:
+            clip.close = lambda c=clip: closed.append(c)
+
+        def boom(*args, **kwargs):
+            raise RuntimeError("x")
+
+        comp.write_videofile = boom
+        return comp
+
+    monkeypatch.setattr(ep, "build_episode", spy)
+    spec = _mini(media, audio=_audio(media))
+    with pytest.raises(RuntimeError):
+        ep.render_episode(spec, tmp_path / "o", preview=True, stills=())
+    assert closed  # the narration clip was closed
+
+
+@pytest.mark.parametrize("channel", ["story", "history"])
+def test_init_episode_tree(tmp_path, channel):
+    target = tmp_path / "new" / "ep"
+    config = ep.init_episode(target, channel)
+    assert Path(config) == target / "episode.json"
+    assert (target / "media").is_dir() and (target / "subtitles").is_dir()
+    readme = (target / "README.txt").read_text(encoding="utf-8")
+    assert "validate" in readme and "media/" in readme
+    spec = EpisodeSpec.from_json(config)
+    assert spec.preset == f"nightlamp_{channel}"
+    assert spec.audio.narration == str(target / "media" / "PLACEHOLDER_narration.wav")
+    assert spec.audio.music is None
+    with pytest.raises(EpisodeError, match="not empty"):
+        ep.init_episode(target, channel)
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    ep.init_episode(empty, channel)  # an empty directory is acceptable
+    with pytest.raises(EpisodeError, match="channel"):
+        ep.init_episode(tmp_path / "x", "news")
+
+
+def test_cli_init_validate_render(media, tmp_path, capsys):
+    path = tmp_path / "episode.json"
+    _mini(media, audio=_audio(media)).to_json(path)
+    assert ep.main(["validate", str(path)]) == 0
+    assert capsys.readouterr().out.startswith("OK")
+    assert ep.main(["validate", str(tmp_path / "missing.json")]) == 1
+    assert "ERROR" in capsys.readouterr().err
+    bad = tmp_path / "bad.json"
+    bad.write_text('{"shots": []}', encoding="utf-8")
+    assert ep.main(["validate", str(bad)]) == 1
+    capsys.readouterr()
+    assert ep.main(["init", str(tmp_path / "p"), "--channel", "story"]) == 0
+    assert ep.main(["init", str(tmp_path / "p"), "--channel", "story"]) == 1
+    # placeholders do not exist yet, so validating a fresh project must fail
+    assert ep.main(["validate", str(tmp_path / "p" / "episode.json")]) == 1
+    capsys.readouterr()
+    out = tmp_path / "r"
+    code = ep.main(["render", str(path), str(out), "--preview", "--still", "0.5", "3"])
+    assert code == 0
+    assert sorted(p.name for p in (out / "stills").iterdir()) == [
+        "t_0000500ms.png",
+        "t_0003000ms.png",
+    ]
+    assert ep.main(["render", str(path), str(out), "--preview"]) == 1
+
+
+def test_cli_module_entry_point(media, tmp_path):
+    path = tmp_path / "episode.json"
+    _mini(media).to_json(path)
+    repo = Path(ep.__file__).parents[3]
+    base = [sys.executable, "-m", "moviepy.ae.templates", "validate"]
+    run = subprocess.run([*base, str(path)], cwd=repo, capture_output=True, text=True)
+    assert run.returncode == 0 and run.stdout.startswith("OK")
+    run = subprocess.run([*base, "nope.json"], cwd=repo, capture_output=True, text=True)
+    assert run.returncode == 1 and "ERROR" in run.stderr

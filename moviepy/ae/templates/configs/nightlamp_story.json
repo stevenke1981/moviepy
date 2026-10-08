@@ -41,6 +41,18 @@
     "primary_lang": "zh-TW",
     "secondary_lang": "en"
   },
+  "audio": {
+    "narration": "media/PLACEHOLDER_narration.wav",
+    "narration_offset": 0.0,
+    "narration_gain_db": 0.0,
+    "music": null,
+    "music_gain_db": -18.0,
+    "music_duck_db": -8.0,
+    "music_loop": false,
+    "fade_in": 0.5,
+    "fade_out": 2.0,
+    "trim_audio": false
+  },
   "chapter_period": 5.5,
   "dip_color": [0, 0, 0],
   "seed": 7
