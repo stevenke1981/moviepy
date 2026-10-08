@@ -23,10 +23,11 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from moviepy.ae import Composition
-from moviepy.ae.layers.av import AVLayer
+from moviepy.ae.layers.solid import SolidLayer
 from moviepy.ae.properties import Keyframe, Property
 from moviepy.ae.properties.easing import Ease
 from moviepy.ae.templates.paper import (
+    CachedAVLayer,
     alpha_over,
     cached_rgba_clip,
     drop_shadow,
@@ -36,6 +37,8 @@ from moviepy.ae.templates.paper import (
     load_font,
     mix_color,
     paper_texture,
+    rect_shadow,
+    resize_straight,
     rgba_still,
     seal_stamp,
 )
@@ -192,6 +195,18 @@ def split_columns(text, per_column):
                 and take < per_column + 2
             ):
                 take += 1
+            if take < len(chars) and chars[take] in NO_LINE_START:
+                # More closers than the pull-in allowance: hand the trailing
+                # run to the next column's predecessor instead, or take the whole
+                # run when the column holds nothing else.
+                back = take
+                while back > 1 and chars[back - 1] in NO_LINE_START:
+                    back -= 1
+                if back > 1:
+                    take = back - 1  # the char before the run moves down with it
+                else:
+                    while take < len(chars) and chars[take] in NO_LINE_START:
+                        take += 1
             columns.append(chars[:take])
             chars = chars[take:]
     return columns
@@ -323,7 +338,7 @@ def _cord_segment(width, height, y, thick, color, knots):
              (ex + thick * 0.45) * ss, (y + thick * 0.7) * ss],
             fill=(*color, 235),
         )  # fmt: skip
-    return cv2.resize(np.asarray(img), (width, height), interpolation=cv2.INTER_AREA)
+    return resize_straight(np.asarray(img), (width, height))
 
 
 def _roller(h, w, wood):
@@ -399,8 +414,9 @@ def _opacity(t0, t1, hold_until, duration, peak=100.0):
 
 def _layer(clip, name, x, y, opacity, *, position=None, **transform):
     if position is None:
-        position = (float(x), float(y))
-    return AVLayer(
+        # Whole-pixel positions keep the renderer on its copy-free blit path.
+        position = (float(round(x)), float(round(y)))
+    return CachedAVLayer(
         clip,
         name,
         transform=Transform(
@@ -602,7 +618,8 @@ def vertical_quote(
                                     (gap // 2, gap // 2 + sw))  # fmt: skip
                 alpha_over(img, seg, pad, pad + y - thick - 2)
             x1 = x_right - i * colw
-            ximg = x1 - sw - gap / 2 - pad
+            ximg = float(round(x1 - sw - gap / 2 - pad))
+            yimg = float(round(y_top - pad))
             t0 = 0.15 + i * 0.09
             slide = float(40 * S)
             add(
@@ -610,16 +627,16 @@ def vertical_quote(
                     rgba_still(img, T),
                     f"slip {i + 1}",
                     ximg,
-                    y_top - pad,
+                    yimg,
                     _opacity(t0, t0 + 0.35, hold_until, T),
                     position=Property(
-                        (ximg, y_top - pad),
+                        (ximg, yimg),
                         value_type="vec2",
                         keyframes=_keys(
                             [
-                                (0.0, (ximg + slide, y_top - pad)),
-                                (t0, (ximg + slide, y_top - pad)),
-                                (t0 + 0.35, (ximg, y_top - pad)),
+                                (0.0, (ximg + slide, yimg)),
+                                (t0, (ximg + slide, yimg)),
+                                (t0 + 0.35, (ximg, yimg)),
                             ],
                             _OUT_CUBIC,
                         ),  # fmt: skip
@@ -651,19 +668,21 @@ def vertical_quote(
         def vw_at(t):
             return int(round(full_w * _SINE((t - u0) / (u1 - u0))))
 
+        shadow_px = np.asarray(mix_color(shadow_rgb, (0, 0, 0), 0.85), np.uint8)
+        sheet_size = (full_w + 2 * pad, panel_h + 2 * pad)
+
         def sheet_build(vw):
-            img = np.zeros((panel_h + 2 * pad, full_w + 2 * pad, 4), np.uint8)
-            if vw > 0:
-                ox = pad + full_w - vw
-                img[...] = drop_shadow(
-                    np.ones((panel_h, vw), np.float32), (full_w + 2 * pad, panel_h + 2 * pad),
-                    (ox, pad + int(10 * S)), 16 * S, 0.42, mix_color(shadow_rgb, (0, 0, 0), 0.85),
-                )  # fmt: skip
-                piece = np.empty((panel_h, vw, 4), np.uint8)
-                piece[..., :3] = back[:, full_w - vw :]
-                piece[..., 3] = 255
-                alpha_over(img, piece, ox, pad)
-            return img[..., :3].copy(), img[..., 3] / 255.0
+            rgb = np.empty((sheet_size[1], sheet_size[0], 3), np.uint8)
+            rgb[...] = shadow_px
+            if vw <= 0:
+                return rgb, np.zeros(sheet_size[::-1], np.float32)
+            ox = pad + full_w - vw
+            alpha = rect_shadow(
+                sheet_size, (ox, pad + int(10 * S), vw, panel_h), 16 * S, 0.42
+            )
+            rgb[pad : pad + panel_h, ox : ox + vw] = back[:, full_w - vw :]
+            alpha[pad : pad + panel_h, ox : ox + vw] = 1.0
+            return rgb, alpha
 
         sheet_clip = cached_rgba_clip(
             (full_w + 2 * pad, panel_h + 2 * pad),
@@ -683,14 +702,16 @@ def vertical_quote(
         )
         rw = int(cell * 0.42)
         ext = int(cell * 0.35)
+        roll_x = float(round(right_edge - rw / 2))
+        roll_end = float(round(right_edge - full_w - rw / 2))
         wood = mix_color(bamboo_dark, (0, 0, 0), 0.35)
         roll = _roller(panel_h + 2 * ext, rw, wood)
-        ry = y_top - ext
+        ry = float(round(y_top - ext))
         add(
             _layer(
                 rgba_still(roll, T),
                 "roller right",
-                right_edge - rw / 2,
+                roll_x,
                 ry,
                 _opacity(u0 - 0.05, u0, hold_until, T),
             )  # fmt: skip
@@ -699,17 +720,17 @@ def vertical_quote(
             _layer(
                 rgba_still(roll, T),
                 "roller left",
-                right_edge - rw / 2,
+                roll_x,
                 ry,
                 _opacity(u0 - 0.05, u0, hold_until, T),
                 position=Property(
-                    (right_edge - rw / 2, ry),
+                    (roll_x, ry),
                     value_type="vec2",
                     keyframes=_keys(
                         [
-                            (0.0, (right_edge - rw / 2, ry)),
-                            (u0, (right_edge - rw / 2, ry)),
-                            (u1, (right_edge - full_w - rw / 2, ry)),
+                            (0.0, (roll_x, ry)),
+                            (u0, (roll_x, ry)),
+                            (u1, (roll_end, ry)),
                         ],
                         _SINE,
                     ),  # fmt: skip
@@ -765,13 +786,14 @@ def vertical_quote(
         lx = centers[-1]
         ly = y_top + panel_h - padv * 0.55 - ssz * 0.5
         add(
-            AVLayer(
+            CachedAVLayer(
                 rgba_still(stamp, T),
                 "seal",
                 transform=Transform(
                     anchor_point=(ssz / 2, ssz / 2),
                     position=(lx, ly),
                     rotation=-3.0,
+                    interpolation="linear",  # cubic rings past alpha
                     scale=Property(
                         (150.0, 150.0),
                         value_type="vec2",
@@ -808,8 +830,6 @@ def vertical_quote(
 
 
 def _dim_layer(W, H, dim, T, hold_until):
-    from moviepy.ae.layers.solid import SolidLayer
-
     return SolidLayer(
         "dim",
         color=(8, 6, 4),

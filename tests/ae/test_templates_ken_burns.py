@@ -212,3 +212,86 @@ def test_transparent_image_is_rejected():
     rgba = np.dstack([_texture(), np.full(SIZE[::-1], 128, np.uint8)])
     with pytest.raises(ValueError, match="opaque"):
         ken_burns(rgba, PRESET, duration=DURATION)
+
+
+# ---- review round -------------------------------------------------------- #
+
+
+@pytest.mark.parametrize("size", [(4000, 100), (100, 4000), (2, 2), (3, 500)])
+@pytest.mark.parametrize("move", MOVES)
+@pytest.mark.parametrize("frames", [1, 2])
+def test_extreme_aspect_and_tiny_durations_never_show_a_border(size, move, frames):
+    rng = np.random.default_rng(0)
+    source = rng.integers(60, 256, (size[1], size[0], 3), dtype=np.uint8)
+    comp = ken_burns(source, PRESET, duration=frames / 24, move=move, hold=0.0)
+    for k in range(frames):
+        rgba = _render(comp, k / 24)
+        np.testing.assert_allclose(rgba[..., 3], 1.0, atol=1e-6)
+        assert rgba[..., :3].min() > 0.05
+
+
+class _Bare:
+    """A clip-like object with only ``get_frame``: no fps, no duration."""
+
+    def __init__(self):
+        self.base = _texture((SIZE[0] + 80, SIZE[1]))
+
+    def get_frame(self, t):
+        x = min(max(t, 0.0), 2.0) * 24 * 0.5  # moves 0.5 px per frame, then holds
+        matrix = np.float32([[1, 0, -x], [0, 1, 0]])
+        return cv2.warpAffine(
+            self.base,
+            matrix,
+            SIZE,
+            flags=cv2.INTER_LINEAR,
+            borderMode=cv2.BORDER_REFLECT,
+        )
+
+
+def test_check_motion_without_fps_defaults_to_24_and_handles_past_the_end():
+    result = check_motion(_Bare(), 0, 1)
+    assert result["frames"] == 24 and result["verdict"] == "SMOOTH"
+    assert check_motion(_Bare(), 3.0, 1)["verdict"] == "STATIC"
+
+
+def test_check_motion_on_composition_past_its_end_holds_the_last_frame():
+    comp = ken_burns(_texture(), PRESET, duration=1.0, move="push", hold=0.0)
+    assert check_motion(comp, 1.0, 0.5)["verdict"] == "STATIC"
+
+
+def test_source_is_imported_once_and_matches_a_fresh_render():
+    kwargs = {"duration": DURATION, "move": "push", "hold": 0.5}
+    comp = ken_burns(_texture(), PRESET, **kwargs)
+    layer = comp.layers[0]
+    assert layer.source_buffer(0.0) is layer.source_buffer(1.0)
+    first = _render(comp, 1.0)
+    np.testing.assert_array_equal(first, _render(comp, 1.0))
+    fresh = ken_burns(_texture(), PRESET, **kwargs)
+    np.testing.assert_array_equal(first, _render(fresh, 1.0))
+
+
+def test_1080p_push_and_pan_are_smooth_and_fast():
+    import time
+
+    from moviepy.ae.templates.presets import get_preset
+
+    preset = get_preset("nightlamp_history")
+    rng = np.random.default_rng(1)
+    small = rng.integers(20, 256, (54, 96, 3), dtype=np.uint8)
+    source = cv2.GaussianBlur(
+        cv2.resize(small, (2560, 1440), interpolation=cv2.INTER_CUBIC), (0, 0), 1.2
+    )
+    for move in ("push", "pan-right"):
+        comp = ken_burns(source, preset, duration=4.0, move=move, hold=0.0)
+        comp.render_buffer(0.0)
+        start = time.perf_counter()
+        frames = [comp.render_buffer(i / 24).to_uint8_rgb() for i in range(96)]
+        per_frame = (time.perf_counter() - start) / 96
+        result = motion_smoothness(frames)
+        print(
+            f"\n{move}: {per_frame * 1000:.0f} ms/frame {result['verdict']} "
+            f"median {result['median']} max_jerk {result['max_jerk']}"
+        )
+        assert result["verdict"] == "SMOOTH"
+        assert result["max_jerk"] < 1.0
+        assert per_frame < 0.5

@@ -328,3 +328,212 @@ def test_quote_deterministic(preset):
     b = vertical_quote(QUOTE, None, preset, dynasty="唐", seed=3)
     t = a.quote_meta["write_end"] + 0.5
     assert np.array_equal(a.get_frame(t), b.get_frame(t))
+
+
+# ---- review round: correctness and speed ---------------------------------- #
+
+
+def test_split_columns_never_starts_a_column_with_closing_punctuation():
+    for text, per in [
+        ("甲。。。。", 1),
+        ("甲乙。。。。。丙丁", 2),
+        ("甲乙丙，」』丁", 3),
+    ]:
+        cols = ["".join(c) for c in split_columns(text, per)]
+        assert "".join(cols) == text
+        assert not any(c[0] in "，。、；：！？」』）》" for c in cols), cols
+    assert ["".join(c) for c in split_columns("，，，", 2)] == ["，，，"]
+
+
+def test_split_quote_pages_survive_punctuation_runs():
+    text = "甲。。。。。乙丙。。。丁"
+    pages = split_quote_pages(text, per_column=2, max_columns=2)
+    assert "".join(p.replace("\n", "") for p in pages) == text
+
+
+def test_resize_straight_keeps_colour_at_soft_edges():
+    from moviepy.ae.templates.paper import resize_straight
+
+    img = np.zeros((8, 8, 4), np.uint8)  # transparent black surround
+    img[2:6, 2:6] = (200, 90, 30, 255)
+    out = resize_straight(img, (3, 3))
+    edge = (out[..., 3] > 0) & (out[..., 3] < 255)
+    assert edge.any()
+    # a naive straight-RGBA area resize darkens the edge; premultiplied does not
+    assert np.abs(out[..., :3][edge].astype(int) - (200, 90, 30)).max() <= 1
+
+
+def test_cord_and_seal_edges_have_no_dark_fringe():
+    from moviepy.ae.templates.quote import _cord_segment
+
+    color = (150, 120, 70)
+    cord = _cord_segment(60, 12, 6, 4, color, (10,))
+    soft = (cord[..., 3] > 8) & (cord[..., 3] < 240)
+    assert soft.any()
+    # edge pixels carry the cord colour (the knot shading is at most 34 darker)
+    floor = np.array(color) - (34, 28, 20) - 1  # darkest tick colour
+    assert (cord[..., :3][soft].astype(int) >= floor).all()
+    seal = seal_stamp("壹", 40, (176, 30, 28), seed=2)
+    edge = (seal[..., 3] > 8) & (seal[..., 3] < 200)
+    assert edge.any()
+    assert seal[..., 0][edge].min() >= 100  # red body or paper glyph, never black
+
+
+def test_rect_shadow_matches_blurred_drop_shadow():
+    from moviepy.ae.templates.paper import drop_shadow, rect_shadow
+
+    size, rect = (80, 60), (20, 15, 30, 25)
+    fast = rect_shadow(size, rect, 4.0, 0.5)
+    ref = drop_shadow(np.ones((25, 30), np.float32), size, rect[:2], 4.0, 0.5)
+    assert np.abs(fast - ref[..., 3] / 255.0).max() < 0.02
+
+
+def test_cached_av_layer_imports_each_state_once():
+    from moviepy.ae.templates.paper import CachedAVLayer, cached_rgba_clip
+
+    clip = cached_rgba_clip(
+        (4, 4),
+        2.0,
+        lambda t: int(t),
+        lambda k: (np.full((4, 4, 3), 10 * k, np.uint8), np.ones((4, 4))),
+    )
+    layer = CachedAVLayer(clip, "x")
+    first = layer.source_buffer(0.2)
+    assert layer.source_buffer(0.9) is first
+    assert layer.source_buffer(1.2) is not first
+    assert layer.source_buffer(1.2).to_uint8_rgb()[0, 0, 0] == 10
+    assert clip.builds == 2
+
+
+def test_cached_rgba_clip_respects_byte_budget():
+    from moviepy.ae.templates.paper import cached_rgba_clip
+
+    clip = cached_rgba_clip(
+        (16, 16),
+        10.0,
+        lambda t: int(t),
+        lambda k: (np.zeros((16, 16, 3), np.uint8), np.ones((16, 16))),
+        max_bytes=2 * (16 * 16 * 3 + 16 * 16 * 4),
+    )
+    for t in range(6):
+        clip.get_frame(float(t))
+    assert len(clip.states) == 2
+
+
+@needs_kaiu
+def test_chapter_single_item_never_flickers_at_period_boundaries(preset):
+    comp = chapter_tag(["本章人物"], 1, 14, preset, period=2.0).composition
+    ref, ref_mask = comp.get_frame(1.0), comp.mask.get_frame(1.0)
+    for t in (2.0, 2.1, 2.25, 2.4, 4.05, 8.1):
+        assert np.array_equal(comp.get_frame(t), ref), t
+        assert np.array_equal(comp.mask.get_frame(t), ref_mask), t
+
+
+@needs_kaiu
+@pytest.mark.parametrize("duration", [0.05, 0.1, 0.5, 1.0, 1.15, 1.5])
+def test_chapter_very_short_durations_build_and_render(preset, duration):
+    tag = chapter_tag(["甲", "乙"], 2, duration, preset, period=5.5)
+    last = max(0.0, duration - 1 / 24)
+    for t in (0.0, last, duration * 0.5):
+        assert tag.composition.get_frame(t).shape[2] == 3
+
+
+@needs_kaiu
+def test_chapter_duration_shorter_than_period_never_rotates(preset):
+    tag = chapter_tag(["甲", "乙乙乙乙"], 1, 3.0, preset, period=10.0)
+    comp = tag.composition
+    ref = comp.get_frame(1.5)
+    assert np.array_equal(ref, comp.get_frame(2.0))
+    assert tag.strip.clip.builds <= 30
+
+
+@needs_kaiu
+def test_chapter_very_long_item_shrinks_to_fit_frame(preset):
+    tag = chapter_tag(["本章人物與事件" * 12], 1, 4, preset)
+    assert tag.meta["x"] + tag.meta["w"] <= preset.size[0]
+    assert tag.meta["font_px"] < 44
+    wide = chapter_tag(["本章人物與事件" * 12], 1, 4, preset, shrink_to_fit=False)
+    assert wide.meta["x"] + wide.meta["w"] > preset.size[0]
+
+
+@needs_kaiu
+def test_chapter_hold_frames_are_pure_cache_hits(preset):
+    tag = chapter_tag(["第一章 鴻門宴", "楚漢相爭"], 1, 20, preset)
+    comp, clip = tag.composition, tag.strip.clip
+    comp.render_buffer(3.0)
+    builds = clip.builds
+    start = time.perf_counter()
+    for i in range(24):
+        comp.render_buffer(3.0 + i / 24)
+    per_frame = (time.perf_counter() - start) / 24
+    assert clip.builds == builds
+    assert per_frame < 0.1
+
+
+@needs_kaiu
+def test_chapter_deterministic(preset):
+    a = chapter_tag(["甲", "乙"], 3, 8, preset, seed=5).composition
+    b = chapter_tag(["甲", "乙"], 3, 8, preset, seed=5).composition
+    for t in (0.3, 2.0, 5.7):
+        assert np.array_equal(a.get_frame(t), b.get_frame(t))
+        assert np.array_equal(a.mask.get_frame(t), b.mask.get_frame(t))
+
+
+@needs_kaiu
+@pytest.mark.parametrize("dynasty", ["西漢", "明"])
+def test_quote_frame_time_boundaries(preset, dynasty):
+    comp = vertical_quote(QUOTE, "《史記》", preset, dynasty=dynasty, seal="史")
+    start = comp.render_buffer(0.0)
+    assert start.rgba[..., 3].max() < 0.5
+    end = comp.render_buffer(comp.duration - 1 / 24)
+    assert end.rgba.shape == (1080, 1920, 4)
+    assert np.isfinite(end.rgba).all()
+    assert end.rgba[..., 3].max() < 0.35  # faded out
+    held = comp.render_buffer(comp.quote_meta["write_end"] + 0.5).rgba
+    # premultiplied invariant: colour never exceeds alpha
+    assert (held[..., :3] <= held[..., 3:4] + 1e-4).all()
+    assert held[..., 3].max() > 0.9
+
+
+@needs_kaiu
+def test_quote_punctuation_only_column_renders(preset):
+    text = "「" + "。" * 7 + "」"
+    comp = vertical_quote(text, None, preset, dynasty="唐", dim=0)
+    frame = comp.render_buffer(comp.quote_meta["write_end"] + 0.5).rgba
+    assert frame[..., 3].max() > 0.5
+
+
+@needs_kaiu
+def test_quote_layers_sit_on_whole_pixels_when_holding(preset):
+    for dynasty in ("西漢", "明"):
+        comp = vertical_quote(QUOTE, "《史記》", preset, dynasty=dynasty)
+        t = comp.quote_meta["write_end"] + 0.5
+        for name, layer in comp.quote_layers.items():
+            if name in ("dim", "seal"):
+                continue
+            x, y = layer.transform.position.value_at(t)
+            assert x == int(x) and y == int(y), name
+
+
+def _builds(comp):
+    return sum(
+        getattr(layer.clip, "builds", 0)
+        for layer in comp.quote_layers.values()
+        if hasattr(layer, "clip")
+    )
+
+
+@needs_kaiu
+@pytest.mark.parametrize("dynasty", ["西漢", "明"])
+def test_quote_holding_frames_are_fast_and_cached(preset, dynasty):
+    comp = vertical_quote(QUOTE, "《史記》", preset, dynasty=dynasty, title="貨殖")
+    t = comp.quote_meta["write_end"] + 0.5
+    comp.render_buffer(t)
+    builds = _builds(comp)
+    start = time.perf_counter()
+    for i in range(24):
+        comp.render_buffer(t + i / 24)
+    per_frame = (time.perf_counter() - start) / 24
+    print(f"\nquote {dynasty} holding 1080p: {per_frame * 1000:.1f} ms/frame")
+    assert per_frame < 0.25  # measured ~45 ms; loose so slow machines do not flake
+    assert _builds(comp) == builds

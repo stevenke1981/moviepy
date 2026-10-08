@@ -25,6 +25,7 @@ from moviepy.ae.layers.av import AVLayer
 from moviepy.ae.properties import Keyframe, Property
 from moviepy.ae.properties.easing import Ease
 from moviepy.ae.templates.paper import (
+    CachedAVLayer,
     alpha_over,
     cached_rgba_clip,
     chinese_numeral,
@@ -47,6 +48,7 @@ _EASE_OUT = Ease.bezier(0.16, 1.0, 0.3, 1.0)
 _EASE_IN = Ease.bezier(0.7, 0.0, 0.84, 0.0)
 _EASE_CUBIC = Ease.bezier(0.33, 1.0, 0.68, 1.0)
 _STEPS = 24
+_MIN_PX = 12
 _POSITIONS = ("top_left", "bottom_left")
 
 
@@ -80,6 +82,23 @@ class ChapterTag:
         return text
 
 
+def _keyframes(rows):
+    """Build keyframes from ``(time, value[, ease])``, dropping repeated times.
+
+    Short durations squeeze neighbouring key times together; a later key at
+    (almost) the same time as an earlier one adds nothing and would be rejected.
+    """
+    keys = []
+    for time, value, *ease in rows:
+        if keys and time <= keys[-1].time + 1e-6:
+            continue
+        if ease:
+            keys.append(Keyframe(time, value, interp="bezier", out_ease=ease[0]))
+        else:
+            keys.append(Keyframe(time, value))
+    return keys
+
+
 def _faded(image, factor):
     out = image.copy()
     out[..., 3] = (out[..., 3] * max(0.0, min(1.0, factor))).astype(np.uint8)
@@ -98,6 +117,7 @@ def chapter_tag(
     seal=None,
     seed=7,
     size=44,
+    shrink_to_fit=True,
 ):
     """Build the animated chapter tag.
 
@@ -123,6 +143,10 @@ def chapter_tag(
         Seeds paper, tearing and seal wear.
     size : float, optional
         Text size in pixels at 1080p; scaled to the preset height.
+    shrink_to_fit : bool, optional
+        Shrink the text step by step when the longest item would push the tag
+        past the right edge of the frame (``meta["font_px"]`` has the final
+        size). With ``False`` the tag may overflow the frame.
 
     Returns
     -------
@@ -156,16 +180,26 @@ def chapter_tag(
     seal_rgb = preset.color("seal", (176, 30, 28))
 
     fs = int(size * S)
-    fmain = load_font(fpath, fs)
-    seal_sz = int(fs * 1.75)
-    padl, padr, padv = int(fs * 0.5), int(fs * 0.75), int(fs * 0.42)
-    strip_h = seal_sz + 2 * padv
-    widths = [
-        int(padl + seal_sz + fs * 0.55 + fmain.getlength(s) + padr) for s in items
-    ]
-    maxw = max(widths)
     m = int(28 * S)
-    RW, RH = maxw + 2 * m + int(40 * S), strip_h + 2 * m
+    tag_x = int(26 * S)
+    while True:
+        fmain = load_font(fpath, fs)
+        seal_sz = int(fs * 1.75)
+        padl, padr, padv = int(fs * 0.5), int(fs * 0.75), int(fs * 0.42)
+        strip_h = seal_sz + 2 * padv
+        widths = [
+            int(padl + seal_sz + fs * 0.55 + fmain.getlength(s) + padr) for s in items
+        ]
+        maxw = max(widths)
+        RW, RH = maxw + 2 * m + int(40 * S), strip_h + 2 * m
+        if not shrink_to_fit or tag_x + RW <= preset.size[0]:
+            break
+        if fs <= _MIN_PX:
+            raise ValueError(
+                f"the longest item needs {RW}px even at {_MIN_PX}px text; "
+                "shorten it or split it across several items"
+            )
+        fs = max(_MIN_PX, int(fs * 0.92))
     tin = min(0.7, duration * 0.4)
     tout = min(0.45, duration * 0.3)
     hold_at = max(tin, duration - tout)
@@ -188,7 +222,7 @@ def chapter_tag(
         k = int(t // period)
         u = t - k * period
         cur, prev = k % len(items), (k - 1) % len(items)
-        p = u / sw if (k > 0 and u < sw) else 1.0
+        p = u / sw if (k > 0 and u < sw and len(items) > 1) else 1.0
         return k, cur, prev, min(p, 1.0)
 
     def key_fn(t):
@@ -238,7 +272,7 @@ def chapter_tag(
 
     clip = cached_rgba_clip((RW, RH), duration, key_fn, build, max_cache=256)
 
-    strip_layer = AVLayer(
+    strip_layer = CachedAVLayer(
         clip,
         "chapter strip",
         transform=Transform(
@@ -246,23 +280,25 @@ def chapter_tag(
             position=Property(
                 (0.0, 0.0),
                 value_type="vec2",
-                keyframes=[
-                    Keyframe(
-                        0.0, (-float(RW), 0.0), interp="bezier", out_ease=_EASE_OUT
-                    ),
-                    Keyframe(tin, (0.0, 0.0), interp="bezier", out_ease=_EASE_IN),
-                    Keyframe(hold_at, (0.0, 0.0), interp="bezier", out_ease=_EASE_IN),
-                    Keyframe(duration, (-RW * 0.6, 0.0)),
-                ],
+                keyframes=_keyframes(
+                    [
+                        (0.0, (-float(RW), 0.0), _EASE_OUT),
+                        (tin, (0.0, 0.0), _EASE_IN),
+                        (hold_at, (0.0, 0.0), _EASE_IN),
+                        (duration, (-RW * 0.6, 0.0)),
+                    ]
+                ),
             ),
             opacity=Property(
                 100.0,
-                keyframes=[
-                    Keyframe(0.0, 0.0),
-                    Keyframe(tin / 2, 100.0),
-                    Keyframe(hold_at, 100.0),
-                    Keyframe(duration, 0.0),
-                ],
+                keyframes=_keyframes(
+                    [
+                        (0.0, 0.0),
+                        (tin / 2, 100.0),
+                        (hold_at, 100.0),
+                        (duration, 0.0),
+                    ]
+                ),
             ),
         ),
     )
@@ -270,7 +306,7 @@ def chapter_tag(
     stamp = seal_stamp(seal or chinese_numeral(number), seal_sz, seal_rgb, seed, fpath)
     s0 = min(0.35, duration * 0.2)
     s1 = min(s0 + 0.3, hold_at)
-    seal_layer = AVLayer(
+    seal_layer = CachedAVLayer(
         rgba_still(stamp, duration),
         "chapter seal",
         parent=strip_layer,
@@ -278,24 +314,29 @@ def chapter_tag(
             anchor_point=(seal_sz / 2, seal_sz / 2),
             position=(m + padl + seal_sz / 2, RH / 2),
             rotation=-4.0,
+            interpolation="linear",  # cubic resampling rings past alpha
             scale=Property(
                 (145.0, 145.0),
                 value_type="vec2",
-                keyframes=[
-                    Keyframe(0.0, (145.0, 145.0)),
-                    Keyframe(s0, (145.0, 145.0), interp="bezier", out_ease=_EASE_CUBIC),
-                    Keyframe(s1, (100.0, 100.0)),
-                ],
+                keyframes=_keyframes(
+                    [
+                        (0.0, (145.0, 145.0)),
+                        (s0, (145.0, 145.0), _EASE_CUBIC),
+                        (s1, (100.0, 100.0)),
+                    ]
+                ),
             ),
             opacity=Property(
                 100.0,
-                keyframes=[
-                    Keyframe(0.0, 0.0),
-                    Keyframe(s0, 0.0, interp="bezier", out_ease=_EASE_CUBIC),
-                    Keyframe(s1, 100.0),
-                    Keyframe(hold_at, 100.0),
-                    Keyframe(duration, 0.0),
-                ],
+                keyframes=_keyframes(
+                    [
+                        (0.0, 0.0),
+                        (s0, 0.0, _EASE_CUBIC),
+                        (s1, 100.0),
+                        (hold_at, 100.0),
+                        (duration, 0.0),
+                    ]
+                ),
             ),
         ),
     )
@@ -314,7 +355,7 @@ def chapter_tag(
         y = preset.size[1] - RH - int(22 * S)
     meta = {
         "kind": "chapter",
-        "x": int(26 * S),
+        "x": tag_x,
         "y": y,
         "w": RW,
         "h": RH,
@@ -324,5 +365,6 @@ def chapter_tag(
         "position": position,
         "number": number,
         "fps": preset.fps,
+        "font_px": fs,
     }
     return ChapterTag(comp, strip_layer, seal_layer, meta)

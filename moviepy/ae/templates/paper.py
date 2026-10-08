@@ -22,10 +22,13 @@ import cv2
 import numpy as np
 from PIL import Image, ImageDraw, ImageFilter, ImageFont
 
-from moviepy.video.VideoClip import VideoClip
+from moviepy.ae.buffer import Buffer
+from moviepy.ae.layers.av import AVLayer, _clamped_source_time
+from moviepy.video.VideoClip import ImageClip, VideoClip
 
 
 __all__ = [
+    "CachedAVLayer",
     "alpha_over",
     "cached_rgba_clip",
     "chinese_numeral",
@@ -38,6 +41,8 @@ __all__ = [
     "load_font",
     "mix_color",
     "paper_texture",
+    "rect_shadow",
+    "resize_straight",
     "rgba_still",
     "scale_alpha",
     "seal_stamp",
@@ -268,6 +273,42 @@ def drop_shadow(alpha, size, offset, blur, opacity, color=(20, 14, 10)):
     return out
 
 
+def rect_shadow(size, rect, blur, opacity):
+    """Return the float32 0..1 alpha of a blurred rectangle's shadow.
+
+    A Gaussian is separable, so the blur of a rectangle is the outer product of
+    two blurred 1-D profiles: the cost is ``O(w + h)`` for the blur instead of a
+    full-canvas filter. Equals ``drop_shadow`` of a solid rectangle.
+
+    Parameters
+    ----------
+    size : tuple of int
+        Canvas ``(width, height)``.
+    rect : tuple of int
+        ``(x, y, w, h)`` of the casting rectangle on the canvas.
+    blur, opacity : float
+        Gaussian sigma in pixels and peak opacity.
+
+    Examples
+    --------
+    >>> a = rect_shadow((12, 12), (4, 4, 4, 4), 1.0, 0.5)
+    >>> a.shape, bool(0.4 < a[6, 6] <= 0.5)
+    ((12, 12), True)
+    """
+    width, height = size
+    x, y, w, h = (int(v) for v in rect)
+
+    def profile(n, start, length):
+        line = np.zeros((1, n), np.float32)
+        line[0, max(start, 0) : max(0, min(start + length, n))] = 1.0
+        if blur > 0:
+            line = cv2.GaussianBlur(line, (0, 0), float(blur))
+        return line[0]
+
+    gx, gy = profile(width, x, w), profile(height, y, h)
+    return np.outer(gy, gx).astype(np.float32) * np.float32(opacity)
+
+
 def alpha_over(dst, src, x, y):
     """Composite straight-alpha RGBA ``src`` over ``dst`` in place at ``(x, y)``.
 
@@ -287,7 +328,11 @@ def alpha_over(dst, src, x, y):
     x1, y1 = min(x + sw, dw), min(y + sh, dh)
     if x0 >= x1 or y0 >= y1:
         return dst
-    s = src[y0 - y : y1 - y, x0 - x : x1 - x].astype(np.float32)
+    part = src[y0 - y : y1 - y, x0 - x : x1 - x]
+    if part[..., 3].min() == 255:  # opaque source: a plain copy, no blending
+        dst[y0:y1, x0:x1] = part
+        return dst
+    s = part.astype(np.float32)
     d = dst[y0:y1, x0:x1].astype(np.float32)
     sa = s[..., 3:4] / 255.0
     da = d[..., 3:4] / 255.0
@@ -320,6 +365,40 @@ def ink_bleed(image, amount=0.6, seed=11):
     low = cv2.resize(low, (w, h), interpolation=cv2.INTER_CUBIC)
     a[..., 3] = np.clip(alpha * (0.9 + 0.08 * low), 0, 255)
     return a.astype(np.uint8)
+
+
+def resize_straight(image, size):
+    """Area-resize a straight-alpha RGBA ``uint8`` image without dark fringes.
+
+    ``cv2.resize`` on straight RGBA averages the colour of transparent pixels
+    into the edge. This averages premultiplied colour instead and divides the
+    alpha back out, so a coloured shape keeps its colour at its soft edge.
+
+    Parameters
+    ----------
+    image : numpy.ndarray
+        Straight RGBA ``uint8`` ``(h, w, 4)``.
+    size : tuple of int
+        Output ``(width, height)``.
+
+    Examples
+    --------
+    >>> img = np.zeros((4, 4, 4), np.uint8)
+    >>> img[:, :2] = (200, 100, 50, 255)
+    >>> out = resize_straight(img, (1, 1))
+    >>> out[0, 0].tolist()
+    [200, 100, 50, 128]
+    """
+    a = image.astype(np.float32)
+    alpha = a[..., 3:4] / 255.0
+    a[..., :3] *= alpha
+    small = cv2.resize(a, (int(size[0]), int(size[1])), interpolation=cv2.INTER_AREA)
+    alpha = small[..., 3:4] / 255.0
+    safe = np.where(alpha > 1e-6, alpha, 1.0)
+    out = np.empty(small.shape, np.uint8)
+    out[..., :3] = np.clip(small[..., :3] / safe + 0.5, 0, 255)
+    out[..., 3] = np.clip(small[..., 3] + 0.5, 0, 255)
+    return out
 
 
 def seal_stamp(text, size, color=(176, 30, 28), seed=3, font=None):
@@ -395,10 +474,12 @@ def seal_stamp(text, size, color=(176, 30, 28), seed=3, font=None):
     a[..., 3] *= wear
     a[..., 3] *= torn_mask(S, S, int(S * 0.012) + 1, seed, "tblr", ss=1)
     big = np.clip(a, 0, 255).astype(np.uint8)
-    return cv2.resize(big, (size, size), interpolation=cv2.INTER_AREA)
+    return resize_straight(big, (size, size))
 
 
-def cached_rgba_clip(size, duration, key_fn, build_fn, *, max_cache=128):
+def cached_rgba_clip(
+    size, duration, key_fn, build_fn, *, max_cache=128, max_bytes=192 * 2**20
+):
     """Return a ``VideoClip`` (with mask) whose frames are cached by state.
 
     ``key_fn(t)`` maps time to a hashable state; ``build_fn(key)`` renders it
@@ -415,12 +496,16 @@ def cached_rgba_clip(size, duration, key_fn, build_fn, *, max_cache=128):
         State selector and renderer.
     max_cache : int, optional
         Least-recently-used limit on cached states.
+    max_bytes : int, optional
+        Least-recently-used limit on the memory of cached states; the newest
+        state always stays.
 
     Returns
     -------
     VideoClip
-        With ``mask`` set; ``clip.builds`` counts renders and ``clip.states``
-        is the cache.
+        With ``mask`` set; ``clip.builds`` counts renders, ``clip.states`` is
+        the cache and ``clip.state_key`` is ``key_fn`` (``CachedAVLayer`` uses
+        it to import each state into the renderer once).
 
     Examples
     --------
@@ -433,6 +518,7 @@ def cached_rgba_clip(size, duration, key_fn, build_fn, *, max_cache=128):
     """
     states = OrderedDict()
     width, height = size
+    used = [0]
 
     def state(t):
         key = key_fn(t)
@@ -441,11 +527,13 @@ def cached_rgba_clip(size, duration, key_fn, build_fn, *, max_cache=128):
             rgb, alpha = build_fn(key)
             if rgb.shape[:2] != (height, width):
                 raise ValueError("built state does not match the clip size")
-            hit = (rgb, np.asarray(alpha, np.float64))
+            hit = (rgb, np.asarray(alpha, np.float32))
             states[key] = hit
+            used[0] += hit[0].nbytes + hit[1].nbytes
             clip.builds += 1
-            while len(states) > max_cache:
-                states.popitem(last=False)
+            while len(states) > 1 and (len(states) > max_cache or used[0] > max_bytes):
+                _, old = states.popitem(last=False)
+                used[0] -= old[0].nbytes + old[1].nbytes
         else:
             states.move_to_end(key)
         return hit
@@ -455,6 +543,7 @@ def cached_rgba_clip(size, duration, key_fn, build_fn, *, max_cache=128):
     VideoClip.__init__(clip, lambda t: state(t)[0], duration=duration)
     clip.mask = VideoClip(lambda t: state(t)[1], is_mask=True, duration=duration)
     clip.states = states
+    clip.state_key = key_fn
     return clip
 
 
@@ -467,10 +556,66 @@ def rgba_still(image, duration):
     >>> clip.size, clip.mask.get_frame(0).shape
     ((3, 2), (2, 3))
     """
-    from moviepy.video.VideoClip import ImageClip
-
     clip = ImageClip(np.ascontiguousarray(image[..., :3]), duration=duration)
     clip.mask = ImageClip(
-        image[..., 3].astype(np.float64) / 255.0, is_mask=True, duration=duration
+        image[..., 3].astype(np.float32) / 255.0, is_mask=True, duration=duration
     )
     return clip
+
+
+class CachedAVLayer(AVLayer):
+    """``AVLayer`` that imports each distinct source state into a Buffer once.
+
+    ``Buffer.from_clip`` converts the clip frame to premultiplied float32 on
+    every render, which dominates the cost of large still sources. A still
+    (``ImageClip``) or a ``cached_rgba_clip`` maps many times to one state, so
+    this layer keeps the imported ``Buffer`` (immutable) in a small
+    least-recently-used cache keyed by that state. Any other clip falls back to
+    the plain import, so behaviour never changes, only the speed.
+
+    Parameters
+    ----------
+    max_bytes : int, optional
+        Memory limit for the cached Buffers of this layer.
+
+    Examples
+    --------
+    >>> clip = rgba_still(np.full((2, 2, 4), 255, np.uint8), 1.0)
+    >>> layer = CachedAVLayer(clip, "still")
+    >>> layer.source_buffer(0.0) is layer.source_buffer(0.5)
+    True
+    """
+
+    _STATIC = object()
+
+    def __init__(self, *args, max_bytes=160 * 2**20, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._buffers = OrderedDict()
+        self._buffer_bytes = 0
+        self._buffer_limit = int(max_bytes)
+
+    def _state(self, time):
+        key_fn = getattr(self.clip, "state_key", None)
+        if key_fn is not None:
+            return key_fn(time)
+        if isinstance(self.clip, ImageClip):
+            return self._STATIC
+        return None
+
+    def source_buffer(self, t, context=None):
+        """Return the cached Buffer for the clip state at source time ``t``."""
+        time = _clamped_source_time(self.clip, t)
+        key = self._state(time)
+        if key is None:
+            return Buffer.from_clip(self.clip, time)
+        hit = self._buffers.get(key)
+        if hit is not None:
+            self._buffers.move_to_end(key)
+            return hit
+        hit = Buffer.from_clip(self.clip, time)
+        self._buffers[key] = hit
+        self._buffer_bytes += hit.rgba.nbytes
+        while len(self._buffers) > 1 and self._buffer_bytes > self._buffer_limit:
+            _, old = self._buffers.popitem(last=False)
+            self._buffer_bytes -= old.rgba.nbytes
+        return hit

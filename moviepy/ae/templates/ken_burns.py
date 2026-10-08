@@ -33,9 +33,9 @@ from PIL import Image
 
 from moviepy.ae.camera import CameraFraming
 from moviepy.ae.composition import Composition
-from moviepy.ae.layers.av import AVLayer
 from moviepy.ae.properties.easing import Ease
 from moviepy.ae.properties.keyframe import Keyframe
+from moviepy.ae.templates.paper import CachedAVLayer
 from moviepy.ae.templates.presets import ChannelPreset, get_preset
 from moviepy.video.VideoClip import ImageClip
 
@@ -84,6 +84,9 @@ _JERK_FLOOR_PX = 0.6
 _SMOOTH_STILL_RATIO = 0.2
 _SMOOTH_JERK_RATIO = 0.05
 _STATIC_JERK_RATIO = 0.02
+# Mean-removed crops whose largest deviation stays below this (8-bit codes) are
+# treated as featureless.
+_FLAT_LEVEL = 0.5
 
 
 def _finite(value, name, low=None, *, strict=False):
@@ -328,7 +331,8 @@ def ken_burns(
         size=(width, height), fps=preset.fps, duration=duration, transparent=False
     )
     clip = ImageClip(source, transparent=False).with_duration(duration)
-    comp.add_layer(AVLayer(clip, transform=framing.to_transform()))
+    # The still never changes: import it into the renderer once, not per frame.
+    comp.add_layer(CachedAVLayer(clip, transform=framing.to_transform()))
     comp.framing = framing
     return comp
 
@@ -393,7 +397,14 @@ def motion_smoothness(frames, *, box=None):
         crops.append(patch - patch.mean())
     scale = _REFERENCE_WIDTH / width
     shifts = []
-    for prev, cur in zip(crops[:-1], crops[1:]):
+    flat = [float(np.abs(c).max()) < _FLAT_LEVEL for c in crops]
+    for k, (prev, cur) in enumerate(zip(crops[:-1], crops[1:])):
+        if flat[k] or flat[k + 1]:
+            # A featureless crop (blank, black or a solid colour) has no phase:
+            # phaseCorrelate would return an arbitrary huge shift. No texture, no
+            # measurable motion.
+            shifts.append(0.0)
+            continue
         # phaseCorrelate may write into its inputs, so each pair gets copies.
         (dx, dy), _ = cv2.phaseCorrelate(prev.copy(), cur.copy(), window)
         shifts.append(math.hypot(dx, dy) * scale)
@@ -452,6 +463,11 @@ def check_motion(clip_or_comp, start, duration, *, box=None):
     count = max(2, int(round(_finite(duration, "duration", 0, strict=True) * fps)))
     start = _finite(start, "start", 0)
     times = start + np.arange(count) / fps
+    end = getattr(clip_or_comp, "duration", None)
+    if isinstance(end, (int, float)) and math.isfinite(end) and end > 0:
+        # A Composition renders nothing at or past its end; hold the last frame
+        # like the AE footage layers do instead of measuring blank frames.
+        times = np.minimum(times, math.nextafter(float(end), 0.0))
     frames = [np.asarray(clip_or_comp.get_frame(float(t))) for t in times]
     result = motion_smoothness(frames, box=box)
     result["start"] = start
