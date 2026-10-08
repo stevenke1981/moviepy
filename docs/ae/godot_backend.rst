@@ -125,6 +125,50 @@ Godot 的音訊停止會延後至後續混音才釋放播放資源。使用 WAV 
 runtime.json 記錄 audio_cleanup_frames 和 audio_released。未提供音訊時不加
 清理影格。所有引擎警告原樣保留於 log，沒有過濾或隱藏。
 
+依賴需求 (Requirements)
+----------------------
+
+以下需求同時記錄於 ``moviepy/ae/three_d/requirements.py`` 的
+``GODOT_REQUIREMENTS``，並與 ``pyproject.toml`` 的 ``[tool.moviepy.godot]``
+保持一致（測試會比對兩者）。
+
+.. list-table::
+   :header-rows: 1
+   :widths: 24 76
+
+   * - 項目
+     - 需求
+   * - 引擎與版本
+     - Godot 4，且版本 **4.7 以上、5.0 以下**（例如 4.7.2）。3.x 與 5.x 會被拒絕。
+   * - 版本
+     - standard 版（非 .NET／Mono）；不需要 export templates 或插件。
+   * - 作業系統
+     - Windows（``sys.platform == "win32"``）。隱藏 GPU 視窗僅實作於 Windows。
+   * - 繪製器
+     - Forward+（Vulkan）。
+   * - 顯示卡
+     - 支援 Vulkan 1.x 的 GPU 與驅動程式。
+   * - 執行檔指定
+     - 環境變數 ``MOVIEPY_GODOT``；未設定時依序尋找 PATH 上的 ``godot``、``godot4``。
+   * - 下載位置
+     - `Godot 官方下載頁 <https://godotengine.org/download/windows/>`_。
+       請以同一 release 的 ``SHA512-SUMS.txt`` 核對檔案完整性。
+   * - Python 額外套件
+     - 無；不需要額外 Python 套件。
+   * - 網路
+     - 渲染不需要網路；套件不會自動下載或安裝 Godot。
+
+檢查指令會列出需求、找到的執行檔與版本，並以結束碼表示結果
+（0 為可用，1 為不可用；不會因找不到 Godot 而拋出例外）：
+
+.. code-block:: powershell
+
+   python -m moviepy.ae.three_d.requirements
+   python -m moviepy.ae.three_d.requirements --executable 'C:\Tools\Godot\Godot_v4.7.2-stable_win64.exe'
+   python -m moviepy.ae.three_d.requirements --json
+
+``--json`` 會輸出 ``requirements`` 與 ``check`` 兩個物件，方便其他工具讀取。
+
 驗證與授權來源
 --------------
 

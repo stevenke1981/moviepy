@@ -3,7 +3,6 @@
 import json
 import math
 import os
-import re
 import shutil
 import subprocess
 import wave
@@ -255,9 +254,12 @@ def render_godot_scene(
         .decode("utf-8", errors="replace")
         .strip()
     )
-    parsed = re.match(r"4\.(\d+)\.", version)
-    if not parsed or int(parsed.group(1)) < 7:
-        raise ValueError(f"Godot 4.7+ is required; found {version}")
+    # Share the documented range (4.7 <= version < 5.0) with check_godot().
+    from moviepy.ae.three_d.requirements import _parse_version, _version_in_range
+
+    parsed = _parse_version(version)
+    if parsed is None or not _version_in_range(parsed):
+        raise ValueError(f"Godot 4.7+ is required (below 5.0); found {version}")
     output.mkdir(parents=True, exist_ok=True)
     scene_path = output / "scene.json"
     scene_path.write_text(

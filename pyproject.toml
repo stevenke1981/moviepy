@@ -69,3 +69,10 @@ lint = [
 [tool.setuptools.packages.find]
 include = ["moviepy*"]
 exclude = ["media", "tests", "docs"]
+
+[tool.moviepy.godot]
+min_version = "4.7"
+max_version_exclusive = "5.0"
+platforms = ["win32"]
+renderer = "forward_plus"
+env = "MOVIEPY_GODOT"
