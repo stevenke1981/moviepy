@@ -93,6 +93,46 @@ def _pixel_metadata(array):
     return uniform, max(abs(minimum), abs(maximum)), normalized
 
 
+def _import_metadata(shape, mask):
+    """Summarize imported uint8-range RGB codes without scanning the pixels.
+
+    Codes are at most 255, so premultiplied RGB never exceeds alpha; the value
+    bound is therefore the largest alpha, and every import is normalized
+    whenever its alpha is uniform.
+    """
+    if not shape[0] * shape[1]:
+        return None, 0.0, True
+    if mask is None:
+        return np.float32(1), 1.0, True
+    low, high = float(np.min(mask)), float(np.max(mask))
+    uniform = mask[0, 0] if low == high else None
+    return uniform, high, uniform is not None
+
+
+def _nonzero_box(array):
+    """Return (top, bottom, left, right) of pixels with any nonzero channel."""
+    import cv2
+
+    height, width = array.shape[:2]
+    if array.size < 4 * 65536:
+        return (0, height, 0, width)
+    flat = array.reshape(height, width * 4)
+    rows = np.flatnonzero(
+        (cv2.reduce(flat, 1, cv2.REDUCE_MAX) != 0)
+        | (cv2.reduce(flat, 1, cv2.REDUCE_MIN) != 0)
+    )
+    if not rows.size:
+        return (0, 0, 0, 0)
+    top, bottom = int(rows[0]), int(rows[-1]) + 1
+    band = flat[top:bottom]
+    columns = (
+        (cv2.reduce(band, 0, cv2.REDUCE_MAX) != 0)
+        | (cv2.reduce(band, 0, cv2.REDUCE_MIN) != 0)
+    ).reshape(width, 4)
+    columns = np.flatnonzero(columns.any(axis=1))
+    return (top, bottom, int(columns[0]), int(columns[-1]) + 1)
+
+
 def _native_over(foreground, background):
     """Use native float32 arithmetic when uniform alpha cannot overflow."""
     alpha = foreground._uniform_alpha
@@ -127,26 +167,78 @@ def _over_metadata(foreground, background, array):
     )
 
 
-def _export_rgb(buffer, background):
-    """Extract owned contiguous RGB and apply working-space alpha arithmetic."""
+_EXPORT_TILE_PIXELS = 32768
+
+
+def _export_tile(source, alpha, background, rgb, weight, out):
+    """Quantize one contiguous row tile with the same float32 operations."""
     import cv2
 
-    source = buffer.rgba
-    rgb = np.empty((*source.shape[:2], 3), dtype=np.float32)
-    if not rgb.size:
-        return rgb
     cv2.mixChannels([source], [rgb], [0, 0, 1, 1, 2, 2])
-    alpha = buffer._uniform_alpha
-    with _arithmetic("rgba"):
-        if background is None:
-            if alpha is not None:
-                if alpha > 0 and alpha != 1:
-                    np.divide(rgb, alpha, out=rgb)
-            else:
-                np.divide(rgb, source[..., 3:4], out=rgb, where=source[..., 3:4] > 0)
+    if background is None:
+        if alpha is not None:
+            if alpha > 0 and alpha != 1:
+                np.divide(rgb, alpha, out=rgb)
         else:
-            np.add(rgb, background * (1 - source[..., 3:4]), out=rgb)
-    return rgb
+            # Dividing transparent pixels by one leaves them exactly unchanged.
+            denominator = np.where(source[..., 3] > 0, source[..., 3], np.float32(1))
+            cv2.cvtColor(denominator, cv2.COLOR_GRAY2RGB, dst=weight[1])
+            np.divide(rgb, weight[1], out=rgb)
+    elif alpha is not None:
+        np.add(rgb, background * (1 - alpha), out=rgb)
+    else:
+        # Replicating the weight avoids a slow 3-wide broadcast inner loop.
+        np.subtract(1, source[..., 3], out=weight[0])
+        cv2.cvtColor(weight[0], cv2.COLOR_GRAY2RGB, dst=weight[1])
+        np.multiply(weight[1], weight[2], out=weight[1])
+        np.add(rgb, weight[1], out=rgb)
+    np.clip(rgb, 0, 1, out=rgb)
+    cv2.convertScaleAbs(rgb, alpha=255, dst=out)
+
+
+def _export_uint8(buffer, background):
+    """Quantize in cache-sized row tiles; identical to whole-frame arithmetic."""
+    source = buffer.rgba
+    height, width = source.shape[:2]
+    result = np.empty((height, width, 3), dtype=np.uint8)
+    if not result.size:
+        return result
+    alpha = buffer._uniform_alpha
+    rows = max(1, _EXPORT_TILE_PIXELS // width)
+    count = min(rows, height)
+    rgb = np.empty((count, width, 3), dtype=np.float32)
+    weight = None
+    if alpha is None and background is None:
+        weight = (None, np.empty_like(rgb))
+    elif alpha is None:
+        weight = (
+            np.empty((count, width), np.float32),
+            np.empty_like(rgb),
+            np.broadcast_to(background, rgb.shape).copy(),
+        )
+    with _arithmetic("rgba"):
+        if background is not None and alpha == 0 and buffer._value_bound == 0:
+            # Every pixel is exactly 0 + background * 1: quantize one pixel.
+            pixel = np.zeros((1, 1, 4), np.float32)
+            one = np.empty((1, 1, 3), np.float32)
+            code = np.empty((1, 1, 3), np.uint8)
+            _export_tile(pixel, alpha, background, one, None, code)
+            result[...] = code
+            return result
+        for top in range(0, height, rows):
+            tile = source[top : top + rows]
+            n = len(tile)
+            _export_tile(
+                tile,
+                alpha,
+                background,
+                rgb[:n],
+                None
+                if weight is None
+                else tuple(None if item is None else item[:n] for item in weight),
+                result[top : top + n],
+            )
+    return result
 
 
 def _numeric(value, name, shape_tail, *, allow_bool=False):
@@ -160,7 +252,7 @@ def _numeric(value, name, shape_tail, *, allow_bool=False):
         for actual, expected in zip(array.shape, shape_tail)
     ):
         raise ValueError(f"{name} must have shape {shape_tail}")
-    if not np.isfinite(array).all():
+    if array.dtype.kind == "f" and not np.isfinite(array).all():
         raise ValueError(f"{name} must contain only finite values")
     return array
 
@@ -262,10 +354,26 @@ def _rgb_rgba(frame, mask):
     """Import numeric RGB codes once, retaining fractional code precision."""
     if mask is None:
         return _opaque_rgb_rgba(frame)
+    import cv2
+
     result = np.empty((*frame.shape[:2], 4), dtype=np.float32)
-    result[..., 3] = mask
-    np.divide(frame, np.float32(255), out=result[..., :3], casting="unsafe")
-    result[..., :3] *= result[..., 3:4]
+    if not result.size:
+        return result
+    alpha = np.ascontiguousarray(mask, dtype=np.float32)
+    rows = max(1, 32768 // frame.shape[1])
+    count = min(rows, frame.shape[0])
+    rgb = np.empty((count, frame.shape[1], 3), dtype=np.float32)
+    weight = np.empty_like(rgb)
+    for top in range(0, frame.shape[0], rows):
+        target = result[top : top + rows]
+        n = len(target)
+        # Same float32 divide then multiply as whole-frame arithmetic, in
+        # cache-sized tiles; replicating alpha avoids a slow 3-wide broadcast.
+        np.divide(frame[top : top + n], np.float32(255), out=rgb[:n], casting="unsafe")
+        tile = alpha[top : top + n]
+        cv2.cvtColor(tile, cv2.COLOR_GRAY2RGB, dst=weight[:n])
+        np.multiply(rgb[:n], weight[:n], out=rgb[:n])
+        cv2.mixChannels([rgb[:n], tile], [target], [0, 0, 1, 1, 2, 2, 3, 3])
     return result
 
 
@@ -411,6 +519,14 @@ class Buffer:
         object.__setattr__(self, "color_space", _color_space(self.color_space))
         self._set_metadata(_pixel_metadata(array))
 
+    def _content_box(self):
+        """Return the cached (top, bottom, left, right) nonzero pixel extent."""
+        box = self.__dict__.get("_box")
+        if box is None:
+            box = _nonzero_box(self.rgba)
+            object.__setattr__(self, "_box", box)
+        return box
+
     def _set_metadata(self, metadata):
         """Attach private summaries to immutable, protected pixel storage."""
         object.__setattr__(self, "_uniform_alpha", metadata[0])
@@ -460,7 +576,12 @@ class Buffer:
             raise TypeError("frame must have dtype uint8")
         position = _coordinates(offset, "offset", 2)
         alpha = None if mask is None else _mask_snapshot(mask, array.shape[:2])
-        return cls._publish(_rgb_rgba(array, alpha), position, "srgb")
+        return cls._publish(
+            _rgb_rgba(array, alpha),
+            position,
+            "srgb",
+            _import_metadata(array.shape, alpha),
+        )
 
     @classmethod
     def from_clip(cls, clip, t: float, *, offset: Offset = (0, 0)) -> "Buffer":
@@ -501,7 +622,12 @@ class Buffer:
             if mask_clip is None
             else _aligned_mask(mask_clip.get_frame(t), frame.shape[:2])
         )
-        return cls._publish(_rgb_rgba(frame, mask), position, "srgb")
+        return cls._publish(
+            _rgb_rgba(frame, mask),
+            position,
+            "srgb",
+            _import_metadata(frame.shape, mask),
+        )
 
     @property
     def size(self) -> Tuple[int, int]:
@@ -560,13 +686,7 @@ class Buffer:
 
             # This is the sole quantization; removing output alpha changes no codes.
             return cv2.convertScaleAbs(self.rgba, alpha=255)[..., :3].copy()
-        rgb = _export_rgb(self, background)
-        np.clip(rgb, 0, 1, out=rgb)
-        if not rgb.size:
-            return rgb.astype(np.uint8)
-        import cv2
-
-        return cv2.convertScaleAbs(rgb, alpha=255)
+        return _export_uint8(self, background)
 
     def with_rgba(self, rgba: np.ndarray) -> "Buffer":
         """Replace pixel data with a new defensive snapshot.
@@ -626,6 +746,11 @@ class Buffer:
             array = np.zeros((0, 0, 4), dtype=np.float32)
             return self._publish(array, requested[:2], self.color_space)
         x, y = self.offset
+        if (left, top, right, bottom) == self.bounds:
+            # Nothing is cut away: share the protected pixels. Summaries are
+            # rescanned, not inherited: a conservative summary could select a
+            # different (non-native) arithmetic path and change rounding.
+            return self._publish(self.rgba, (left, top), self.color_space)
         array = self.rgba[top - y : bottom - y, left - x : right - x].copy()
         return self._publish(array, (left, top), self.color_space)
 

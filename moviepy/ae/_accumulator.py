@@ -6,6 +6,33 @@ from moviepy.ae.blend.modes import BlendMode, blend
 from moviepy.ae.buffer import Buffer, _arithmetic
 
 
+_TILE_PIXELS = 32768
+
+
+def _over_varying(region, source):
+    """Apply ``region * (1 - alpha) + source`` skipping transparent margins."""
+    import cv2
+
+    top, bottom, left, right = source._content_box()
+    if top >= bottom:
+        return
+    pixels = source.rgba[top:bottom, left:right]
+    target = region[top:bottom, left:right]
+    height, width = pixels.shape[:2]
+    rows = max(1, _TILE_PIXELS // width)
+    count = min(rows, height)
+    flat = np.empty((count, width), np.float32)
+    weight = np.empty((count, width, 4), np.float32)
+    for start in range(0, height, rows):
+        n = min(rows, height - start)
+        tile = target[start : start + n]
+        np.subtract(1, pixels[start : start + n, :, 3], out=flat[:n])
+        # Replicating the weight avoids a slow 4-wide broadcast inner loop.
+        cv2.mixChannels([flat[:n]], [weight[:n]], [0, 0, 0, 1, 0, 2, 0, 3])
+        np.multiply(tile, weight[:n], out=tile)
+        np.add(tile, pixels[start : start + n], out=tile)
+
+
 class _Accumulator:
     """Batch Normal layers without copying the entire backdrop per layer."""
 
@@ -87,23 +114,32 @@ class _Accumulator:
         alpha, bound, unit = self._metadata
         region = self._writable(source)
         source_alpha = source._uniform_alpha
-        native = same_bounds and source_alpha is not None
-        if native:
+        if source_alpha is not None and source_alpha == 0 and not source._value_bound:
+            pass  # A zero source leaves the backdrop untouched.
+        elif (alpha is not None and alpha == 0 and not bound) or (
+            source_alpha is not None and source_alpha == 1
+        ):
+            # An all-zero backdrop or an opaque source (weight 0) yields the
+            # source exactly; skip the multiply-add over the backdrop.
+            np.copyto(region, source.rgba)
+        elif source_alpha is not None:
             weight = np.float32(1) - source_alpha
-            native = source._value_bound + bound * float(weight) <= float(
-                np.finfo(np.float32).max
-            )
-        with _arithmetic("composite"):
-            if native:
-                import cv2
+            native = same_bounds and source._value_bound + bound * float(
+                weight
+            ) <= float(np.finfo(np.float32).max)
+            with _arithmetic("composite"):
+                if native:
+                    import cv2
 
-                cv2.addWeighted(region, float(weight), source.rgba, 1, 0, dst=region)
-            else:
-                weight = np.float32(1) - (
-                    source.rgba[..., 3:4] if source_alpha is None else source_alpha
-                )
-                np.multiply(region, weight, out=region)
-                np.add(region, source.rgba, out=region)
+                    cv2.addWeighted(
+                        region, float(weight), source.rgba, 1, 0, dst=region
+                    )
+                else:
+                    np.multiply(region, weight, out=region)
+                    np.add(region, source.rgba, out=region)
+        else:
+            with _arithmetic("composite"):
+                _over_varying(region, source)
         uniform = None
         if same_bounds and alpha is not None and source_alpha is not None:
             uniform = region[0, 0, 3] if region.size else None
