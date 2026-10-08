@@ -70,6 +70,9 @@ lint = [
 include = ["moviepy*"]
 exclude = ["media", "tests", "docs"]
 
+[tool.setuptools.package-data]
+"moviepy.ae.templates" = ["configs/*.json"]
+
 [tool.moviepy.godot]
 min_version = "4.7"
 max_version_exclusive = "5.0"

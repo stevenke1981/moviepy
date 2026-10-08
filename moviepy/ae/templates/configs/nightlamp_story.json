@@ -1,0 +1,47 @@
+{
+  "name": "nightlamp_story_episode",
+  "preset": "nightlamp_story",
+  "preset_overrides": {"fps": 24},
+  "fonts": {},
+  "background": {
+    "source": "media/PLACEHOLDER_background.jpg",
+    "frame_time": null,
+    "focal_point": [0.5, 0.5],
+    "overlay_opacity": 0.5
+  },
+  "intro": {
+    "title": "PLACEHOLDER 夜燈故事",
+    "brand": "夜燈故事",
+    "subtitle": "PLACEHOLDER 今夜的故事",
+    "layout": "right_column",
+    "duration": 6.0
+  },
+  "outro": {
+    "title": "PLACEHOLDER 謝謝收看",
+    "brand": "夜燈故事",
+    "subtitle": "",
+    "layout": "right_column",
+    "duration": 6.0
+  },
+  "shots": [
+    {"image": "media/PLACEHOLDER_shot_01.jpg", "duration": 8.0, "move": "auto", "hold": 1.5},
+    {"image": "media/PLACEHOLDER_shot_02.jpg", "duration": 8.0, "move": "auto", "hold": 1.5,
+     "transition": "crossfade", "transition_duration": 0.6},
+    {"image": "media/PLACEHOLDER_shot_03.jpg", "duration": 8.0, "move": "auto", "hold": 1.5,
+     "transition": "crossfade", "transition_duration": 0.6},
+    {"image": "media/PLACEHOLDER_shot_04.jpg", "duration": 8.0, "move": "auto", "hold": 1.5,
+     "transition": "crossfade", "transition_duration": 0.6}
+  ],
+  "chapters": [],
+  "quotes": [],
+  "subtitles": {
+    "primary": "subtitles/PLACEHOLDER_zh-TW.srt",
+    "secondary": "subtitles/PLACEHOLDER_en.srt",
+    "protected": [],
+    "primary_lang": "zh-TW",
+    "secondary_lang": "en"
+  },
+  "chapter_period": 5.5,
+  "dip_color": [0, 0, 0],
+  "seed": 7
+}

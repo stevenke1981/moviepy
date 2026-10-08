@@ -1,0 +1,57 @@
+{
+  "name": "nightlamp_history_episode",
+  "preset": "nightlamp_history",
+  "preset_overrides": {"fps": 24, "hold": 2.0, "fade": 0.5},
+  "fonts": {},
+  "background": {
+    "source": "media/PLACEHOLDER_background.jpg",
+    "frame_time": null,
+    "focal_point": [0.5, 0.5],
+    "overlay_opacity": 0.5
+  },
+  "intro": {
+    "title": "PLACEHOLDER 夜燈史話",
+    "brand": "夜燈史話",
+    "subtitle": "PLACEHOLDER 一段歷史",
+    "layout": "right_column",
+    "duration": 6.0
+  },
+  "outro": {
+    "title": "PLACEHOLDER 下回再會",
+    "brand": "夜燈史話",
+    "subtitle": "",
+    "layout": "right_column",
+    "duration": 6.0
+  },
+  "shots": [
+    {"image": "media/PLACEHOLDER_shot_01.jpg", "duration": 10.0, "move": "push",
+     "zoom": [1.0, 1.08], "hold": 2.0},
+    {"image": "media/PLACEHOLDER_shot_02.jpg", "duration": 10.0, "move": "push",
+     "zoom": [1.0, 1.08], "hold": 2.0,
+     "transition": "crossfade", "transition_duration": 0.5},
+    {"image": "media/PLACEHOLDER_shot_03.jpg", "duration": 10.0, "move": "push",
+     "zoom": [1.0, 1.08], "hold": 2.0,
+     "transition": "crossfade", "transition_duration": 0.5},
+    {"image": "media/PLACEHOLDER_shot_04.jpg", "duration": 10.0, "move": "push",
+     "zoom": [1.0, 1.08], "hold": 2.0,
+     "transition": "crossfade", "transition_duration": 0.5}
+  ],
+  "chapters": [
+    {"start": 8.0, "end": 22.0, "items": ["PLACEHOLDER 起", "PLACEHOLDER 承"], "number": 1},
+    {"start": 24.0, "end": 36.0, "items": ["PLACEHOLDER 轉", "PLACEHOLDER 合"], "number": 2}
+  ],
+  "quotes": [
+    {"start": 36.5, "text": "PLACEHOLDER 天行健君子以自強不息", "source": "《周易》",
+     "dynasty": "周", "title": null, "seal": null}
+  ],
+  "subtitles": {
+    "primary": "subtitles/PLACEHOLDER_zh-TW.srt",
+    "secondary": "subtitles/PLACEHOLDER_en.srt",
+    "protected": [],
+    "primary_lang": "zh-TW",
+    "secondary_lang": "en"
+  },
+  "chapter_period": 5.5,
+  "dip_color": [0, 0, 0],
+  "seed": 7
+}

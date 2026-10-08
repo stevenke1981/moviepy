@@ -49,6 +49,10 @@ _LAZY = {
     "resolve_medium": "quote",
     "split_quote_pages": "quote",
     "vertical_quote": "quote",
+    "EpisodeError": "episode",
+    "EpisodeSpec": "episode",
+    "build_episode": "episode",
+    "episode_report": "episode",
 }
 __all__ = list(_LAZY)
 
