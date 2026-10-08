@@ -721,7 +721,7 @@ def test_render_episode_closes_clips_on_failure(media, tmp_path, monkeypatch):
         def boom(*args, **kwargs):
             raise RuntimeError("x")
 
-        comp.write_videofile = boom
+        monkeypatch.setattr("moviepy.ae.parallel.write_video_parallel", boom)
         return comp
 
     monkeypatch.setattr(ep, "build_episode", spy)

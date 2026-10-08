@@ -1585,6 +1585,11 @@ def _export_wav(audio, path, count, fps, rate=_MASTER_RATE):
     return True
 
 
+def _episode_factory(spec_dict):
+    """Rebuild the composition of ``spec_dict`` (picklable worker factory)."""
+    return build_episode(EpisodeSpec.from_dict(spec_dict))
+
+
 def render_episode(
     spec_or_path,
     output_dir,
@@ -1593,6 +1598,8 @@ def render_episode(
     stills=None,
     master=False,
     overwrite=False,
+    workers=None,
+    encoder="auto",
 ):
     """Render an episode into ``output_dir`` and return what was written.
 
@@ -1619,11 +1626,20 @@ def render_episode(
         silent and ``notes`` says so.
     overwrite : bool
         Allow writing into a non-empty ``output_dir``.
+    workers : int, optional
+        Frame-rendering processes (``None``: ``min(cpu_count - 1, 12)``;
+        ``1``: render in this process). Frames are identical for any value.
+    encoder : str
+        ``"auto"`` (NVENC if a real test encode works, else libx264) or one of
+        ``libx264``, ``h264_nvenc``, ``hevc_nvenc``, ``libx265``. See
+        ``moviepy.ae.parallel.detect_encoder``.
 
     Returns
     -------
     dict
-        ``video`` (``episode.mp4``: libx264, aac, yuv420p, ``comp.fps``),
+        ``video`` (``episode.mp4``: the chosen encoder, aac, yuv420p,
+        ``comp.fps``), ``encoder``, ``workers`` and ``render_fps`` (frames
+        per second of wall time of the video step),
         ``report`` (``report.json``), ``stills`` (list of paths), ``master``
         (directory or ``None``), ``notes``, ``preview`` and ``timings``
         (seconds for ``build``, ``stills``, ``video``, ``master``, ``total``).
@@ -1684,15 +1700,33 @@ def render_episode(
         timings["stills"] = time.perf_counter() - mark
 
         mark = time.perf_counter()
+        from moviepy.ae.parallel import write_video_parallel
+
         video = out / "episode.mp4"
-        comp.write_videofile(
-            str(video),
-            fps=comp.fps,
-            codec="libx264",
-            audio_codec="aac",
-            ffmpeg_params=["-pix_fmt", "yuv420p"],
-            logger=None,
-        )
+        frames = int(comp.duration * comp.fps)
+        audio_tmp = None
+        if comp.audio is not None:
+            audio_tmp = out / "episode_audio.tmp.wav"
+            if not _export_wav(comp.audio, audio_tmp, frames, comp.fps):
+                comp.audio.write_audiofile(
+                    str(audio_tmp), fps=_MASTER_RATE, logger=None
+                )
+        try:
+            written = write_video_parallel(
+                _episode_factory,
+                (spec.to_dict(),),
+                video,
+                fps=comp.fps,
+                n_frames=frames,
+                size=comp.size,
+                audio_path=audio_tmp,
+                workers=workers,
+                encoder=encoder,
+                clip=comp,
+            )
+        finally:
+            if audio_tmp is not None and audio_tmp.exists():
+                audio_tmp.unlink()
         timings["video"] = time.perf_counter() - mark
 
         master_dir = None
@@ -1736,6 +1770,9 @@ def render_episode(
         "notes": notes,
         "preview": bool(preview),
         "timings": timings,
+        "encoder": written["encoder"],
+        "workers": written["workers"],
+        "render_fps": written["fps_achieved"],
     }
 
 
@@ -1818,6 +1855,12 @@ def main(argv=None):
     p_ren.add_argument("--preview", action="store_true")
     p_ren.add_argument("--master", action="store_true")
     p_ren.add_argument("--overwrite", action="store_true")
+    p_ren.add_argument("--workers", type=int, default=None, help="render processes")
+    p_ren.add_argument(
+        "--encoder",
+        choices=("auto", "libx264", "h264_nvenc", "hevc_nvenc", "libx265"),
+        default="auto",
+    )
     p_ren.add_argument("--still", type=float, nargs="+", action="extend", default=None)
     args = parser.parse_args(argv)
     try:
@@ -1846,6 +1889,8 @@ def main(argv=None):
                 stills=args.still,
                 master=args.master,
                 overwrite=args.overwrite,
+                workers=args.workers,
+                encoder=args.encoder,
             )
             print(json.dumps(result, ensure_ascii=False, indent=2))
     except (EpisodeError, OSError, ValueError) as error:
