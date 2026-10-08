@@ -12,6 +12,8 @@ For performances reason a very minor change to the API of CompositeVideoClip hav
 This mean you need to specifically set `bg_color=None` if you want to generate a video with a transparent background.
 
 ### Fixed
+- `FFMPEG_AudioReader.get_frame` returned silence for a single request spanning more than half the read buffer (about 2.3 s at 44.1 kHz) because it recursed on the boolean range mask instead of the timestamps.
+- Speed up AE 1080p compositing about 2.2x (uint8 export, sparse/opaque layer composites, closed-form import metadata) with bit-identical frames.
 - Drain Godot audio playback after the final content frame and verify release without changing delivered frames or PCM samples.
 - Preserve signed and HDR RGB values in AE Gaussian Blur; combine equivalent separable filtering into one call.
 - Strongly improve performances to make them more consistent with thoses of v1
@@ -21,6 +23,8 @@ This mean you need to specifically set `bg_color=None` if you want to generate a
 - Fix incorrect handling of lines with a format different from "key: value" during FFmpeg infos parsing (see #2311, #1860, #2418, #2470)
 
 ### Added
+- Production templates in `moviepy.ae.templates` distilled from the Night Lamp workflows: channel presets, episode-media title bookends, subtitle layout/burn-in/SRT/VTT/ASS, sub-pixel Ken Burns with a motion check, chapter tags, vertical quotes on bamboo or paper, and a declarative `episode.json` build with narration/music mixing and a `python -m moviepy.ae.templates init|validate|render` CLI. See [new episode workflow](docs/ae/episode_workflow.rst) and [templates](docs/ae/templates.rst).
+- Godot requirements as data (`GODOT_REQUIREMENTS`, `[tool.moviepy.godot]`) with a non-raising `python -m moviepy.ae.three_d.requirements` environment check.
 - 21 new AE effects across nine categories: Directional/Radial Blur, Sharpen, Unsharp Mask; Exposure, Hue/Saturation, Levels, Vibrance; Wave Warp, Twirl, Mirror, Spherize; Noise; Posterize, Mosaic, Vignette; Linear/Radial/Iris Wipe, Venetian Blinds and world-anchored Block Dissolve. All are premultiplied-alpha correct, deterministic and identity at default strength.
 - Four more Godot magic presets: `spark_burst`, `orbit_rings`, `rising_embers` and `pulse_orb`. See [camera and magic presets](docs/ae/camera_magic.rst).
 - Opt-in linear-light AE compositing and lossless SDR RGBA16 FFV1 masters with exact PCM audio, plus an original same-source quality comparison. See [color and export contract](docs/ae/linear_master.rst).
