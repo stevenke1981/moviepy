@@ -16,7 +16,53 @@ from moviepy.ae.three_d.scene import number, vector
 from moviepy.ae.transform import Transform
 
 
-PRESETS = ("warm_aura", "flow_particles", "cast_ring")
+PRESETS = (
+    "warm_aura",
+    "flow_particles",
+    "cast_ring",
+    "spark_burst",
+    "orbit_rings",
+    "rising_embers",
+    "pulse_orb",
+)
+
+
+def _particle_group(
+    *,
+    count,
+    start,
+    seed,
+    lifetime,
+    location,
+    direction,
+    speed,
+    spread,
+    gravity,
+    particle_size,
+    color,
+    emission,
+):
+    """One emitter group in the existing particle schema; validated later."""
+    return {
+        "count": count,
+        "start": start,
+        "seed": seed,
+        "lifetime": lifetime,
+        "location": location,
+        "direction": direction,
+        "speed": speed,
+        "spread": spread,
+        "gravity": gravity,
+        "size": particle_size,
+        "color": color,
+        "emission_energy": emission,
+    }
+
+
+def _ease_pulse(frame, frame_count, pulses):
+    """Sinusoidal in-out pulse in [0, 1]: zero at the ends and between pulses."""
+    progress = frame / (frame_count - 1)
+    return 0.5 - 0.5 * math.cos(2 * math.pi * pulses * progress)
 
 
 def build_magic_scene(
@@ -89,6 +135,90 @@ def build_magic_scene(
                 "emission_energy": emission,
             }
             for index, frame in enumerate(starts)
+        ]
+    elif preset == "spark_burst":
+        scene["particles"] = [
+            _particle_group(
+                count=particle_count,
+                start=0,
+                seed=seed,
+                lifetime=max(0.01, duration * 0.45),
+                location=(0, 0, 0),
+                direction=(0, 1, 0),
+                speed=(radius * 0.9, radius * 1.8),
+                spread=180,
+                gravity=(0, -radius * 1.4, 0),
+                particle_size=particle_size,
+                color=color,
+                emission=emission,
+            )
+        ]
+    elif preset == "rising_embers":
+        waves, lanes = 3, 4
+        # Pick distinct (wave, lane) emitters, evenly strided, so every count is
+        # at least one and a small particle_count still spans the band.
+        cells = [(wave, lane) for wave in range(waves) for lane in range(lanes)]
+        groups = min(particle_count, len(cells))
+        scene["particles"] = []
+        for index in range(groups):
+            wave, lane = cells[index * len(cells) // groups]
+            scene["particles"].append(
+                _particle_group(
+                    count=particle_count // groups + (index < particle_count % groups),
+                    start=(frame_count * 3 * wave // (5 * waves)) / fps,
+                    seed=(seed + 104729 * (index + 1)) % 2147483648,
+                    lifetime=max(0.01, duration * 0.6),
+                    location=(
+                        -radius * 0.7 + radius * 1.4 * lane / (lanes - 1),
+                        -radius * 0.8,
+                        0,
+                    ),
+                    direction=(0.08, 1, 0),
+                    speed=(radius * 0.2, radius * 0.45),
+                    spread=25,
+                    gravity=(0, 0.02, 0),
+                    particle_size=particle_size,
+                    color=color,
+                    emission=emission,
+                )
+            )
+    elif preset == "orbit_rings":
+        tilts = ((90, 0, 0), (60, 45, 0), (20, -45, 60))
+        last = (frame_count - 1) / fps
+        scene["objects"] = [
+            {
+                "type": "torus",
+                "material": "gold",
+                "rotation": tilt,
+                "scale": (radius * (1 - 0.12 * index),) * 3,
+                "animation": [
+                    # Each ring holds its tilt, then spins from a staggered time.
+                    {"time": last * 0.2 * index / (len(tilts) - 1), "rotation": tilt},
+                    {
+                        "time": last,
+                        "rotation": (tilt[0], tilt[1] + 120 + 60 * index, tilt[2]),
+                    },
+                ],
+            }
+            for index, tilt in enumerate(tilts)
+        ]
+    elif preset == "pulse_orb":
+        pulses = 2
+        step = max(1, frame_count // 16)
+        frames = sorted(set(range(0, frame_count, step)) | {frame_count - 1})
+        keys = []
+        for frame in frames:
+            ease = _ease_pulse(frame, frame_count, pulses)
+            keys.append(
+                {"time": frame / fps, "scale": (radius * (0.55 + 0.45 * ease),) * 3}
+            )
+        scene["objects"] = [
+            {
+                "type": "sphere",
+                "material": "gold",
+                "scale": (radius * 0.55,) * 3,
+                "animation": keys,
+            }
         ]
     else:
         start_scale, end_scale = (0.87, 1.0) if preset == "warm_aura" else (0.25, 1.12)

@@ -83,14 +83,27 @@ the existing renderer. Its derived Properties are dynamic runtime values and,
 like other callable Properties, cannot be serialized to project JSON. There
 is no second renderer or independently rendered camera PNG sequence.
 
-Three Godot presets, one AE bridge
+Seven Godot presets, one AE bridge
 ---------------------------------
 
-``moviepy.ae.motion.render_magic`` provides three small presets:
+``moviepy.ae.motion.render_magic`` provides seven small presets:
 
 * ``warm_aura``: a slowly opening, tilted warm-gold ring with a restrained halo.
 * ``flow_particles``: three small upward streams of fixed-seed GPU particles.
 * ``cast_ring``: a brief expanding ring, with an AE opacity envelope.
+* ``spark_burst``: one radial burst of sparks at frame 0, pulled down by gravity
+  and living for about half the duration.
+* ``orbit_rings``: three gold tori at different tilts, each holding still and
+  then spinning from a staggered time.
+* ``rising_embers``: slow upward embers released in three waves from a
+  horizontal band at the bottom; ``particle_count`` is split exactly across
+  the emitters.
+* ``pulse_orb``: an emissive gold sphere whose scale pulses twice with a
+  sinusoidal in-out curve, sampled as scale keyframes.
+
+``spark_burst`` and ``rising_embers`` are seeded particle presets; changing
+``seed`` changes their particle seeds. ``orbit_rings`` and ``pulse_orb`` are
+analytic keyframes, so ``seed`` does not change them.
 
 .. code-block:: python
 
