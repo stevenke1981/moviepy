@@ -150,8 +150,9 @@ def test_exclusive_create_and_argument_checks(tmp_path):
 
 
 def test_missing_font_raises(tmp_path):
-    spec = _spec(fonts={"zh": str(tmp_path / "nope.ttc")})
-    with pytest.raises(FileNotFoundError, match="zh"):
+    missing = str(tmp_path / "nope.ttc")
+    spec = _spec(fonts={lang: missing for lang in ("zh", "en", "ja")})
+    with pytest.raises(FileNotFoundError, match="nope.ttc"):
         th.render_thumbnail(spec, DARK)
 
 

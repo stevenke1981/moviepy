@@ -336,9 +336,9 @@ def test_quick_reference_fields_exist_on_dataclasses(guide):
         names = {field.name for field in dataclasses.fields(cls)}
         for token in re.findall(r"`([^`]+)`", cells[0]):
             leaf = token.replace("[]", "").split(".")[-1]
-            assert leaf in names, (
-                f"{guide}: {token} is not a field of {class_name} " f"({sorted(names)})"
-            )
+            assert (
+                leaf in names
+            ), f"{guide}: {token} is not a field of {class_name} ({sorted(names)})"
 
 
 # --------------------------------------------------------------------------- #
