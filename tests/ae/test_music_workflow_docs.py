@@ -38,6 +38,30 @@ SECTION_CLASSES = {
     "visual": "VisualSpec",
     "spectrum": "SpectrumSpec",
     "chime": "ChimeSpec",
+    "ambience": "AmbienceSpec",
+    "ambience.particles": "ParticlesSpec",
+    "ambience.light_arc": "LightArcSpec",
+    "ambience.sleep_fade": "SleepFadeSpec",
+    "cards": "CardsSpec",
+    "thumbnail": "ThumbnailStepSpec",
+    "qa": "QaSpec",
+}
+
+# Object-valued sections whose keys must exist in their dataclass.
+NESTED_CLASSES = {
+    "audio": "MusicAudioSpec",
+    "visual": "VisualSpec",
+    "spectrum": "SpectrumSpec",
+    "chime": "ChimeSpec",
+    "ambience": "AmbienceSpec",
+    "cards": "CardsSpec",
+    "thumbnail": "ThumbnailStepSpec",
+    "qa": "QaSpec",
+}
+AMBIENCE_CLASSES = {
+    "particles": "ParticlesSpec",
+    "light_arc": "LightArcSpec",
+    "sleep_fade": "SleepFadeSpec",
 }
 
 
@@ -147,6 +171,24 @@ def _dataclass_default(field):
     if field.default_factory is not MISSING:
         return field.default_factory()
     return MISSING
+
+
+def _assert_nested_keys(data, label):
+    """Every key of an object-valued section must be a field of its class."""
+    from moviepy.ae.templates import music_episode
+
+    for key, class_name in NESTED_CLASSES.items():
+        section = data.get(key)
+        if isinstance(section, dict):
+            known = _dataclass_names(getattr(music_episode, class_name))
+            assert set(section) <= known, (label, key, sorted(set(section) - known))
+    ambience = data.get("ambience")
+    if isinstance(ambience, dict):
+        for key, class_name in AMBIENCE_CLASSES.items():
+            section = ambience.get(key)
+            if isinstance(section, dict):
+                known = _dataclass_names(getattr(music_episode, class_name))
+                assert set(section) <= known, (label, key, sorted(set(section) - known))
 
 
 # --------------------------------------------------------------------------- #
@@ -308,10 +350,75 @@ def test_modes_and_steps_match_code(doc_text):
     assert set(MODES) == {"sleep_longform", "study_pomodoro"}
     for mode in MODES:
         assert f"``{mode}``" in doc_text or f'"{mode}"' in doc_text
-    assert ",".join(STEPS) == "audio,visual,overlays,render"
+    assert ",".join(STEPS) == "audio,visual,overlays,render,thumbnail,qa"
     assert "audio,visual,overlays,render" in doc_text
+    for step in STEPS:
+        assert f"``{step}``" in doc_text, step
     for encoder in ENCODERS:
         assert f"``{encoder}``" in doc_text or f'"{encoder}"' in doc_text, encoder
+
+
+def test_step_table_lists_every_step_in_order(doc_text):
+    from moviepy.ae.templates.music_episode import STEPS
+
+    for _, rows in _tables(doc_text):
+        if rows and rows[0][0] == "步驟":
+            names = [re.findall(r"``([^`]+)``", row[0])[0] for row in rows[1:]]
+            assert names == list(STEPS)
+            return
+    raise AssertionError("the steps table (header 步驟) is missing")
+
+
+def test_optional_steps_are_opt_in():
+    from moviepy.ae.templates.music_episode import MusicEpisodeSpec, _step_enabled
+
+    spec = MusicEpisodeSpec.from_dict(
+        {
+            "mode": "sleep_longform",
+            "tracks": [{"id": "A", "source": "a.wav", "chapter_seconds": 60}],
+            "visual": {"clips": ["c.mp4"]},
+        }
+    )
+    assert not _step_enabled(spec, "thumbnail")
+    assert not _step_enabled(spec, "qa")
+    assert "預設關閉" in DOC.read_text(encoding="utf-8")
+
+
+def test_ring_and_timeline_need_study_mode():
+    from moviepy.ae.templates.music_episode import MusicEpisodeError, MusicEpisodeSpec
+
+    data = {
+        "mode": "sleep_longform",
+        "tracks": [{"id": "A", "source": "a.wav", "chapter_seconds": 60}],
+        "visual": {"clips": ["c.mp4"]},
+    }
+    for key in ("study_ring", "study_timeline"):
+        with pytest.raises(MusicEpisodeError, match="need study_pomodoro mode"):
+            MusicEpisodeSpec.from_dict(dict(data, **{key: True}))
+
+
+def test_enumerated_options_are_documented(doc_text):
+    from moviepy.ae.templates.ambience import _MAX_RATE, PARTICLE_KINDS
+    from moviepy.ae.templates.music_episode import (
+        _CARD_POSITIONS as POSITIONS,
+        _LIGHT_PRESETS,
+    )
+    from moviepy.ae.templates.music_qa import DEFAULT_TARGETS
+    from moviepy.ae.templates.thumbnail import LAYOUTS, MAIN_CONTRAST
+
+    for kind in PARTICLE_KINDS:
+        assert f"``{kind}``" in doc_text, kind
+    for preset in _LIGHT_PRESETS:
+        assert f"``{preset}``" in doc_text, preset
+    for position in POSITIONS:
+        assert f"``{position}``" in doc_text, position
+    for layout in LAYOUTS:
+        assert f"``{layout}``" in doc_text, layout
+    for target in DEFAULT_TARGETS:
+        assert f"``{target}``" in doc_text, target
+    assert f"{MAIN_CONTRAST}:1" in doc_text
+    assert f"{_MAX_RATE:g}" in doc_text
+    assert "-18" in doc_text and "-1.5" in doc_text
 
 
 # --------------------------------------------------------------------------- #
@@ -378,6 +485,7 @@ def test_shipped_configs_use_documented_keys():
         assert set(data) <= known, path.name
         for track in data["tracks"]:
             assert set(track) <= _dataclass_names(_track_class()), path.name
+        _assert_nested_keys(data, path.name)
 
 
 def _track_class():
@@ -392,11 +500,13 @@ def test_json_example_keys_exist(doc_text):
     known = _dataclass_names(MusicEpisodeSpec)
     blocks = _code_blocks(doc_text, "json")
     assert blocks, "the guide should show a music.json example"
+    assert len(blocks) >= 8
     for body in blocks:
         data = json.loads(body)
         assert set(data) <= known, sorted(set(data) - known)
         for track in data.get("tracks", []):
             assert set(track) <= _dataclass_names(_track_class())
+        _assert_nested_keys(data, "guide json example")
 
 
 def test_shipped_configs_total_lengths_match_guide():
@@ -429,9 +539,25 @@ def test_config_defaults_match_guide_table_values():
     assert spec.spectrum.size == (1088, 140)
     assert spec.chime.enabled is True and spec.chime.below_music_db == 10.0
     assert spec.study_compact is False
+    assert spec.ambience.particles is None and not spec.ambience.light_arc.active
+    assert spec.ambience.sleep_fade is None
+    assert spec.cards.enabled is True and spec.cards.skip_first is False
+    assert spec.study_ring is True and spec.study_timeline is True
+    assert spec.thumbnail.enabled is True and spec.thumbnail.time == 60
+    assert spec.qa.enabled is True
     sleep = MusicEpisodeSpec.from_json(CONFIGS / "music_sleep_longform.json")
     assert sleep.spectrum.enabled is False and sleep.chime.enabled is False
     assert sleep.visual.segment == 120.0 and sleep.visual.clip_length == 8.0
+    assert sleep.ambience.particles.kind == "fireflies"
+    assert sleep.ambience.particles.count == 18 and sleep.ambience.particles.seed == 7
+    assert sleep.ambience.particles.opacity == 0.6
+    assert sleep.ambience.light_arc.preset == "day_to_night"
+    assert sleep.ambience.sleep_fade.start == -1800
+    assert sleep.ambience.sleep_fade.floor == 0.15
+    assert sleep.ambience.sleep_fade.audio is True
+    assert sleep.cards.enabled is True and sleep.thumbnail.enabled is True
+    assert sleep.study_ring is False and sleep.study_timeline is False
+    assert sleep.qa.enabled is True
 
 
 # --------------------------------------------------------------------------- #
@@ -486,6 +612,22 @@ def test_quoted_error_fragments_exist_in_source(doc_text):
         ("moviepy.ae.templates.music_render", "render_music_video"),
         ("moviepy.ae.templates.music_render", "preview_window"),
         ("moviepy.ae.templates.music_render", "frame_count"),
+        ("moviepy.ae.templates.music_episode", "make_thumbnail"),
+        ("moviepy.ae.templates.music_episode", "run_qa"),
+        ("moviepy.ae.templates.music_episode", "resolve_ambience"),
+        ("moviepy.ae.templates.music_episode", "prepare_particles"),
+        ("moviepy.ae.templates.ambience", "particle_loop"),
+        ("moviepy.ae.templates.ambience", "export_overlay_loop"),
+        ("moviepy.ae.templates.ambience", "LightArc"),
+        ("moviepy.ae.templates.ambience", "SleepFade"),
+        ("moviepy.ae.templates.music_cards", "track_cards"),
+        ("moviepy.ae.templates.music_cards", "combine_study_ass"),
+        ("moviepy.ae.templates.music_cards", "sleep_cards_ass"),
+        ("moviepy.ae.templates.thumbnail", "ThumbnailSpec"),
+        ("moviepy.ae.templates.thumbnail", "render_thumbnail"),
+        ("moviepy.ae.templates.thumbnail", "grab_frame"),
+        ("moviepy.ae.templates.music_qa", "qa_report"),
+        ("moviepy.ae.templates.music_qa", "flash_verdict"),
     ],
 )
 def test_named_api_exists_and_is_mentioned(doc_text, module, name):
@@ -516,6 +658,15 @@ def test_output_names_mentioned(doc_text):
         ".ffmpeg.log",
         "NOT_RUN",
         "NVENC",
+        "particles.mov",
+        "cards.ass",
+        "publish/",
+        "thumbnail.jpg",
+        "thumbnail.jpg.json",
+        "qa/",
+        ".qa.json",
+        "render_sha256",
+        "partial",
     ):
         assert item in doc_text, item
 
@@ -558,17 +709,31 @@ def test_human_gates_are_the_four_documented_ones(doc_text):
 
 def test_dataclass_field_counts_documented():
     from moviepy.ae.templates.music_episode import (
+        AmbienceSpec,
+        CardsSpec,
         ChimeSpec,
+        LightArcSpec,
         MusicAudioSpec,
         MusicEpisodeSpec,
+        ParticlesSpec,
+        QaSpec,
+        SleepFadeSpec,
         SpectrumSpec,
+        ThumbnailStepSpec,
         TrackSpec,
         VisualSpec,
     )
 
-    assert len(dataclasses.fields(MusicEpisodeSpec)) == 17
+    assert len(dataclasses.fields(MusicEpisodeSpec)) == 23
     assert len(dataclasses.fields(TrackSpec)) == 4
-    assert len(dataclasses.fields(MusicAudioSpec)) == 6
+    assert len(dataclasses.fields(MusicAudioSpec)) == 7
     assert len(dataclasses.fields(VisualSpec)) == 6
     assert len(dataclasses.fields(SpectrumSpec)) == 12
     assert len(dataclasses.fields(ChimeSpec)) == 4
+    assert len(dataclasses.fields(ParticlesSpec)) == 7
+    assert len(dataclasses.fields(LightArcSpec)) == 3
+    assert len(dataclasses.fields(SleepFadeSpec)) == 5
+    assert len(dataclasses.fields(AmbienceSpec)) == 3
+    assert len(dataclasses.fields(CardsSpec)) == 6
+    assert len(dataclasses.fields(ThumbnailStepSpec)) == 8
+    assert len(dataclasses.fields(QaSpec)) == 3
