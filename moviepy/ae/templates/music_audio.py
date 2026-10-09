@@ -1,6 +1,8 @@
 r"""Audio side of the long-form music-channel workflow.
 
-Streaming ports of the S14/S06 recipes: two-pass linear ``loudnorm`` with an
+Streaming ports of the S14/S06 recipes: level and loudness processing through
+``soundx`` (FFmpeg two-pass linear ``loudnorm`` only as the LUFS
+step of soundx 0.2.0 or as an explicit ``backend="ffmpeg"``) with an
 exact-frame contract, looping one master to a chapter length with a linear
 crossfade, joining chapters with crossfades and edge fades, a synthetic
 two-note sine-bell cue, and quiet cue mixing that never boosts and never
@@ -26,7 +28,9 @@ import hashlib
 import json
 import math
 import re
+import shutil
 import subprocess
+import tempfile
 from pathlib import Path
 
 import numpy as np
@@ -37,6 +41,12 @@ from moviepy.ae.templates._audio_io import (
     iter_audio,
     read_audio,
 )
+from moviepy.ae.templates.soundx import (
+    require_soundx,
+    soundx_loudness,
+    soundx_normalize,
+    soundx_stage,
+)
 from moviepy.config import FFMPEG_BINARY
 
 
@@ -44,6 +54,8 @@ DEFAULT_RATE = 48000
 DEFAULT_LUFS = -18.0
 DEFAULT_TRUE_PEAK = -1.8
 DEFAULT_LRA = 11.0
+BACKENDS = ("soundx", "ffmpeg")
+LUFS_FALLBACK = "ffmpeg-loudnorm (soundx lacks loudness; upgrade to soundx>=0.3.0)"
 _FLAGS = getattr(subprocess, "CREATE_NO_WINDOW", 0)
 
 DEFAULT_NOTES = (("D4", 293.664768, 0.0, 1.6), ("A4", 440.0, 0.45, 1.6))
@@ -113,29 +125,15 @@ def _loudnorm_json(text):
 # --------------------------------------------------------------------------- #
 
 
-def measure_loudness(
-    path, *, target_lufs=DEFAULT_LUFS, true_peak=DEFAULT_TRUE_PEAK, lra=DEFAULT_LRA
-):
-    """Measure loudness with the first pass of FFmpeg ``loudnorm``.
+def _check_backend(backend):
+    """Validate a loudness backend name."""
+    if backend not in BACKENDS:
+        raise ValueError(f"backend must be one of {list(BACKENDS)}, got {backend!r}")
+    return backend
 
-    Parameters
-    ----------
-    path : str or Path
-        Any audio file FFmpeg can decode.
-    target_lufs : float
-        Integrated target handed to loudnorm (does not change the measurement).
-    true_peak : float
-        True-peak target in dBTP (does not change the measurement).
-    lra : float
-        Loudness-range target (does not change the measurement).
 
-    Returns
-    -------
-    dict
-        ``integrated_lufs``, ``true_peak_dbtp``, ``lra``, ``threshold`` and
-        ``target_offset`` as floats, plus the raw ``loudnorm`` fields under
-        their FFmpeg names (``input_i`` ...) as strings.
-    """
+def _measure_ffmpeg(path, target_lufs, true_peak, lra):
+    """Measure with the first pass of FFmpeg ``loudnorm`` (dictionary form)."""
     if not Path(path).is_file():
         raise FileNotFoundError(path)
     filt = f"loudnorm=I={target_lufs}:TP={true_peak}:LRA={lra}:print_format=json"
@@ -152,6 +150,204 @@ def measure_loudness(
     return result
 
 
+def _measure_soundx(path, executable):
+    """Measure with ``soundx loudness`` and map it to the loudness fields."""
+    raw = soundx_loudness(path, executable=executable)
+    lufs = raw.get("integrated_lufs")
+    result = {
+        "integrated_lufs": float(lufs) if lufs is not None else float("-inf"),
+        "true_peak_dbtp": float(raw["true_peak_dbtp"]),
+        "lra": float(raw.get("loudness_range_lu") or 0.0),
+        "sample_peak_dbfs": raw.get("sample_peak_dbfs"),
+    }
+    result["soundx"] = raw
+    return result
+
+
+def measure_loudness(
+    path,
+    *,
+    target_lufs=DEFAULT_LUFS,
+    true_peak=DEFAULT_TRUE_PEAK,
+    lra=DEFAULT_LRA,
+    backend="soundx",
+    soundx_executable=None,
+):
+    """Measure integrated loudness, true peak and loudness range.
+
+    With ``backend="soundx"`` (default) the measurement is ``soundx
+    loudness`` (soundx >= 0.3.0). A 0.2.0 soundx has no loudness command, so
+    FFmpeg ``loudnorm`` measures instead and the result says so in
+    ``lufs_backend``. A missing soundx raises ``SoundxError`` (no silent
+    fallback). ``backend="ffmpeg"`` always uses the first pass of FFmpeg
+    ``loudnorm``.
+
+    Parameters
+    ----------
+    path : str or Path
+        Any audio file FFmpeg can decode (soundx: formats it reads).
+    target_lufs : float
+        Integrated target handed to loudnorm (does not change the measurement).
+    true_peak : float
+        True-peak target in dBTP (does not change the measurement).
+    lra : float
+        Loudness-range target (does not change the measurement).
+    backend : str
+        ``"soundx"`` (default) or ``"ffmpeg"``.
+    soundx_executable : str or Path, optional
+        Explicit soundx executable (default: ``MOVIEPY_SOUNDX``, PATH).
+
+    Returns
+    -------
+    dict
+        ``integrated_lufs``, ``true_peak_dbtp`` and ``lra`` as floats, plus
+        ``backend`` and ``lufs_backend``. FFmpeg results also carry
+        ``threshold``, ``target_offset`` and the raw ``loudnorm`` fields
+        (``input_i`` ...); soundx results carry the raw ``soundx`` object.
+    """
+    _check_backend(backend)
+    if not Path(path).is_file():
+        raise FileNotFoundError(path)
+    if backend == "ffmpeg":
+        result = _measure_ffmpeg(path, target_lufs, true_peak, lra)
+        result.update(backend="ffmpeg", lufs_backend="ffmpeg-loudnorm")
+        return result
+    check = require_soundx(soundx_executable)
+    if check.has_loudness:
+        result = _measure_soundx(path, check.executable)
+        result.update(backend="soundx", lufs_backend="soundx")
+        return result
+    result = _measure_ffmpeg(path, target_lufs, true_peak, lra)
+    result.update(backend="soundx", lufs_backend=LUFS_FALLBACK)
+    return result
+
+
+def _final_filter(rate, frames):
+    """Return the exact-frame tail: resample, then pad and trim."""
+    return f"aresample={rate},apad=whole_len={frames},atrim=end_sample={frames}"
+
+
+def _codec(target):
+    """Return the FFmpeg codec arguments for a ``.flac`` or ``.wav`` target."""
+    suffix = target.suffix.lower()
+    if suffix == ".flac":
+        return ["-c:a", "flac", "-sample_fmt", "s32"]
+    if suffix in (".wav", ".wave"):
+        return ["-c:a", "pcm_s24le"]
+    raise ValueError("normalize_loudness writes .flac or .wav files")
+
+
+def _write_exact(source, target, filt, rate, overwrite):
+    """Run FFmpeg ``source`` -> ``target`` with ``filt`` and the right codec."""
+    args = ["-y" if overwrite else "-n", "-i", str(source), "-map", "0:a:0"]
+    args += ["-af", filt, "-ar", str(rate), "-ac", "2", *_codec(target), str(target)]
+    _ffmpeg(args)
+
+
+def _loudnorm_filter(measured, target_lufs, true_peak, lra):
+    """Return the linear second-pass ``loudnorm`` filter for a measurement."""
+    filt = f"loudnorm=I={target_lufs}:TP={true_peak}:LRA={lra}:linear=true"
+    for key, field in (
+        ("measured_I", "input_i"),
+        ("measured_TP", "input_tp"),
+        ("measured_LRA", "input_lra"),
+        ("measured_thresh", "input_thresh"),
+        ("offset", "target_offset"),
+    ):
+        filt += f":{key}={measured[field]}"
+    return filt
+
+
+def _verify_exact(target, frames, rate):
+    """Delete ``target`` and raise unless it has the exact frame contract."""
+    info = audio_info(target)
+    if (info["frames"], info["rate"], info["channels"]) != (frames, rate, 2):
+        target.unlink()
+        raise ValueError(
+            f"Normalized audio violated the exact-frame contract: {info} != "
+            f"{frames} frames at {rate} Hz stereo"
+        )
+
+
+def _normalize_soundx(
+    source, target, *, target_lufs, true_peak, lra, rate, frames, overwrite, exe
+):
+    """Soundx pipeline: stage, then LUFS by soundx (0.3.0) or loudnorm (0.2.0)."""
+    check = require_soundx(exe)
+    chain = [
+        "soundx convert --normalize --normalize-db=-4 "
+        f"(24-bit {rate} Hz stereo staging, S14 recipe)"
+    ]
+    scratch = Path(tempfile.mkdtemp(prefix=".soundx-", dir=target.parent))
+    try:
+        staged = scratch / "stage.wav"
+        stat = soundx_stage(
+            source, staged, bits=24, rate=rate, channels=2, executable=check.executable
+        )
+        if not float(stat.get("peak", 0.0)) > 0.0:
+            raise ValueError("Source is silent; loudness cannot be normalized")
+        normalize_stat = None
+        if check.has_loudness:
+            lufs_backend = "soundx"
+            measured = _measure_soundx(staged, check.executable)
+            measured["measured_on"] = "soundx stage output"
+            leveled = scratch / "level.wav"
+            normalize_stat = soundx_normalize(
+                staged,
+                leveled,
+                target_lufs=target_lufs,
+                true_peak=true_peak,
+                executable=check.executable,
+            )
+            chain.append(
+                f"soundx convert --loudness-target={target_lufs} "
+                f"--true-peak={true_peak}"
+            )
+            _write_exact(leveled, target, _final_filter(rate, frames), rate, overwrite)
+            chain.append("ffmpeg exact-frame format conversion (no level change)")
+            metered = target if target.suffix.lower() == ".wav" else leveled
+            output_loudness = _measure_soundx(metered, check.executable)
+            output_loudness.update(
+                backend="soundx",
+                lufs_backend="soundx",
+                measured_on=(
+                    "final file" if metered is target else "24-bit soundx output"
+                ),
+            )
+        else:
+            lufs_backend = LUFS_FALLBACK
+            measured = _measure_ffmpeg(staged, target_lufs, true_peak, lra)
+            measured["measured_on"] = "soundx stage output"
+            if not math.isfinite(measured["integrated_lufs"]):
+                raise ValueError("Source is silent; loudness cannot be normalized")
+            filt = _loudnorm_filter(measured, target_lufs, true_peak, lra)
+            _write_exact(
+                staged,
+                target,
+                filt + "," + _final_filter(rate, frames),
+                rate,
+                overwrite,
+            )
+            chain.append("ffmpeg loudnorm two-pass linear (soundx lacks loudness)")
+            output_loudness = _measure_ffmpeg(target, target_lufs, true_peak, lra)
+            output_loudness.update(
+                backend="soundx", lufs_backend=lufs_backend, measured_on="final file"
+            )
+    finally:
+        shutil.rmtree(scratch, ignore_errors=True)
+    measured.update(backend="soundx", lufs_backend=lufs_backend)
+    evidence = {
+        "executable": check.executable,
+        "version": check.version,
+        "has_loudness": check.has_loudness,
+        "stage": stat,
+        "normalize": normalize_stat,
+        "backend_chain": chain,
+        "lufs_backend": lufs_backend,
+    }
+    return measured, output_loudness, evidence
+
+
 def normalize_loudness(
     source,
     target,
@@ -162,13 +358,24 @@ def normalize_loudness(
     rate=DEFAULT_RATE,
     frames=None,
     overwrite=False,
+    backend="soundx",
+    soundx_executable=None,
 ):
-    """Normalize with a two-pass linear ``loudnorm`` and an exact frame count.
+    """Normalize loudness to a target with an exact frame count.
 
-    The first pass measures ``source``; the second applies the measured
-    values with ``linear=true`` and then ``aresample`` (loudnorm may run at
-    192 kHz internally, so resampling comes before trimming), ``apad`` and
-    ``atrim`` so the result has exactly ``frames`` samples at ``rate``.
+    ``backend="soundx"`` (default, required by the music channel) runs the S14
+    recipe through soundx: ``convert --bits 24 --rate --channels 2 --normalize
+    --normalize-db=-4`` stages the file; then, with soundx >= 0.3.0, ``convert
+    --loudness-target/--true-peak`` sets the loudness (``stream`` for huge
+    WAVs); with soundx 0.2.0 (no loudness command) the LUFS step is the S14
+    two-pass linear FFmpeg ``loudnorm`` and the evidence records
+    ``lufs_backend``. FFmpeg then only converts the format (``aresample``,
+    ``apad``, ``atrim``) so the result has exactly ``frames`` samples. A
+    missing soundx raises ``SoundxError`` naming ``MOVIEPY_SOUNDX``; nothing
+    falls back silently.
+
+    ``backend="ffmpeg"`` is the original pure-FFmpeg two-pass linear
+    ``loudnorm`` (explicit opt-in only).
 
     Parameters
     ----------
@@ -181,7 +388,7 @@ def normalize_loudness(
     true_peak : float
         True-peak ceiling in dBTP.
     lra : float
-        Loudness-range target.
+        Loudness-range target (FFmpeg ``loudnorm`` steps only).
     rate : int
         Output sample rate.
     frames : int, optional
@@ -189,24 +396,27 @@ def normalize_loudness(
         converted to ``rate``.
     overwrite : bool
         Replace an existing ``target`` instead of raising.
+    backend : str
+        ``"soundx"`` (default) or ``"ffmpeg"``.
+    soundx_executable : str or Path, optional
+        Explicit soundx executable (default: ``MOVIEPY_SOUNDX``, PATH).
 
     Returns
     -------
     dict
         ``measured`` (input loudness), ``output`` (rate, channels, frames and
-        loudness re-measured on the result), ``target`` and
+        loudness re-measured on the result), ``target``, ``backend``,
+        ``lufs_backend``, for soundx also ``soundx`` (executable, version,
+        ``has_loudness``, stage and normalize JSON, ``backend_chain``) and
         ``human_listening``.
     """
+    _check_backend(backend)
     source, target = Path(source), Path(target)
     if target.exists() and not overwrite:
         raise FileExistsError(target)
-    suffix = target.suffix.lower()
-    if suffix == ".flac":
-        codec = ["-c:a", "flac", "-sample_fmt", "s32"]
-    elif suffix in (".wav", ".wave"):
-        codec = ["-c:a", "pcm_s24le"]
-    else:
-        raise ValueError("normalize_loudness writes .flac or .wav files")
+    _codec(target)
+    if backend == "soundx":
+        require_soundx(soundx_executable)
     if frames is None:
         info = audio_info(source)
         frames = info["frames"]
@@ -215,55 +425,65 @@ def normalize_loudness(
     frames = int(frames)
     if frames <= 0:
         raise ValueError("frames must be positive")
-    measured = measure_loudness(
-        source, target_lufs=target_lufs, true_peak=true_peak, lra=lra
-    )
-    if not math.isfinite(measured["integrated_lufs"]):
-        raise ValueError("Source is silent; loudness cannot be normalized")
-    filt = f"loudnorm=I={target_lufs}:TP={true_peak}:LRA={lra}:linear=true"
-    for key, field in (
-        ("measured_I", "input_i"),
-        ("measured_TP", "input_tp"),
-        ("measured_LRA", "input_lra"),
-        ("measured_thresh", "input_thresh"),
-        ("offset", "target_offset"),
-    ):
-        filt += f":{key}={measured[field]}"
-    filt += f",aresample={rate},apad=whole_len={frames},atrim=end_sample={frames}"
     target.parent.mkdir(parents=True, exist_ok=True)
-    args = ["-y" if overwrite else "-n", "-i", str(source), "-map", "0:a:0"]
-    args += ["-af", filt, "-ar", str(rate), "-ac", "2", *codec, str(target)]
-    _ffmpeg(args)
-    info = audio_info(target)
-    if (info["frames"], info["rate"], info["channels"]) != (frames, rate, 2):
-        target.unlink()
-        raise ValueError(
-            f"Normalized audio violated the exact-frame contract: {info} != "
-            f"{frames} frames at {rate} Hz stereo"
+    existed = target.exists()
+    if backend == "soundx":
+        try:
+            measured, loudness, evidence = _normalize_soundx(
+                source,
+                target,
+                target_lufs=target_lufs,
+                true_peak=true_peak,
+                lra=lra,
+                rate=rate,
+                frames=frames,
+                overwrite=overwrite,
+                exe=soundx_executable,
+            )
+            _verify_exact(target, frames, rate)
+        except BaseException:
+            if not existed and target.exists():
+                target.unlink()
+            raise
+        extra = {"soundx": evidence, "lufs_backend": evidence["lufs_backend"]}
+    else:
+        measured = _measure_ffmpeg(source, target_lufs, true_peak, lra)
+        if not math.isfinite(measured["integrated_lufs"]):
+            raise ValueError("Source is silent; loudness cannot be normalized")
+        filt = _loudnorm_filter(measured, target_lufs, true_peak, lra)
+        _write_exact(
+            source, target, filt + "," + _final_filter(rate, frames), rate, overwrite
         )
+        _verify_exact(target, frames, rate)
+        loudness = _measure_ffmpeg(target, target_lufs, true_peak, lra)
+        measured.update(backend="ffmpeg", lufs_backend="ffmpeg-loudnorm")
+        loudness.update(backend="ffmpeg", lufs_backend="ffmpeg-loudnorm")
+        extra = {"lufs_backend": "ffmpeg-loudnorm"}
     return {
+        "backend": backend,
         "measured": measured,
         "output": {
             "path": str(target),
             "rate": rate,
             "channels": 2,
             "frames": frames,
-            "loudness": measure_loudness(
-                target, target_lufs=target_lufs, true_peak=true_peak, lra=lra
-            ),
+            "loudness": loudness,
         },
         "target": {"lufs": target_lufs, "true_peak_dbtp": true_peak, "lra": lra},
+        **extra,
         "human_listening": "NOT_RUN",
     }
 
 
-def music_audio_report(path):
+def music_audio_report(path, *, backend="soundx"):
     """Return an evidence dictionary (format and loudness) for one audio file.
 
     Parameters
     ----------
     path : str or Path
         Audio file to describe.
+    backend : str
+        Loudness backend, see ``measure_loudness``.
 
     Returns
     -------
@@ -274,7 +494,7 @@ def music_audio_report(path):
     return {
         "path": str(path),
         "info": audio_info(path),
-        "loudness": measure_loudness(path),
+        "loudness": measure_loudness(path, backend=backend),
         "human_listening": "NOT_RUN",
     }
 

@@ -221,24 +221,25 @@ def pink_noise(frames, seed):
 
 
 def test_loudness_measure_and_normalize(tmp_path):
+    """The explicit pure-FFmpeg backend keeps the original behaviour."""
     source = tmp_path / "noise.wav"
     with AudioWriter(source, rate=48000, subtype="float") as writer:
         writer.write(pink_noise(480000, 5))
-    measured = measure_loudness(source)
+    measured = measure_loudness(source, backend="ffmpeg")
     for key in ("integrated_lufs", "true_peak_dbtp", "lra", "threshold", "input_i"):
         assert key in measured
     assert -45 < measured["integrated_lufs"] < -20
     target = tmp_path / "norm.flac"
-    facts = normalize_loudness(source, target)
+    facts = normalize_loudness(source, target, backend="ffmpeg")
     assert facts["output"]["frames"] == 480000 == audio_info(target)["frames"]
     assert facts["human_listening"] == "NOT_RUN"
     loudness = facts["output"]["loudness"]
     assert loudness["integrated_lufs"] == pytest.approx(-18.0, abs=1.0)
     assert loudness["true_peak_dbtp"] <= -1.0
     with pytest.raises(FileExistsError):
-        normalize_loudness(source, target)
+        normalize_loudness(source, target, backend="ffmpeg")
     longer = tmp_path / "long.wav"
-    normalize_loudness(source, longer, frames=500000)
+    normalize_loudness(source, longer, frames=500000, backend="ffmpeg")
     assert audio_info(longer)["frames"] == 500000
     with pytest.raises(ValueError):
-        normalize_loudness(source, tmp_path / "bad.mp3")
+        normalize_loudness(source, tmp_path / "bad.mp3", backend="ffmpeg")
