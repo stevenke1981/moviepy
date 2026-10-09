@@ -36,6 +36,8 @@ SECTION_CLASSES = {
     "quotes": "QuoteSpec",
     "subtitles": "SubtitleSpec",
     "audio": "AudioSpec",
+    "scene_overlay": "SceneOverlaySpec",
+    "name_tags": "NameTag",
 }
 # JSON key -> dataclass field for the renamed keys (``in``/``out`` on shots).
 JSON_RENAMES = {"in": "clip_in", "out": "clip_out"}

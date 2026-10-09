@@ -74,6 +74,8 @@ import math
 from dataclasses import MISSING, dataclass, field, fields
 from pathlib import Path
 
+from moviepy.ae.templates.name_tag import NameTag
+
 
 __all__ = [
     "EpisodeError",
@@ -83,6 +85,7 @@ __all__ = [
     "ChapterSpec",
     "QuoteSpec",
     "SubtitleSpec",
+    "SceneOverlaySpec",
     "AudioSpec",
     "EpisodeSpec",
     "build_episode",
@@ -596,7 +599,10 @@ class SubtitleSpec:
 
     ``primary`` / ``secondary`` are an SRT path or a list of
     ``{"start", "end", "text"[, "lang"]}``; ``protected`` terms are never split
-    across lines.
+    across lines. ``overflow="split"`` turns a cue that does not fit into
+    several shorter cues (``subtitles.reflow_cues``), timed from ``words``
+    (an ASR word-timing JSON path or list, see ``subtitles.load_words``)
+    when given.
     """
 
     primary: object
@@ -604,6 +610,8 @@ class SubtitleSpec:
     protected: tuple = ()
     primary_lang: str = "zh-TW"
     secondary_lang: str = "en"
+    overflow: str = "wrap"
+    words: object = None
 
     def __post_init__(self):
         object.__setattr__(self, "primary", _cue_list(self.primary, "primary"))
@@ -620,6 +628,58 @@ class SubtitleSpec:
         )
         _str(self.primary_lang, "primary_lang")
         _str(self.secondary_lang, "secondary_lang")
+        _choice(self.overflow, "overflow", ("wrap", "split"))
+        if self.words is not None and not isinstance(self.words, (str, list, tuple)):
+            raise EpisodeError("words must be a JSON path or a list of words")
+        if self.words is not None and self.overflow != "split":
+            raise EpisodeError("words are only used with overflow='split'")
+
+
+@dataclass(frozen=True)
+class SceneOverlaySpec:
+    """Chapter overlay sets: logo, watermark, vertical title, subscribe pop.
+
+    ``chapters`` is a list of ``[start_seconds, title]``; each starts one
+    overlay set of ``layout`` duration (see ``scene_overlay``). ``logo`` is
+    an image path or text, ``layout`` a ``SceneLayout.to_dict`` subset.
+    """
+
+    chapters: tuple
+    logo: str = None
+    watermark: str = None
+    cta_text: str = "立即訂閱"
+    layout: dict = field(default_factory=dict)
+
+    def __post_init__(self):
+        if not isinstance(self.chapters, (list, tuple)) or not self.chapters:
+            raise EpisodeError("chapters must be a non-empty list of [start, title]")
+        rows = []
+        for k, row in enumerate(self.chapters):
+            if not isinstance(row, (list, tuple)) or len(row) != 2:
+                raise EpisodeError(f"chapters[{k}] must be [start, title]")
+            rows.append(
+                (
+                    _num(row[0], f"chapters[{k}] start", low=0),
+                    _str(row[1], f"chapters[{k}] title"),
+                )
+            )
+        object.__setattr__(self, "chapters", tuple(rows))
+        _opt_str(self.logo, "logo")
+        _opt_str(self.watermark, "watermark")
+        _str(self.cta_text, "cta_text")
+        if not isinstance(self.layout, dict):
+            raise EpisodeError("layout must be an object")
+        object.__setattr__(self, "layout", _jsonable(self.layout, "layout"))
+        self.scene_layout()
+
+    def scene_layout(self):
+        """Return the validated ``SceneLayout``."""
+        from moviepy.ae.templates.scene_overlay import SceneLayout
+
+        try:
+            return SceneLayout.from_dict(self.layout)
+        except (TypeError, ValueError) as error:
+            raise EpisodeError(f"scene_overlay.layout: {error}") from None
 
 
 _FONT_ROLES = ("title", "body", "quote", "chapter", "subtitle")
@@ -652,6 +712,11 @@ class EpisodeSpec:
         Overlays placed on the built timeline.
     subtitles : SubtitleSpec or None
         Burned-in subtitle files, drawn above every other layer.
+    scene_overlay : SceneOverlaySpec or None
+        Per-chapter logo, watermark, vertical title and subscribe button.
+    name_tags : sequence of NameTag
+        Character name cards beside a portrait (see ``name_tag.NameTag``;
+        ``subject_box`` in 1920x1080 reference pixels).
     audio : AudioSpec or None
         Narration/music mix attached to the composition (see ``AudioSpec``).
     chapter_period : float
@@ -680,6 +745,8 @@ class EpisodeSpec:
     dip_color: tuple = (0, 0, 0)
     seed: int = 7
     audio: AudioSpec = None
+    scene_overlay: SceneOverlaySpec = None
+    name_tags: tuple = ()
 
     def __post_init__(self):
         _str(self.name, "name")
@@ -706,6 +773,7 @@ class EpisodeSpec:
             ("outro", BookendSpec),
             ("subtitles", SubtitleSpec),
             ("audio", AudioSpec),
+            ("scene_overlay", SceneOverlaySpec),
         ):
             value = getattr(self, name)
             if value is not None and not isinstance(value, cls):
@@ -732,6 +800,17 @@ class EpisodeSpec:
             )
         if not self.shots:
             raise EpisodeError("an episode needs at least one shot")
+        if not isinstance(self.name_tags, (list, tuple)):
+            raise EpisodeError("name_tags must be a list")
+        tags = []
+        for k, item in enumerate(self.name_tags):
+            try:
+                tags.append(
+                    item if isinstance(item, NameTag) else NameTag.from_dict(item)
+                )
+            except (TypeError, ValueError) as error:
+                raise EpisodeError(f"name_tags[{k}]: {error}") from None
+        object.__setattr__(self, "name_tags", tuple(tags))
         object.__setattr__(
             self,
             "chapter_period",
@@ -805,6 +884,10 @@ class EpisodeSpec:
             "dip_color": list(self.dip_color),
             "seed": self.seed,
             "audio": None if self.audio is None else _spec_dict(self.audio),
+            "scene_overlay": (
+                None if self.scene_overlay is None else _spec_dict(self.scene_overlay)
+            ),
+            "name_tags": [tag.to_dict() for tag in self.name_tags],
         }
         return value
 
@@ -880,7 +963,13 @@ def _resolve_paths(data, base):
     fix_in(data.get("audio"), ("narration", "music"))
     subs = data.get("subtitles")
     if isinstance(subs, dict):
-        fix_in(subs, ("primary", "secondary"))
+        fix_in(subs, ("primary", "secondary", "words"))
+    overlay = data.get("scene_overlay")
+    if isinstance(overlay, dict) and isinstance(overlay.get("logo"), str):
+        # A logo is an image path or plain text; only rebase existing files.
+        candidate = base / Path(overlay["logo"]).expanduser()
+        if not Path(overlay["logo"]).is_absolute() and candidate.is_file():
+            overlay["logo"] = str(candidate)
 
 
 # --------------------------------------------------------------------------- #
@@ -1127,8 +1216,10 @@ def build_episode(spec):
     from moviepy.ae.templates.background import media_background
     from moviepy.ae.templates.chapter_tag import chapter_tag
     from moviepy.ae.templates.ken_burns import ken_burns
+    from moviepy.ae.templates.name_tag import add_name_tags
     from moviepy.ae.templates.quote import vertical_quote
-    from moviepy.ae.templates.subtitles import subtitle_layer
+    from moviepy.ae.templates.scene_overlay import add_scene_overlays
+    from moviepy.ae.templates.subtitles import load_words, subtitle_layer
     from moviepy.ae.templates.title_card import build_title_card
     from moviepy.ae.transform import Transform
 
@@ -1336,6 +1427,9 @@ def build_episode(spec):
             cue_sets["secondary"] = _read_cues(
                 subs.secondary, subs.secondary_lang, "subtitles.secondary", sources
             )
+        if isinstance(subs.words, str):
+            _check_file(subs.words, "subtitles.words")
+            sources[subs.words] = _sha256(subs.words)
         for lane, cues in cue_sets.items():
             for cue in cues:
                 if cue.end > total + _EPS:
@@ -1343,6 +1437,15 @@ def build_episode(spec):
                         f"subtitles.{lane} cue [{cue.start:g}, {cue.end:g}) "
                         f"{cue.text[:20]!r} lies outside the {total:g} s timeline"
                     )
+    for k, tag in enumerate(spec.name_tags):
+        inside(f"name_tags[{k}]", tag.start, tag.end)
+    if spec.scene_overlay is not None:
+        overlay = spec.scene_overlay
+        layout = overlay.scene_layout()
+        for start, _ in overlay.chapters:
+            inside("scene_overlay", start, start + layout.duration)
+        if overlay.logo and Path(overlay.logo).is_file():
+            note(overlay.logo, "scene_overlay.logo")
     for role in spec.fonts:
         if spec.fonts[role] is not None:
             note(spec.fonts[role], f"fonts.{role}")
@@ -1401,6 +1504,34 @@ def build_episode(spec):
     for seg in segments:
         if seg["kind"] != "shot":
             segment_layer(seg)
+    if spec.scene_overlay is not None:
+        overlay = spec.scene_overlay
+        logo = overlay.logo
+        if logo and Path(logo).is_file():
+            logo = Path(logo)
+        try:
+            add_scene_overlays(
+                comp,
+                overlay.scene_layout(),
+                overlay.chapters,
+                logo=logo,
+                watermark=overlay.watermark,
+                cta_text=overlay.cta_text,
+                font=spec.fonts.get("title"),
+            )
+        except ValueError as error:
+            raise EpisodeError(f"scene_overlay: {error}") from None
+    if spec.name_tags:
+        try:
+            add_name_tags(
+                comp,
+                spec.name_tags,
+                preset=preset,
+                font=spec.fonts.get("title"),
+                role_font=spec.fonts.get("body"),
+            )
+        except ValueError as error:
+            raise EpisodeError(f"name_tags: {error}") from None
     subtitle = None
     if cue_sets:
         subs = spec.subtitles
@@ -1408,14 +1539,25 @@ def build_episode(spec):
         kwargs = {"font": "default"} if font is None else {}
         if isinstance(font, str):
             kwargs = {"font": font}
-        subtitle = subtitle_layer(
-            cue_sets["primary"],
-            preset,
-            secondary=cue_sets.get("secondary"),
-            protected=subs.protected,
-            size=size,
-            **kwargs,
-        )
+        words = None
+        if subs.words is not None:
+            try:
+                words = load_words(subs.words)
+            except (KeyError, TypeError, ValueError) as error:
+                raise EpisodeError(f"subtitles.words: {error}") from None
+        try:
+            subtitle = subtitle_layer(
+                cue_sets["primary"],
+                preset,
+                secondary=cue_sets.get("secondary"),
+                protected=subs.protected,
+                size=size,
+                overflow=subs.overflow,
+                words=words,
+                **kwargs,
+            )
+        except ValueError as error:
+            raise EpisodeError(f"subtitles: {error}") from None
         subtitle.in_point = 0.0
         subtitle.out_point = total
         comp.add_layer(subtitle)
@@ -1469,11 +1611,24 @@ def build_episode(spec):
         "subtitles": {
             lane: {
                 "cues": len(cues),
+                "rendered_cues": len(subtitle._lanes[lane]["cues"]),
                 "first": cues[0].start if cues else None,
                 "last": cues[-1].end if cues else None,
             }
             for lane, cues in cue_sets.items()
         },
+        "scene_overlay": (
+            None
+            if spec.scene_overlay is None
+            else [
+                {"start": start, "title": title}
+                for start, title in spec.scene_overlay.chapters
+            ]
+        ),
+        "name_tags": [
+            {"name": tag.name, "start": tag.start, "end": tag.end}
+            for tag in spec.name_tags
+        ],
         "sources": dict(sorted(sources.items())),
     }
     if audio_info is not None:

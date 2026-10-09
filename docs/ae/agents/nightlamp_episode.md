@@ -36,6 +36,9 @@ Ask the human for every missing item. Never invent, substitute or generate media
 | Music bed (optional) | `audio.music` file; the human confirms its rights | Leave `audio.music` null and report. |
 | Subtitles | `subtitles/zh-TW.srt` and `subtitles/en.srt` (UTF-8, BOM and CRLF accepted), in `subtitles.primary` and `subtitles.secondary` | Ask for the SRT files. Do not write subtitles yourself. |
 | Titles and brand | `intro.title`, `intro.brand`, `intro.subtitle`, `outro.*`, `chapters[].items`, `chapters[].number` | Ask. Do not invent titles or chapter text. |
+| Character names (optional) | `name_tags[].name`, `role`, `subject_box` (the person's box in 1920x1080 pixels), `start` | Ask for the names and the times they appear. Do not guess who is in a picture. |
+| Chapter overlay (optional) | `scene_overlay.chapters` (`[start, title]`), `logo`, `watermark` | Ask for the chapter titles and the logo. |
+| ASR word timing (optional) | `subtitles.words` (Qwen3ASR JSON with `words`) | Use only with `subtitles.overflow: "split"`. |
 | Quotes (optional) | `quotes[].text`, `source`, `dynasty`, `year`, `title` as supplied | Only the text the human supplies. Never create a classical quote or source. |
 | Font | `fonts` role paths; default `C:/Windows/Fonts/kaiu.ttf` (both presets) | Check it exists. Missing font means stop. Never substitute a font silently. |
 | Tools | FFmpeg (imageio-ffmpeg default; `FFMPEG_BINARY=auto-detect` for PATH ffmpeg) | Run `python -m moviepy.ae.templates --help`. If it fails, stop. |
@@ -139,6 +142,11 @@ Only the fields an agent usually edits. Full tables: `docs/ae/episode_workflow.r
 | `subtitles.secondary` | SubtitleSpec | none | Path to the secondary SRT (en). |
 | `subtitles.primary_lang` | SubtitleSpec | `zh-TW` | Language tag for the primary SRT. |
 | `subtitles.secondary_lang` | SubtitleSpec | `en` | Language tag for the secondary SRT. |
+| `subtitles.overflow` | SubtitleSpec | `wrap` | `split` turns a cue that does not fit into several shorter cues, cut at punctuation first. Use it when a render fails with a layout error. |
+| `subtitles.words` | SubtitleSpec | none | ASR word-timing JSON, used to time the split cues. Only with `overflow: "split"`. |
+| `scene_overlay.chapters` | SceneOverlaySpec | required | List of `[start, title]`. Each chapter overlay lasts `layout.duration` (4 s) and must not touch the intro or outro card. |
+| `scene_overlay.logo` / `watermark` / `cta_text` | SceneOverlaySpec | none / none / `立即訂閱` | Logo image path or text, watermark text, subscribe button text. |
+| `name_tags[].name` / `role` / `subject_box` / `start` / `duration` / `side` / `seal` / `leader` | NameTag | duration 4 s, side `auto` | One card per character appearance (EpisodeSpec field `name_tags`). The card is placed beside `subject_box`, never over it or over the subtitles. |
 | `audio.narration` | AudioSpec | required | Narration file path. |
 | `audio.narration_gain_db` | AudioSpec | `0.0` | Narration gain. |
 | `audio.music` | AudioSpec | none | Music bed path (rights confirmed by human). |

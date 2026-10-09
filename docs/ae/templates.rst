@@ -149,6 +149,42 @@
 
 ``burn_subtitles(clip_or_comp, cues, preset, *, secondary=None, font=None, secondary_font=None)`` 若傳入 ``Composition`` 會原地修改並回傳它；若傳入一般 clip，會先包成新的 ``Composition``。``subtitle_layer`` 回傳 ``SubtitleLayer``，可用 ``add_layer`` 自行加入。``find_bad_breaks`` 會找出斷在詞中或拆開專有名詞的行；``check_timing(cues, timing=None)`` 檢查字幕時長與閱讀速度（``SubtitleTiming``）。``parse_srt``、``to_srt``、``to_vtt`` 處理標準字幕格式。
 
+字幕過長：拆句而非截斷
+~~~~~~~~~~~~~~~~~~~~~~
+
+``reflow_cues(cues, measure, max_width, *, max_lines=1, protected=(), words=None, use_jieba=True, allow_char_breaks=False, max_gap=0.3, rejoin=True, rejoin_gap=0.6, report=None)`` 移植自夜燈 R26《嬌娜》R5 的「語意＋像素寬度」字幕版面。單行放得下的字幕原樣保留；放不下的字幕會拆成數句連續字幕，每句都放得下：
+
+- 只在標點、空白或詞邊界切，不切開 ``protected`` 人名、數字或英文單字，並遵守行首行尾禁則（含彎引號 ``“”``）。
+- 標點後的切點最優先。在詞中間切的代價高於多一句字幕，所以寧可多一句在逗號處結束的字幕。
+- ``rejoin=True`` 會先把切壞的相鄰字幕併回再重排，例如沒在標點處結束的「…痛得連水｜都喝不下」或拆開人名的「孔雪｜笠」。新切點若落在原本的切點上，沿用原本的時間碼。
+- 提供 ``words``（ASR 逐字時間，``load_words`` 可讀 Qwen3ASR 的 ``{"words": [...]}`` JSON）時，不會在同一個 ASR 詞的中間切，新切點的時間取自前後詞的邊界。停頓短於 ``max_gap`` 時兩句首尾相接以免閃爍，較長的停頓則保留為空檔。沒有 ``words`` 時，按原字幕內的字數比例內插。
+- 文字一字不漏：所有輸出字幕串起來等於原文。真的切不開時拋出 ``LayoutError``。
+
+.. code-block:: python
+
+    from PIL import ImageFont
+
+    from moviepy.ae.templates.subtitles import load_words, parse_srt, reflow_cues
+
+    font = ImageFont.truetype("C:/Windows/Fonts/msjhbd.ttc", 74)
+
+    def measure(text):
+        left, _, right, _ = font.getbbox(text, stroke_width=4)
+        return right - left
+
+    cues = parse_srt(open("zh.srt", encoding="utf-8").read(), "zh-TW")
+    report = []
+    one_line = reflow_cues(
+        cues,
+        measure,
+        1352,  # R26 字幕安全框 1400 px 減左右留白 24 px
+        protected=["孔雪笠", "皇甫公子", "嬌娜"],
+        words=load_words("voice-full.json"),
+        report=report,
+    )
+
+燒錄時改用 ``subtitle_layer(..., overflow="split", words=words)`` 或 ``burn_subtitles(..., overflow="split")``，圖層會用自己的字型量測後再拆句，``layer.reflow_report`` 記錄哪些字幕被拆開、用哪種方式對時。用《嬌娜》全片 532 句實測：輸出 616 句，文字完全一致，最寬一句 1340 px（上限 1352），沒有重疊，只有 5 句因整句沒有標點而必須在詞間切開。
+
 ``ken_burns``：靜圖次像素運鏡
 -------------------------------
 
@@ -207,6 +243,57 @@
         "學而時習之|不亦說乎", "《論語·學而》", medium=medium, duration=6.0
     )
     frame = scroll.render_buffer(5.0).to_uint8_rgb(bg=(0, 0, 0))
+
+``name_tag``：人物名牌
+----------------------
+
+在人物圖旁邊顯示姓名與身分，例如「嬌娜／狐仙」。這是 R26 ASS 人物介紹卡的 AE 版：半透明深色底、金色對角括線、直書姓名、身分小字，可加印章（如「誌」）與指向人物的引線。
+
+``place_name_tag(subject_box, card_size, canvas_size, *, side="auto", gap=24, margin=48, avoid=(), align="top")`` 是純幾何計算：``subject_box`` 是人物在畫面中的框 ``(x, y, w, h)``。``side="auto"`` 會先比較左右兩側的空間，再考慮上下，選出能放下名牌、且不壓到人物與 ``avoid`` 區域（預設為字幕安全框）的位置，名牌不會超出畫面邊界。真的沒有位置時拋出 ``ValueError``。
+
+``NameTag(name, role=None, subject_box=..., start=0, duration=4, side="auto", orientation="vertical", seal=None, leader=False, ...)`` 描述一張名牌。``name_tag_layer(tag, canvas_size, *, preset=None, font=None, role_font=None, avoid=None)`` 回傳 AE layer：名牌從人物那一側滑出（0.45 秒）並淡入，結束前淡出（0.65 秒）。``add_name_tags(comp, tags)`` 會一次加入多張名牌，若兩張在同一時間互相重疊則拒絕。座標以 1920×1080 為基準，自動縮放到合成尺寸。字放不下時先縮小字級，縮到下限仍放不下才拋錯，不會截字。
+
+.. code-block:: python
+
+    from moviepy.ae.templates.name_tag import NameTag, add_name_tags
+
+    tag = NameTag(
+        "嬌娜",
+        role="狐仙",
+        subject_box=(1250, 150, 420, 650),  # 人物在 1920x1080 畫面中的位置
+        start=12.0,
+        duration=4.0,
+        seal="誌",
+        leader=True,
+    )
+    add_name_tags(
+        comp,
+        [tag],
+        font="C:/Windows/Fonts/kaiu.ttf",
+        role_font="C:/Windows/Fonts/msjhbd.ttc",
+    )
+
+``scene_overlay``：章節疊圖套組
+-------------------------------
+
+R5 的章節疊圖：左上頻道 logo（圖檔或文字）、右上半透明浮水印、右側直式章名（由上而下、由右而左，深色圓角底加金框）、右下紅色「立即訂閱 ▶」按鈕，按鈕在第 0、6、10 格依序縮放 80%→104%→100%。每章 4 秒，淡入淡出各 0.4 秒。版面預設值即 R26 policy 的矩形（``SceneLayout``），會依合成尺寸縮放。
+
+``add_scene_overlays(comp, layout, chapters, *, logo=None, watermark=None, cta_text="立即訂閱", font=None, watermark_span="auto")`` 的 ``chapters`` 為 ``[(開始秒數, 章名), ...]``，章節時間互相重疊時拒絕。章名中的空格是優先換欄點，例如「第三章 雷劫守候」排成「第三章」與「雷劫守候」兩欄。``export_scene_overlay`` 可把一章的疊圖輸出成帶透明通道的 qtrle MOV，交給 FFmpeg 疊加。
+
+.. code-block:: python
+
+    from moviepy.ae.templates.scene_overlay import SceneLayout, add_scene_overlays
+
+    add_scene_overlays(
+        comp,
+        SceneLayout(),
+        [(95.0, "第一章 菩提寺"), (420.0, "第三章 雷劫守候")],
+        logo="夜燈說書",
+        watermark="夜燈說書@NanDayDream",
+        font="C:/Windows/Fonts/msjhbd.ttc",
+    )
+
+``EpisodeSpec`` 也接受這三項：``subtitles.overflow`` / ``subtitles.words``、``scene_overlay``（``chapters``、``logo``、``watermark``、``cta_text``、``layout``），以及 ``name_tags``（``NameTag.to_dict`` 格式的清單）。``build_episode`` 會檢查它們不與片頭片尾字卡重疊，並寫入 ``episode_report``。
 
 ``paper``：紙張與印章輔助
 -------------------------
@@ -305,6 +392,25 @@
    * - ``scripts/subtitle_pipeline.py``
      - ``subtitles``（``burn_subtitles``、``to_ass``、``parse_srt``、``find_bad_breaks``）
      - 斷行與時序檢查皆在模組內完成。
+
+**R26 夜燈工作流程 → 模板**
+
+.. list-table::
+   :header-rows: 1
+   :widths: 34 33 33
+
+   * - R26 工具
+     - 模板
+     - 備註
+   * - ``story_subtitle_delivery.py`` 的 ``reflow_with_pixel_policy``
+     - ``reflow_cues`` / ``subtitle_layer(overflow="split")``
+     - 不再要求字幕與 Qwen 文字等長；改以字元對齊，對不上的切點退回字數內插。
+   * - ``story_subtitle_delivery.py`` 的 ``character_title_events``
+     - ``name_tag``
+     - ASS 改為 AE layer，並自動避開人物框與字幕框。
+   * - ``story_ae_scene_layout.py``
+     - ``scene_overlay``
+     - logo 不再強制使用 Godot；需要立體 logo 時，可先用 ``motion.title_card`` 輸出圖片再傳入。
 
 範例與測試
 ----------

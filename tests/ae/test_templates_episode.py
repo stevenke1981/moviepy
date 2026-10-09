@@ -332,7 +332,12 @@ def test_layer_order_and_report(media):
     assert report["preset_resolved"]["fps"] == 12.0
     assert report["size"] == [320, 180]
     assert report["frames"] == int(np.ceil(report["duration"] * 12 - 1e-9))
-    assert report["subtitles"]["primary"] == {"cues": 1, "first": 5.0, "last": 7.0}
+    assert report["subtitles"]["primary"] == {
+        "cues": 1,
+        "rendered_cues": 1,
+        "first": 5.0,
+        "last": 7.0,
+    }
     json.dumps(report)  # JSON-able
     sources = report["sources"]
     digest = hashlib.sha256((media / "a.png").read_bytes()).hexdigest()
@@ -787,3 +792,89 @@ def test_cli_module_entry_point(media, tmp_path):
     assert run.returncode == 0 and run.stdout.startswith("OK")
     run = subprocess.run([*base, "nope.json"], cwd=repo, capture_output=True, text=True)
     assert run.returncode == 1 and "ERROR" in run.stderr
+
+
+# --------------------------------------------------------------------------- #
+# Scene overlays, name tags and subtitle reflow
+# --------------------------------------------------------------------------- #
+
+
+def _overlay_data(media):
+    data = _data(media)
+    data["scene_overlay"] = {
+        "chapters": [[5.0, "Part One"]],
+        "logo": "Lamp",
+        "watermark": "@lamp",
+        "cta_text": "Subscribe",
+        "layout": {"duration": 2.0, "fade": 0.4},
+    }
+    data["name_tags"] = [
+        {
+            "name": "Kong",
+            "role": "Scholar",
+            "subject_box": [1100, 150, 500, 600],
+            "start": 7.0,
+            "duration": 2.0,
+            "orientation": "horizontal",
+        }
+    ]
+    return data
+
+
+def test_scene_overlay_and_name_tags_build(media):
+    spec = EpisodeSpec.from_dict(_overlay_data(media))
+    again = EpisodeSpec.from_dict(json.loads(spec.to_json()))
+    assert again.to_dict() == spec.to_dict()
+    plain = build_episode(_spec(media))
+    comp = build_episode(spec)
+    added = [layer.name for layer in comp.layers][
+        1 : len(comp.layers) - len(plain.layers) + 1
+    ]
+    assert comp.layers[0].name == "Subtitles" and added
+    report = episode_report(comp)
+    assert report["scene_overlay"] == [{"start": 5.0, "title": "Part One"}]
+    assert report["name_tags"] == [{"name": "Kong", "start": 7.0, "end": 9.0}]
+    # Overlays draw only inside their windows.
+    assert np.array_equal(plain.get_frame(4.5), comp.get_frame(4.5))
+    assert not np.array_equal(plain.get_frame(6.0), comp.get_frame(6.0))
+    assert not np.array_equal(plain.get_frame(8.0), comp.get_frame(8.0))
+
+
+@pytest.mark.parametrize(
+    "patch, message",
+    [
+        ({"scene_overlay": {"chapters": []}}, "chapters"),
+        ({"scene_overlay": {"chapters": [[1, "x"]], "layout": {"fade": 9}}}, "layout"),
+        ({"name_tags": [{"name": ""}]}, "name_tags"),
+        ({"subtitles": {"primary": [], "words": []}}, "overflow"),
+    ],
+)
+def test_overlay_and_reflow_validation(media, patch, message):
+    data = {**_data(media), **patch}
+    with pytest.raises(EpisodeError, match=message):
+        EpisodeSpec.from_dict(data)
+
+
+def test_overlays_must_avoid_bookend_cards(media):
+    data = _overlay_data(media)
+    data["scene_overlay"]["chapters"] = [[1.0, "Too early"]]
+    with pytest.raises(EpisodeError, match="scene_overlay"):
+        build_episode(EpisodeSpec.from_dict(data))
+
+
+def test_subtitle_overflow_split(media):
+    data = _data(media)
+    text = " ".join(["slowly"] * 30)
+    data["subtitles"] = {
+        "primary": [{"start": 4, "end": 9, "text": text, "lang": "en"}],
+        "overflow": "split",
+    }
+    with pytest.raises(EpisodeError, match="subtitles"):
+        build_episode(
+            EpisodeSpec.from_dict(
+                {**data, "subtitles": {**data["subtitles"], "overflow": "wrap"}}
+            )
+        )
+    report = episode_report(build_episode(EpisodeSpec.from_dict(data)))
+    lane = report["subtitles"]["primary"]
+    assert lane["cues"] == 1 and lane["rendered_cues"] > 1
