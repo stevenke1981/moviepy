@@ -29,7 +29,7 @@ Python 套件
 字型
 ~~~~
 
-預設字型為思源體：標題用思源宋體 ``SourceHanSerifTW-Bold.otf``，內文與燒錄字幕用思源黑體 ``SourceHanSansTW-Bold.otf``，史話引文用 ``SourceHanSerifTW-SemiBold.otf``。字型從 Adobe 官方 GitHub（``adobe-fonts/source-han-serif``、``adobe-fonts/source-han-sans`` 的 TW 子集）下載，安裝到 ``C:/Windows/Fonts`` 或使用者字型資料夾 ``%LOCALAPPDATA%/Microsoft/Windows/Fonts`` 皆可；``presets.source_han_font`` 會在這些資料夾尋找。模板不會在字型缺失或缺字時換成其他字型：
+預設字型為思源體：標題用思源宋體 Bold，內文與燒錄字幕用思源黑體 Bold，史話引文用思源宋體 SemiBold。檔名優先找完整繁中字集 ``SourceHan{Sans,Serif}TC-{字重}.otf``，其次 TW 子集 ``SourceHan{Sans,Serif}TW-{字重}.otf``；瀏覽器重複下載產生的 ``… (1).otf`` 也認得。**建議安裝 TC 版**：TW 子集缺少部分罕用字（例如武則天之父「武士彠」的「彠」），字幕遇到缺字會報錯並指出是哪一句，不會畫出方框。字型從 Adobe 官方 GitHub（``adobe-fonts/source-han-serif``、``adobe-fonts/source-han-sans`` 的 ``OTF/TraditionalChinese``）下載，安裝到 ``C:/Windows/Fonts`` 或使用者字型資料夾 ``%LOCALAPPDATA%/Microsoft/Windows/Fonts`` 皆可；``presets.source_han_font`` 會在這些資料夾尋找。模板不會在字型缺失或缺字時換成其他字型：
 
 * 字型檔不存在：拋出 ``FileNotFoundError``（CLI 會顯示 ``ERROR:`` 並以結束碼 1 離開）。
 * 字卡文字含有字型沒有的字：``title_card`` 會拋出 ``ValueError``，訊息為 ``font has no glyph for '…'``。請換字、改字，或在 ``fonts`` 指定另一個完整涵蓋的字型檔，不要期待自動替換。

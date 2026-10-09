@@ -44,7 +44,7 @@ Ask the human for every missing item. Never invent, substitute or generate media
 | Chapter overlay (optional) | `scene_overlay.chapters` (`[start, title]`), `logo`, `watermark` | Ask for the chapter titles and the logo. |
 | ASR word timing (optional) | `subtitles.words` (Qwen3ASR JSON with `words`) | Use only with `subtitles.overflow: "split"`. |
 | Quotes (optional) | `quotes[].text`, `source`, `dynasty`, `year`, `title` as supplied | Only the text the human supplies. Never create a classical quote or source. |
-| Font | `fonts` role paths; default Source Han Serif TW Bold (titles) and Source Han Sans TW Bold (body, subtitles), found by `source_han_font` in `C:/Windows/Fonts` or `%LOCALAPPDATA%/Microsoft/Windows/Fonts` | Check they exist. Missing font means stop and ask the human to install it. Never substitute a font silently. |
+| Font | `fonts` role paths; default Source Han Serif Bold (titles) and Source Han Sans Bold (body, subtitles), TC (full set) preferred over the TW subset, found by `source_han_font` in `C:/Windows/Fonts` or `%LOCALAPPDATA%/Microsoft/Windows/Fonts` | Check they exist. Missing font means stop and ask the human to install it. Never substitute a font silently. |
 | Tools | FFmpeg (imageio-ffmpeg default; `FFMPEG_BINARY=auto-detect` for PATH ffmpeg) | Run `python -m moviepy.ae.templates --help`. If it fails, stop. |
 
 Text rules for every title, subtitle, chapter item and quote: no medical or health claims (section 6). Historical claims are the human's responsibility; list them as open questions.

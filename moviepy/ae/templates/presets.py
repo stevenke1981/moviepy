@@ -19,6 +19,7 @@ Examples
 import json
 import math
 import os
+import re
 from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
 
@@ -301,13 +302,15 @@ def _font_dirs():
 def source_han_font(style="sans", weight="Bold"):
     """Return the path of an installed Source Han (思源) Traditional Chinese font.
 
-    Looks for the Taiwan (``TW``) and then the Traditional (``TC``) static
-    OpenType files of Source Han Sans (思源黑體, ``style="sans"``) or Source
+    Looks for the Traditional Chinese (``TC``, full glyph set) and then the
+    Taiwan subset (``TW``) static OpenType files of Source Han Sans (思源黑體, ``style="sans"``) or Source
     Han Serif (思源宋體, ``style="serif"``) in the Windows system and
     per-user font folders and the usual user font folders elsewhere. When
     none is installed the expected per-user path is returned anyway, so
     ``ChannelPreset.font`` reports exactly which file to install; no other
-    typeface is substituted.
+    typeface is substituted. A browser's duplicate-download name such as
+    ``SourceHanSerifTW-Bold (1).otf`` is accepted when the plain name is
+    absent, since Windows installs the file under the name it was given.
 
     Parameters
     ----------
@@ -319,19 +322,26 @@ def source_han_font(style="sans", weight="Bold"):
 
     Examples
     --------
-    >>> Path(source_han_font("serif", "Bold")).name in (
-    ...     "SourceHanSerifTW-Bold.otf", "SourceHanSerifTC-Bold.otf")
+    >>> Path(source_han_font("serif", "Bold")).name.startswith(
+    ...     ("SourceHanSerifTC-Bold", "SourceHanSerifTW-Bold"))
     True
     """
     if style not in ("sans", "serif"):
         raise ValueError("style must be 'sans' or 'serif'")
     family = "Sans" if style == "sans" else "Serif"
-    names = [f"SourceHan{family}{region}-{weight}.otf" for region in ("TW", "TC")]
+    names = [f"SourceHan{family}{region}-{weight}.otf" for region in ("TC", "TW")]
     dirs = _font_dirs()
-    for folder in dirs:
-        for name in names:
+    # The full TC set wins over the TW subset wherever each is installed.
+    for name in names:
+        for folder in dirs:
             if (folder / name).is_file():
                 return str(folder / name)
+        stem = name[: -len(".otf")]
+        for folder in dirs:
+            copies = sorted(folder.glob(f"{stem} (*).otf")) if folder.is_dir() else []
+            for path in copies:
+                if re.fullmatch(re.escape(stem) + r" \(\d+\)\.otf", path.name):
+                    return str(path)
     return str(dirs[1 if len(dirs) > 1 else 0] / names[0])
 
 

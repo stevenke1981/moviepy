@@ -143,7 +143,7 @@ Python 介面如下，``get_template(name)`` 回傳 ``TemplateInfo``，``list_te
    * - 字型（``fonts``）
      - title 思源宋體 Bold，body 思源黑體 Bold
      - title 思源宋體 Bold，body 思源黑體 Bold，quote 思源宋體 SemiBold
-     - 思源體（TW 子集）完整涵蓋繁體字與標點；黑體用於字幕與內文，宋體用於標題與引文。
+     - 思源體優先用完整繁中 TC 版（TW 子集缺部分罕用字，如「彠」）；黑體用於字幕與內文，宋體用於標題與引文。字幕缺字時報錯，不畫方框。
 
 .. code-block:: python
 
@@ -531,7 +531,7 @@ R5 的章節疊圖：左上頻道 logo（圖檔或文字）、右上半透明浮
 
 - **明確指定**：``preset.font(role)`` 只接受 preset 中登錄的路徑，或呼叫端傳入的 ``explicit`` 路徑。
 - **不靜默替換**：檔案不存在時丟出 ``FileNotFoundError``，錯誤訊息包含角色名與路徑。CJK 字形覆蓋各字型不同，不能悄悄換成別的字。
-- **預設思源體**：兩套 preset 以 ``source_han_font(style, weight)`` 找出已安裝的 ``SourceHan{Sans,Serif}TW-{weight}.otf``（亦接受 TC 版），依序搜尋 ``C:/Windows/Fonts``、``%LOCALAPPDATA%/Microsoft/Windows/Fonts`` 與常見的使用者字型資料夾；找不到時回傳預期路徑，由 ``preset.font`` 報錯。要用其他字型請用 ``get_preset(name, fonts={...})`` 或 ``with_overrides``。
+- **預設思源體**：兩套 preset 以 ``source_han_font(style, weight)`` 找出已安裝的 ``SourceHan{Sans,Serif}TC-{weight}.otf``（完整字集，優先）或 TW 子集，亦接受 ``… (1).otf`` 重複下載檔名，依序搜尋 ``C:/Windows/Fonts``、``%LOCALAPPDATA%/Microsoft/Windows/Fonts`` 與常見的使用者字型資料夾；找不到時回傳預期路徑，由 ``preset.font`` 報錯。要用其他字型請用 ``get_preset(name, fonts={...})`` 或 ``with_overrides``。
 - **拉丁字型例外**：要用 Pillow 內建字型時，必須明確傳入 ``None``（例如 ``fonts={"title": None}``、``fit_lines(text, None, ...)``）。這是刻意的選擇，不是後備機制。
 
 效能說明

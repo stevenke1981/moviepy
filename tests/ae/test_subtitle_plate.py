@@ -381,3 +381,25 @@ def test_load_glossary_from_path_and_text(tmp_path):
     assert load_glossary(json.dumps(GLOSSARY, ensure_ascii=False)) == expected
     with pytest.raises(ValueError):
         load_glossary([1, 2])
+
+
+def test_missing_glyph_raises_instead_of_drawing_boxes(tmp_path, monkeypatch):
+    from PIL import ImageFont
+
+    from moviepy.ae.templates import paper, subtitles
+    from moviepy.ae.templates.subtitles import Cue, LayoutError, SubtitleLayer
+
+    font = tmp_path / "subset.otf"
+    font.write_bytes(b"")
+    monkeypatch.setattr(
+        subtitles, "_load_font", lambda spec, px: ImageFont.load_default(size=20)
+    )
+    monkeypatch.setattr(paper, "has_glyph", lambda path, char: char != "Z")
+    preset = get_preset("nightlamp_story")
+    ok = [Cue(0, 1, "abc", "en")]
+    SubtitleLayer(ok, preset, font=str(font), size=(640, 360))
+    bad = [Cue(0, 1, "abc", "en"), Cue(1, 2, "xZy", "en")]
+    with pytest.raises(LayoutError, match="no glyph for 'Z'.*1.00 s"):
+        SubtitleLayer(bad, preset, font=str(font), size=(640, 360))
+    # A PIL font object or Pillow's default font is not checked.
+    SubtitleLayer(bad, preset, font="default", size=(640, 360))

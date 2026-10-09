@@ -1557,6 +1557,16 @@ class SubtitleLayer(Layer):
             "primary": _load_font(font, self._px["primary"]),
             "secondary": _load_font(secondary_font, self._px["secondary"]),
         }
+        self._font_files = {
+            role: (
+                str(Path(spec).expanduser()) if isinstance(spec, (str, Path)) else None
+            )
+            for role, spec in (("primary", font), ("secondary", secondary_font))
+        }
+        if self._font_files["primary"] == "default":
+            self._font_files["primary"] = None
+        if self._font_files["secondary"] == "default":
+            self._font_files["secondary"] = None
         self._highlight = tuple(dict.fromkeys(str(t) for t in highlight))
         self._protected = tuple(dict.fromkeys((*protected, *self._highlight)))
         self._hl_pattern = _highlight_pattern(self._highlight)
@@ -1645,11 +1655,35 @@ class SubtitleLayer(Layer):
             )
         )
 
+    def _check_glyphs(self, cue, role):
+        """Raise ``LayoutError`` when the font file lacks a glyph of ``cue``.
+
+        A missing glyph would be drawn as an empty box (豆腐字). The check
+        needs fontTools; without it every glyph is assumed present.
+        """
+        from moviepy.ae.templates.paper import has_glyph
+
+        path = self._font_files[role]
+        if path is None:
+            return
+        missing = "".join(
+            c
+            for c in dict.fromkeys(cue.text)
+            if not c.isspace() and not has_glyph(path, c)
+        )
+        if missing:
+            raise LayoutError(
+                f"subtitle font {Path(path).name} has no glyph for {missing!r} "
+                f"(cue at {cue.start:.2f} s: {cue.text[:24]!r}); use a font that "
+                "covers it, e.g. the full Source Han TC instead of the TW subset"
+            )
+
     def _prepare(self, cues, role):
         cues = sorted(cues, key=lambda c: (c.start, c.end))
         for cue in cues:
             if not isinstance(cue, Cue):
                 raise TypeError("cues must be Cue instances")
+            self._check_glyphs(cue, role)
         lines = [self._lines_for(c, role) for c in cues]
         return {
             "cues": cues,
