@@ -15,6 +15,7 @@
     "target_lufs": -18.0,
     "true_peak": -1.8,
     "lra": 11.0,
+    "loudness_backend": "soundx",
     "loop_overlap": 10.0,
     "chapter_crossfade": 12.0,
     "edge_fade": 4.0
@@ -35,6 +36,36 @@
   "spectrum": {"enabled": false},
   "chime": {"enabled": false},
   "chapters": true,
+  "ambience": {
+    "particles": {"kind": "fireflies", "period": 20, "count": 18, "seed": 7, "opacity": 0.6, "speed": 1.0, "region": null},
+    "light_arc": {"preset": "day_to_night", "keyframes": null},
+    "sleep_fade": {"start": -1800, "end": null, "floor": 0.15, "audio": true}
+  },
+  "cards": {
+    "enabled": true,
+    "position": "lower_left",
+    "hold": 8,
+    "offset": 3,
+    "skip_first": false,
+    "titles": {
+      "G01": {"zh": "PLACEHOLDER 第一首", "en": "PLACEHOLDER Track 1", "ja": "PLACEHOLDER 第1曲"},
+      "G02": {"zh": "PLACEHOLDER 第二首", "en": "PLACEHOLDER Track 2", "ja": "PLACEHOLDER 第2曲"},
+      "G03": {"zh": "PLACEHOLDER 第三首", "en": "PLACEHOLDER Track 3", "ja": "PLACEHOLDER 第3曲"},
+      "G04": {"zh": "PLACEHOLDER 第四首", "en": "PLACEHOLDER Track 4", "ja": "PLACEHOLDER 第4曲"},
+      "G05": {"zh": "PLACEHOLDER 第五首", "en": "PLACEHOLDER Track 5", "ja": "PLACEHOLDER 第5曲"},
+      "G06": {"zh": "PLACEHOLDER 第六首", "en": "PLACEHOLDER Track 6", "ja": "PLACEHOLDER 第6曲"}
+    }
+  },
+  "thumbnail": {
+    "enabled": true,
+    "titles": {"zh": "PLACEHOLDER 標題", "en": "PLACEHOLDER Title", "ja": "PLACEHOLDER タイトル"},
+    "subtitle": null,
+    "duration_badge": "auto",
+    "layout": "left_panel",
+    "time": 60,
+    "output": "thumbnail.jpg"
+  },
+  "qa": {"enabled": true, "targets": {}, "flash_seconds": null},
   "encoder": "auto",
   "quality": "high",
   "workers": null,

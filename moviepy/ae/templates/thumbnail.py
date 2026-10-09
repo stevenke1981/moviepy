@@ -34,7 +34,7 @@ import io
 import math
 import numbers
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from hashlib import sha256
 from pathlib import Path
 from typing import Dict, Optional, Union
@@ -68,6 +68,9 @@ BLOCK_GAP = 0.35
 MAIN_CONTRAST = 4.5
 MIN_SIZE = (320, 180)
 _HEX = re.compile(r"^#[0-9A-Fa-f]{6}$")
+
+
+AUTO_PANEL_STEPS = (0.45, 0.55, 0.65, 0.75, 0.85)
 
 
 class ThumbnailError(ValueError):
@@ -156,6 +159,9 @@ class ThumbnailSpec:
         Explicit font paths per language; missing keys use ``DEFAULT_FONTS``.
     panel_opacity : float, optional
         Panel opacity in ``[0, 1]``. Default ``0.35``.
+    auto_panel : bool, optional
+        Darken the panel in ``AUTO_PANEL_STEPS`` until the main title reaches
+        4.5:1 contrast. Default ``True``.
     vignette : float, optional
         Vignette strength in ``[0, 1]``. Default ``0.25``.
 
@@ -175,6 +181,7 @@ class ThumbnailSpec:
     panel_color: str = "#03141A"
     fonts: Dict[str, str] = field(default_factory=lambda: dict(DEFAULT_FONTS))
     panel_opacity: float = 0.35
+    auto_panel: bool = True
     vignette: float = 0.25
 
     def __post_init__(self):
@@ -205,6 +212,8 @@ class ThumbnailSpec:
             raise ValueError(f"unknown font languages {sorted(unknown)}")
         self.fonts = {**DEFAULT_FONTS, **dict(self.fonts)}
         self.panel_opacity = _unit(self.panel_opacity, "panel_opacity")
+        if not isinstance(self.auto_panel, bool):
+            raise ThumbnailError("auto_panel must be true or false")
         self.vignette = _unit(self.vignette, "vignette")
 
 
@@ -523,7 +532,7 @@ def _to_background(background):
     return _opaque_rgb(np.asarray(background), "background"), "array"
 
 
-def render_thumbnail(
+def _render_thumbnail_once(
     spec,
     background,
     output=None,
@@ -781,3 +790,42 @@ def contact_sheet(images, columns=3):
         y = gap + row * (cell_h + gap) + (cell_h - fitted.height) // 2
         sheet.paste(fitted, (x, y))
     return sheet
+
+
+def render_thumbnail(spec, background, output=None, **options):
+    """Render a thumbnail and optionally write it (exclusive create by default).
+
+    Same parameters and return value as the single-pass renderer. When
+    ``spec.auto_panel`` is true and the main title misses the 4.5:1 contrast
+    target, the panel is darkened step by step (``AUTO_PANEL_STEPS``) until it
+    passes; bright episode backgrounds therefore still yield a readable
+    thumbnail. The opacity actually used is recorded in the evidence under
+    ``panel["opacity"]`` and ``panel["auto_steps"]``. Nothing is written until
+    an attempt passes.
+
+    Examples
+    --------
+    >>> AUTO_PANEL_STEPS[0] <= AUTO_PANEL_STEPS[-1] <= 0.9
+    True
+    """
+    if not spec.auto_panel or not options.get("require_contrast", True):
+        return _render_thumbnail_once(spec, background, output, **options)
+    tried = []
+    levels = [spec.panel_opacity] + [
+        o for o in AUTO_PANEL_STEPS if o > spec.panel_opacity
+    ]
+    for index, opacity in enumerate(levels):
+        attempt = replace(spec, panel_opacity=opacity)
+        tried.append(opacity)
+        try:
+            image, evidence = _render_thumbnail_once(
+                attempt, background, output, **options
+            )
+        except ContrastError:
+            if index == len(levels) - 1:
+                raise
+            continue
+        evidence.setdefault("panel", {})
+        if isinstance(evidence["panel"], dict):
+            evidence["panel"]["auto_steps"] = tried
+        return image, evidence

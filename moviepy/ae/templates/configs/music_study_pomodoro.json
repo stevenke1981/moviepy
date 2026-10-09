@@ -15,6 +15,7 @@
     "target_lufs": -18.0,
     "true_peak": -1.8,
     "lra": 11.0,
+    "loudness_backend": "soundx",
     "loop_overlap": 10.0,
     "chapter_crossfade": 12.0,
     "edge_fade": 4.0
@@ -50,6 +51,38 @@
   "study_compact": false,
   "chime": {"enabled": true, "below_music_db": 10.0, "path": null, "design": {}},
   "chapters": true,
+  "ambience": {
+    "particles": null,
+    "light_arc": {"preset": null, "keyframes": null},
+    "sleep_fade": null
+  },
+  "cards": {
+    "enabled": true,
+    "position": "lower_left",
+    "hold": 8,
+    "offset": 3,
+    "skip_first": false,
+    "titles": {
+      "S01": {"zh": "PLACEHOLDER 第一首", "en": "PLACEHOLDER Track 1", "ja": "PLACEHOLDER 第1曲"},
+      "S02": {"zh": "PLACEHOLDER 第二首", "en": "PLACEHOLDER Track 2", "ja": "PLACEHOLDER 第2曲"},
+      "S03": {"zh": "PLACEHOLDER 第三首", "en": "PLACEHOLDER Track 3", "ja": "PLACEHOLDER 第3曲"},
+      "S04": {"zh": "PLACEHOLDER 第四首", "en": "PLACEHOLDER Track 4", "ja": "PLACEHOLDER 第4曲"},
+      "S05": {"zh": "PLACEHOLDER 第五首", "en": "PLACEHOLDER Track 5", "ja": "PLACEHOLDER 第5曲"},
+      "S06": {"zh": "PLACEHOLDER 第六首", "en": "PLACEHOLDER Track 6", "ja": "PLACEHOLDER 第6曲"}
+    }
+  },
+  "study_ring": true,
+  "study_timeline": true,
+  "thumbnail": {
+    "enabled": true,
+    "titles": {"zh": "PLACEHOLDER 專注學習", "en": "PLACEHOLDER Study With Me", "ja": "PLACEHOLDER 勉強のおとも"},
+    "subtitle": null,
+    "duration_badge": "auto",
+    "layout": "left_panel",
+    "time": 60,
+    "output": "thumbnail.jpg"
+  },
+  "qa": {"enabled": true, "targets": {}, "flash_seconds": null},
   "encoder": "auto",
   "quality": "high",
   "workers": null,

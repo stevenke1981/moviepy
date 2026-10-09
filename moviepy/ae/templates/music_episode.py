@@ -1,7 +1,7 @@
 r"""Declarative music-channel episodes: spec, resumable steps and command line.
 
 A ``MusicEpisodeSpec`` describes a whole long-form music video (a
-5 h 20 min sleep mix or an 87 min study companion) as data. Four resumable
+5 h 20 min sleep mix or an 87 min study companion) as data. Six resumable
 steps build it; each writes its artifact next to an evidence file and, when
 run again, skips the artifact after re-verifying its SHA-256 hash, so a
 10-hour build can be resumed after a crash or a power cut:
@@ -21,6 +21,18 @@ run again, skips the artifact after re-verifying its SHA-256 hash, so a
     from the cue sheet).
 ``render``
     One FFmpeg pass (``render_music_video``) or a preview window.
+``thumbnail``
+    ``publish/thumbnail.jpg`` from one cycle frame (``thumbnail.py``).
+``qa``
+    ``qa/<name>.qa.json`` from ``music_qa.qa_report`` on the rendered MP4.
+
+Optional sections (all absent by default, so older specs build unchanged):
+``ambience`` (``particles`` -> ``visual/particles.mov`` looped by FFmpeg;
+``light_arc`` -> background ``video_filters``; ``sleep_fade`` -> whole-frame
+``final_filters`` plus a music fade), ``cards`` (trilingual track-title cards
+as ASS), ``study_ring`` / ``study_timeline`` (study ASS layers),
+``thumbnail`` and ``qa``. Times in ``ambience`` may be negative to count back
+from the end of the video.
 
 Shipped recommended configs (``configs/music_*.json``) and the
 ``music_channel`` choices they come from:
@@ -31,6 +43,13 @@ Shipped recommended configs (``configs/music_*.json``) and the
     fades; a single shared native 1280x720 / 24 fps loop (8 s clips, 2 s
     loop dissolve); loudness -18 LUFS, true peak -1.8 dBTP, LRA 11; no
     spectrum and no chime; chapters from the cue sheet; NVENC when present.
+    Enrichment (low stimulation, sleep-friendly, nothing flashes): gentle
+    ``fireflies`` (18, 60 % peak, seed 7, 20 s seamless loop; recorded in the
+    evidence) over the picture; a ``day_to_night`` light arc across the whole
+    5 h 20 min (peak change far below the 0.1/s guard); a ``sleep_fade`` over
+    the last 30 minutes to a dim 0.15 glow with the music fading with it;
+    trilingual track cards at every chapter (placeholder titles); a
+    thumbnail with the auto duration badge; automated QA on the render.
 ``music_study_pomodoro.json`` (S14 study companion, ``s14-assets.py``, ``s14-render.py``)
     A 5220 s schedule (3 x 25 min focus, 5 min breaks, 2 min closing; chimes
     at 1500, 1800, 3300, 3600 and 5100 s), six pieces of 880 s (6 x 880 - 5 x
@@ -38,7 +57,12 @@ Shipped recommended configs (``configs/music_*.json``) and the
     ducking), spectrum bars at 30 % opacity at (96, 548) in a 1088x140
     layer, AAC 256k. S14 burned ``study-overlay-v2.ass``, the non-compact
     three-panel layout, so ``study_compact`` is ``false`` (the compact
-    backplate layout appeared in later seasons).
+    backplate layout appeared in later seasons). Enrichment: track cards,
+    the progress ring and the session timeline (all ASS, so no per-frame
+    cost), a thumbnail and automated QA. No particles, light arc or sleep
+    fade by default: a study session needs a still, focused picture (set
+    ``ambience.particles`` to ``dust`` for a little life), and the sleep fade
+    would dim a working screen.
 
 Examples
 --------
@@ -60,10 +84,19 @@ import math
 import os
 import re
 import sys
-from dataclasses import MISSING, dataclass, field, fields
+from dataclasses import MISSING, asdict, dataclass, field, fields
 from pathlib import Path
 
 from moviepy.ae.templates._audio_io import audio_info
+from moviepy.ae.templates.ambience import (
+    _MAX_RATE,
+    PARTICLE_KINDS,
+    LightArc,
+    ParticleLayer,
+    SleepFade,
+    _particle_factory,
+    export_overlay_loop,
+)
 from moviepy.ae.templates.music_audio import (
     DEFAULT_RATE,
     assemble_chapters,
@@ -72,11 +105,14 @@ from moviepy.ae.templates.music_audio import (
     normalize_loudness,
     write_chime,
 )
+from moviepy.ae.templates.music_cards import combine_study_ass, sleep_cards_ass
+from moviepy.ae.templates.music_qa import DEFAULT_TARGETS, qa_report
 from moviepy.ae.templates.music_render import (
     frame_count,
     preview_window,
     render_music_video,
 )
+from moviepy.ae.templates.soundx import check_soundx
 from moviepy.ae.templates.spectrum import (
     SpectrumLayer,
     analyze_spectrum,
@@ -84,6 +120,13 @@ from moviepy.ae.templates.spectrum import (
     save_levels,
 )
 from moviepy.ae.templates.study import StudySchedule
+from moviepy.ae.templates.thumbnail import (
+    LAYOUTS,
+    ThumbnailSpec,
+    format_duration,
+    grab_frame,
+    render_thumbnail,
+)
 from moviepy.ae.templates.visual_loop import export_loop, scene_cycle, seamless_loop
 
 
@@ -94,6 +137,13 @@ __all__ = [
     "VisualSpec",
     "SpectrumSpec",
     "ChimeSpec",
+    "ParticlesSpec",
+    "LightArcSpec",
+    "SleepFadeSpec",
+    "AmbienceSpec",
+    "CardsSpec",
+    "ThumbnailStepSpec",
+    "QaSpec",
     "MusicEpisodeSpec",
     "MODES",
     "STEPS",
@@ -104,6 +154,9 @@ __all__ = [
     "prepare_visual",
     "prepare_overlays",
     "render",
+    "make_thumbnail",
+    "run_qa",
+    "resolve_ambience",
     "spectrum_overlay",
     "build_music_episode",
     "init_music_episode",
@@ -111,7 +164,8 @@ __all__ = [
 ]
 
 MODES = ("sleep_longform", "study_pomodoro")
-STEPS = ("audio", "visual", "overlays", "render")
+STEPS = ("audio", "visual", "overlays", "render", "thumbnail", "qa")
+LOUDNESS_BACKENDS = ("soundx", "ffmpeg")
 ENCODERS = ("auto", "libx264", "h264_nvenc", "hevc_nvenc", "libx265")
 QUALITIES = ("high", "balanced", "draft")
 HUMAN_GATES = {
@@ -122,6 +176,11 @@ HUMAN_GATES = {
 }
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.\-]*$")
 _CHIME_KEYS = ("notes", "duration", "attack", "release", "peak_dbfs")
+_LIGHT_PRESETS = ("day_to_night", "dusk", "dawn")
+_LIGHT_PARAMS = ("brightness", "saturation", "warmth", "contrast")
+_CARD_POSITIONS = ("lower_left", "lower_right", "upper_left", "upper_right")
+_LANGS = ("zh", "en", "ja")
+_THUMBNAIL_SIZE = (1280, 720)
 
 
 class MusicEpisodeError(ValueError):
@@ -278,6 +337,10 @@ class MusicAudioSpec:
         Crossfade between chapters (12 s).
     edge_fade : float
         Fade-in at the start and fade-out at the end (4 s).
+    loudness_backend : str
+        ``"soundx"`` (default; the owner requires soundx for all level and
+        loudness work: S14 staging, then LUFS by soundx >= 0.3.0 or, with
+        0.2.0, FFmpeg ``loudnorm``) or ``"ffmpeg"`` (pure FFmpeg, explicit).
     """
 
     target_lufs: float = -18.0
@@ -286,8 +349,10 @@ class MusicAudioSpec:
     loop_overlap: float = 10.0
     chapter_crossfade: float = 12.0
     edge_fade: float = 4.0
+    loudness_backend: str = "soundx"
 
     def __post_init__(self):
+        _choice(self.loudness_backend, "loudness_backend", LOUDNESS_BACKENDS)
         _set(
             self,
             target_lufs=_num(self.target_lufs, "target_lufs", low=-70, high=-5),
@@ -458,6 +523,387 @@ class ChimeSpec:
 
 
 @dataclass(frozen=True)
+class ParticlesSpec:
+    """A seeded, seamlessly looping particle layer over the picture.
+
+    Rendered once as ``visual/particles.mov`` (``ambience.export_overlay_loop``)
+    and repeated by FFmpeg; see ``ambience.particle_loop``.
+
+    Parameters
+    ----------
+    kind : str
+        ``fireflies``, ``dust``, ``petals``, ``leaves``, ``snow`` or ``rain``.
+    period : float
+        Loop length in seconds; a whole number of frames at ``fps``.
+    count : int, optional
+        Particle count (per-kind default scaled by region area).
+    seed : int
+        Random seed; recorded in the evidence so variety is explicit.
+    opacity : float, optional
+        Peak opacity 0..1 (per-kind default, already gentle).
+    speed : float
+        Multiplier of fall speed and wander cycles.
+    region : sequence of int, optional
+        ``(x, y, width, height)`` confining the particles.
+    """
+
+    kind: str = "fireflies"
+    period: float = 20.0
+    count: int = None
+    seed: int = 0
+    opacity: float = None
+    speed: float = 1.0
+    region: tuple = None
+
+    def __post_init__(self):
+        _choice(self.kind, "kind", PARTICLE_KINDS)
+        _set(
+            self,
+            period=_num(self.period, "period", positive=True),
+            seed=_num(self.seed, "seed", low=0, integer=True),
+            speed=_num(self.speed, "speed", positive=True),
+        )
+        if self.count is not None:
+            _set(self, count=_num(self.count, "count", low=0, integer=True))
+        if self.opacity is not None:
+            _set(self, opacity=_num(self.opacity, "opacity", low=0, high=1))
+        if self.region is not None:
+            if not isinstance(self.region, (list, tuple)) or len(self.region) != 4:
+                raise MusicEpisodeError(
+                    f"region must be [x, y, width, height], got {self.region!r}"
+                )
+            region = tuple(
+                _num(v, f"region[{i}]", low=0 if i < 2 else 1, integer=True)
+                for i, v in enumerate(self.region)
+            )
+            _set(self, region=region)
+
+    def options(self, size, fps):
+        """Return the ``particle_loop`` keywords for a picture ``size``."""
+        values = {
+            "size": (int(size[0]), int(size[1])),
+            "period": self.period,
+            "fps": fps,
+            "seed": self.seed,
+            "speed": self.speed,
+        }
+        for key in ("count", "opacity", "region"):
+            if getattr(self, key) is not None:
+                values[key] = getattr(self, key)
+        return values
+
+
+def _keyframes(value):
+    """Normalize LightArc keyframes to a tuple of ``(time, {param: v})``."""
+    if not isinstance(value, (list, tuple)) or not value:
+        raise MusicEpisodeError("keyframes must be a non-empty list")
+    rows = []
+    for index, item in enumerate(value):
+        label = f"keyframes[{index}]"
+        if isinstance(item, dict):
+            params = dict(item)
+            if "time" not in params:
+                raise MusicEpisodeError(f"{label}: missing 'time'")
+            when = params.pop("time")
+        elif isinstance(item, (list, tuple)) and len(item) == 2:
+            when, params = item[0], item[1]
+            if not isinstance(params, dict):
+                raise MusicEpisodeError(f"{label}: parameters must be an object")
+        else:
+            raise MusicEpisodeError(
+                f"{label} must be [time, {{parameters}}] or an object with 'time'"
+            )
+        unknown = sorted(set(params) - set(_LIGHT_PARAMS))
+        if unknown:
+            raise MusicEpisodeError(f"{label}: unknown parameter(s) {unknown}")
+        rows.append(
+            (
+                _num(when, f"{label} time"),
+                {k: _num(v, f"{label} {k}") for k, v in sorted(params.items())},
+            )
+        )
+    return tuple(rows)
+
+
+@dataclass(frozen=True)
+class LightArcSpec:
+    """A slow light and colour curve over the whole video (FFmpeg ``eq``).
+
+    Give a ``preset`` (spanning the whole video) or ``keyframes``, or neither
+    for no light arc. Negative times count back from the end of the video.
+
+    Parameters
+    ----------
+    preset : str, optional
+        ``day_to_night``, ``dusk`` or ``dawn``.
+    keyframes : sequence, optional
+        ``[time, {"brightness": b, "saturation": s, "warmth": w,
+        "contrast": c}]`` rows or ``{"time": t, ...}`` objects.
+    max_rate : float, optional
+        Largest allowed change per second (flicker guard); the default is
+        the ``ambience`` limit of 0.1 per second. Raise it only for short
+        test videos.
+    """
+
+    preset: str = None
+    keyframes: tuple = None
+    max_rate: float = None
+
+    def __post_init__(self):
+        if self.preset is not None:
+            _choice(self.preset, "preset", _LIGHT_PRESETS)
+        if self.keyframes is not None:
+            _set(self, keyframes=_keyframes(self.keyframes))
+        if self.preset is not None and self.keyframes is not None:
+            raise MusicEpisodeError("give a preset or keyframes, not both")
+        if self.max_rate is not None:
+            _set(self, max_rate=_num(self.max_rate, "max_rate", positive=True))
+
+    @property
+    def active(self):
+        """Whether a light arc is configured."""
+        return self.preset is not None or self.keyframes is not None
+
+
+@dataclass(frozen=True)
+class SleepFadeSpec:
+    """Fade the whole picture (and the music) to a floor near the end.
+
+    Parameters
+    ----------
+    start : float
+        Seconds where the fade starts; negative counts from the end
+        (``-1800`` is the last 30 minutes).
+    end : float, optional
+        Seconds where ``floor`` is reached; negative counts from the end;
+        ``None`` means the end of the video.
+    floor : float
+        Gain held at the end: 0 black / silent, 0.15 a dim glow.
+    audio : bool
+        Also fade the music with the same gain.
+    max_rate : float, optional
+        Flicker-guard ceiling, see ``LightArcSpec``.
+    """
+
+    start: float
+    end: float = None
+    floor: float = 0.0
+    audio: bool = True
+    max_rate: float = None
+
+    def __post_init__(self):
+        _set(self, start=_num(self.start, "start"))
+        if self.end is not None:
+            _set(self, end=_num(self.end, "end"))
+        _set(self, floor=_num(self.floor, "floor", low=0))
+        if self.floor >= 1:
+            raise MusicEpisodeError("floor must be < 1")
+        _bool(self.audio, "audio")
+        if self.max_rate is not None:
+            _set(self, max_rate=_num(self.max_rate, "max_rate", positive=True))
+
+
+@dataclass(frozen=True)
+class AmbienceSpec:
+    """Slow, low-stimulation motion layers (nothing flashes).
+
+    Parameters
+    ----------
+    particles : ParticlesSpec or dict, optional
+        Particle loop (``visual/particles.mov``), or ``None``.
+    light_arc : LightArcSpec or dict, optional
+        Slow light and colour arc on the background (``video_filters``).
+    sleep_fade : SleepFadeSpec or dict, optional
+        Whole-frame fade at the end (``final_filters`` plus music fade).
+    """
+
+    particles: ParticlesSpec = None
+    light_arc: LightArcSpec = None
+    sleep_fade: SleepFadeSpec = None
+
+    def __post_init__(self):
+        if self.particles is not None:
+            _set(self, particles=_make(ParticlesSpec, self.particles, "particles"))
+        _set(self, light_arc=_make(LightArcSpec, self.light_arc or {}, "light_arc"))
+        if self.sleep_fade is not None:
+            _set(self, sleep_fade=_make(SleepFadeSpec, self.sleep_fade, "sleep_fade"))
+
+
+@dataclass(frozen=True)
+class CardsSpec:
+    """Trilingual track-title cards at every chapter start (ASS).
+
+    Parameters
+    ----------
+    enabled : bool
+        Burn the cards (default off, so older specs are unchanged).
+    titles : dict
+        ``{track id: {"zh": ..., "en": ..., "ja": ...}}``, at least one
+        language per track that gets a card.
+    position : str
+        ``lower_left``, ``lower_right``, ``upper_left`` or ``upper_right``.
+    hold : float
+        Seconds fully visible.
+    offset : float
+        Delay after the chapter start.
+    skip_first : bool
+        No card for the first track (the video's opening).
+    """
+
+    enabled: bool = False
+    titles: dict = field(default_factory=dict)
+    position: str = "lower_left"
+    hold: float = 8.0
+    offset: float = 3.0
+    skip_first: bool = False
+
+    def __post_init__(self):
+        _bool(self.enabled, "enabled")
+        _choice(self.position, "position", _CARD_POSITIONS)
+        _set(
+            self,
+            hold=_num(self.hold, "hold", low=0),
+            offset=_num(self.offset, "offset", low=0),
+        )
+        _bool(self.skip_first, "skip_first")
+        if not isinstance(self.titles, dict):
+            raise MusicEpisodeError("titles must be an object of track titles")
+        titles = {}
+        for track_id, names in self.titles.items():
+            if not isinstance(names, dict):
+                raise MusicEpisodeError(f"titles.{track_id} must be an object")
+            unknown = sorted(set(names) - set(_LANGS))
+            if unknown:
+                raise MusicEpisodeError(
+                    f"titles.{track_id}: unknown language {unknown}"
+                )
+            clean = {
+                lang: _str(names[lang], f"titles.{track_id}.{lang}")
+                for lang in _LANGS
+                if lang in names
+            }
+            if not clean:
+                raise MusicEpisodeError(f"titles.{track_id} needs zh, en or ja text")
+            titles[str(track_id)] = clean
+        _set(self, titles=titles)
+
+
+@dataclass(frozen=True)
+class ThumbnailStepSpec:
+    """The ``publish/thumbnail.jpg`` step (see ``thumbnail.render_thumbnail``).
+
+    Parameters
+    ----------
+    enabled : bool
+        Run the step by default (default off).
+    titles : dict
+        ``{"zh": ..., "en": ..., "ja": ...}``; ``zh`` is required when enabled.
+    subtitle : str, optional
+        Accent line under the titles.
+    duration_badge : str or float, optional
+        Badge text, seconds, ``"auto"`` (the formatted total duration) or
+        ``None`` for no badge.
+    layout : str
+        ``left_panel``, ``bottom_band`` or ``center``.
+    time : float, optional
+        Seconds into the background cycle for the frame (default: a third of
+        the cycle).
+    output : str
+        File name inside ``publish/`` (``.jpg``, ``.jpeg`` or ``.png``).
+    require_contrast : bool
+        Refuse a main title below 4.5:1 contrast.
+    """
+
+    enabled: bool = False
+    titles: dict = field(default_factory=dict)
+    subtitle: str = None
+    duration_badge: object = "auto"
+    layout: str = "left_panel"
+    time: float = None
+    output: str = "thumbnail.jpg"
+    require_contrast: bool = True
+
+    def __post_init__(self):
+        _bool(self.enabled, "enabled")
+        if not isinstance(self.titles, dict):
+            raise MusicEpisodeError("titles must be an object")
+        _set(self, titles=dict(self.titles))
+        if self.subtitle is not None:
+            _str(self.subtitle, "subtitle")
+        badge = self.duration_badge
+        if badge is not None and badge != "auto":
+            if isinstance(badge, str):
+                _str(badge, "duration_badge")
+            else:
+                _num(badge, "duration_badge", low=0)
+        _choice(self.layout, "layout", LAYOUTS)
+        if self.time is not None:
+            _set(self, time=_num(self.time, "time", low=0))
+        if not _SAFE_NAME.match(_str(self.output, "output")) or Path(
+            self.output
+        ).suffix.lower() not in (".jpg", ".jpeg", ".png"):
+            raise MusicEpisodeError(
+                "output must be a simple .jpg/.jpeg/.png file name, "
+                f"got {self.output!r}"
+            )
+        _bool(self.require_contrast, "require_contrast")
+        if self.enabled or self.titles:
+            try:
+                self.render_spec(0)
+            except (ValueError, TypeError) as error:
+                raise MusicEpisodeError(f"titles/subtitle/layout: {error}") from None
+
+    def render_spec(self, total_seconds):
+        """Return the ``ThumbnailSpec`` (``auto`` badge from ``total_seconds``)."""
+        badge = self.duration_badge
+        if badge == "auto":
+            badge = format_duration(total_seconds)
+        return ThumbnailSpec(
+            titles=dict(self.titles),
+            subtitle=self.subtitle,
+            duration_badge=badge,
+            layout=self.layout,
+        )
+
+
+@dataclass(frozen=True)
+class QaSpec:
+    """The automated QA step on the rendered MP4 (``music_qa.qa_report``).
+
+    Parameters
+    ----------
+    enabled : bool
+        Run the step by default (default off).
+    targets : dict
+        Overrides of ``music_qa.DEFAULT_TARGETS`` (``lufs``,
+        ``lufs_tolerance``, ``true_peak_max``).
+    flash_seconds : float, optional
+        Limit the flash analysis to this many seconds (default: all).
+    """
+
+    enabled: bool = False
+    targets: dict = field(default_factory=dict)
+    flash_seconds: float = None
+
+    def __post_init__(self):
+        _bool(self.enabled, "enabled")
+        if not isinstance(self.targets, dict):
+            raise MusicEpisodeError("targets must be an object")
+        unknown = sorted(set(self.targets) - set(DEFAULT_TARGETS))
+        if unknown:
+            raise MusicEpisodeError(f"targets: unknown key(s) {unknown}")
+        _set(
+            self,
+            targets={k: _num(v, f"targets.{k}") for k, v in self.targets.items()},
+        )
+        if self.flash_seconds is not None:
+            _set(
+                self,
+                flash_seconds=_num(self.flash_seconds, "flash_seconds", positive=True),
+            )
+
+
+@dataclass(frozen=True)
 class MusicEpisodeSpec:
     """A whole music-channel episode as data.
 
@@ -487,7 +933,18 @@ class MusicEpisodeSpec:
         Video encoder choice, quality, render processes (``None`` = all
         cores) and AAC bitrate.
     output_dir : str
-        Folder for ``audio/``, ``visual/``, ``overlays/`` and ``render/``.
+        Folder for ``audio/``, ``visual/``, ``overlays/``, ``render/``,
+        ``publish/`` and ``qa/``.
+    ambience : AmbienceSpec or dict, optional
+        Particles, light arc and sleep fade; absent means none.
+    cards : CardsSpec or dict, optional
+        Track title cards (off unless ``enabled``).
+    study_ring, study_timeline : bool
+        Study mode: add the progress ring / session timeline to the ASS.
+    thumbnail : ThumbnailStepSpec or dict, optional
+        The ``thumbnail`` step; off unless ``enabled``.
+    qa : QaSpec or dict, optional
+        The ``qa`` step; off unless ``enabled``.
     """
 
     mode: str
@@ -507,6 +964,12 @@ class MusicEpisodeSpec:
     workers: int = None
     audio_bitrate: str = "256k"
     output_dir: str = "build"
+    ambience: AmbienceSpec = None
+    cards: CardsSpec = None
+    study_ring: bool = False
+    study_timeline: bool = False
+    thumbnail: ThumbnailStepSpec = None
+    qa: QaSpec = None
 
     def __post_init__(self):
         _choice(self.mode, "mode", MODES)
@@ -605,6 +1068,35 @@ class MusicEpisodeSpec:
         _bool(self.chapters, "chapters")
         _bool(self.study_compact, "study_compact")
         _str(self.output_dir, "output_dir")
+        _bool(self.study_ring, "study_ring")
+        _bool(self.study_timeline, "study_timeline")
+        if (self.study_ring or self.study_timeline) and not study_mode:
+            raise MusicEpisodeError(
+                "study_ring and study_timeline need study_pomodoro mode"
+            )
+        ambience = _make(AmbienceSpec, self.ambience or {}, "ambience")
+        cards = _make(CardsSpec, self.cards or {}, "cards")
+        thumbnail = _make(ThumbnailStepSpec, self.thumbnail or {}, "thumbnail")
+        qa = _make(QaSpec, self.qa or {}, "qa")
+        if ambience.particles is not None:
+            try:
+                ParticleLayer(
+                    ambience.particles.kind, **ambience.particles.options(size, fps)
+                )
+            except (ValueError, TypeError) as error:
+                raise MusicEpisodeError(f"ambience: particles: {error}") from None
+        unknown = sorted(set(cards.titles) - {t.id for t in tracks})
+        if unknown:
+            raise MusicEpisodeError(f"cards: titles for unknown track id(s) {unknown}")
+        if cards.enabled:
+            wanted = [t.id for t in tracks][1 if cards.skip_first else 0 :]
+            absent = [i for i in wanted if i not in cards.titles]
+            if absent:
+                raise MusicEpisodeError(
+                    f"cards: titles missing for track id(s) {absent}"
+                )
+        if thumbnail.enabled and "zh" not in thumbnail.titles:
+            raise MusicEpisodeError("thumbnail: titles.zh is required when enabled")
         _set(
             self,
             size=size,
@@ -614,7 +1106,32 @@ class MusicEpisodeSpec:
             visual=visual,
             spectrum=spectrum,
             chime=chime,
+            ambience=ambience,
+            cards=cards,
+            thumbnail=thumbnail,
+            qa=qa,
         )
+        total = self._known_total()
+        if total is not None:
+            try:
+                resolve_ambience(self, total)
+            except MusicEpisodeError as error:
+                raise MusicEpisodeError(f"ambience: {error}") from None
+
+    def _known_total(self):
+        """Return the total seconds when the spec alone determines it."""
+        try:
+            if self.mode == "study_pomodoro":
+                if not isinstance(self.study, dict):
+                    return None
+                return float(StudySchedule.from_dict(self.study).duration)
+            cross = self.audio.chapter_crossfade
+            return (
+                sum(t.chapter_seconds for t in self.tracks)
+                - (len(self.tracks) - 1) * cross
+            )
+        except (ValueError, KeyError, TypeError):
+            return None
 
     # -- JSON ---------------------------------------------------------------- #
 
@@ -870,8 +1387,10 @@ def music_paths(spec):
     -------
     dict
         Keys ``masters`` (list), ``music``, ``chime``, ``audio`` (the final
-        audio), ``loops`` (list), ``cycle`` (the background), ``levels``,
-        ``ass``, ``chapters`` and ``video``.
+        audio), ``loops`` (list), ``cycle`` (the background), ``particles``,
+        ``levels``, ``ass`` (the study ASS, or the sleep track cards),
+        ``chapters``, ``video``, ``thumbnail`` and ``qa`` (``None`` when the
+        part is not configured).
     """
     root = Path(spec.output_dir)
     study = spec.mode == "study_pomodoro"
@@ -894,11 +1413,24 @@ def music_paths(spec):
         "levels": (
             str(root / "overlays" / "levels.npy") if spec.spectrum.enabled else None
         ),
-        "ass": str(root / "overlays" / "study.ass") if study else None,
+        "particles": (
+            str(root / "visual" / "particles.mov") if spec.ambience.particles else None
+        ),
+        "ass": (
+            str(root / "overlays" / "study.ass")
+            if study
+            else str(root / "overlays" / "cards.ass") if spec.cards.enabled else None
+        ),
         "chapters": (
             str(root / "overlays" / "chapters.ffmeta") if spec.chapters else None
         ),
         "video": str(root / "render" / f"{spec.name}.mp4"),
+        "thumbnail": (
+            str(root / "publish" / spec.thumbnail.output)
+            if spec.thumbnail.enabled
+            else None
+        ),
+        "qa": str(root / "qa" / f"{spec.name}.qa.json") if spec.qa.enabled else None,
     }
 
 
@@ -998,6 +1530,111 @@ def _file_config(path):
     return {"path": str(path), "bytes": path.stat().st_size}
 
 
+def _artifact_sha(path):
+    """Return the recorded SHA-256 of an artifact (or hash the file)."""
+    evidence = _evidence_path(path)
+    if evidence.is_file():
+        recorded = json.loads(evidence.read_text(encoding="utf-8")).get("sha256")
+        if recorded:
+            return recorded
+    return _sha256(path)
+
+
+def _at(value, total, name):
+    """Resolve seconds (negative: from the end) inside ``[0, total]``."""
+    seconds = value + total if value < 0 else value
+    if not -1e-9 <= seconds <= total + 1e-9:
+        raise MusicEpisodeError(
+            f"{name} = {value:g} s is outside the {total:g} s video"
+        )
+    return max(0.0, seconds)
+
+
+def resolve_ambience(spec, total):
+    """Resolve the ambience times against the video length and build filters.
+
+    Negative times count back from the end. A fade or arc that is too fast
+    (a flicker risk) or lies outside the video raises.
+
+    Parameters
+    ----------
+    spec : MusicEpisodeSpec
+        The episode.
+    total : float
+        Total video duration in seconds.
+
+    Returns
+    -------
+    dict
+        ``video_filters`` (light arc), ``final_filters`` (sleep fade video),
+        ``audio_filters`` (sleep fade music), ``description`` (JSON-friendly,
+        with the resolved times) and the objects ``light_arc`` / ``sleep_fade``
+        (``None`` when absent).
+
+    Raises
+    ------
+    MusicEpisodeError
+        For times outside ``[0, total]`` or a curve faster than the limit.
+    """
+    total = float(total)
+    ambience = spec.ambience
+    result = {
+        "light_arc": None,
+        "sleep_fade": None,
+        "video_filters": [],
+        "final_filters": [],
+        "audio_filters": [],
+        "description": {"total_seconds": total},
+    }
+    arc_spec = ambience.light_arc
+    if arc_spec.active:
+        limit = _MAX_RATE if arc_spec.max_rate is None else arc_spec.max_rate
+        try:
+            if arc_spec.preset is not None:
+                arc = getattr(LightArc, arc_spec.preset)(total, max_rate=limit)
+            else:
+                rows = [
+                    (_at(when, total, f"light_arc: keyframes[{i}] time"), dict(values))
+                    for i, (when, values) in enumerate(arc_spec.keyframes)
+                ]
+                arc = LightArc(rows, max_rate=limit)
+        except ValueError as error:
+            raise MusicEpisodeError(f"light_arc: {error}") from None
+        result["light_arc"] = arc
+        result["video_filters"].append(arc.to_ffmpeg_filter())
+        result["description"]["light_arc"] = {
+            "preset": arc_spec.preset,
+            "keyframes": [[t, v] for t, v in arc.keyframes],
+        }
+    fade_spec = ambience.sleep_fade
+    if fade_spec is not None:
+        start = _at(fade_spec.start, total, "sleep_fade: start")
+        end = (
+            total
+            if fade_spec.end is None
+            else _at(fade_spec.end, total, "sleep_fade: end")
+        )
+        limit = _MAX_RATE if fade_spec.max_rate is None else fade_spec.max_rate
+        try:
+            fade = SleepFade(
+                start, end, fade_spec.floor, fade_spec.audio, max_rate=limit
+            )
+            fade.validate(total)
+        except ValueError as error:
+            raise MusicEpisodeError(f"sleep_fade: {error}") from None
+        result["sleep_fade"] = fade
+        result["final_filters"].append(fade.video_filter())
+        if fade.audio_filter() is not None:
+            result["audio_filters"].append(fade.audio_filter())
+        result["description"]["sleep_fade"] = fade.describe()
+    if ambience.particles is not None:
+        result["description"]["particles"] = _plain(
+            ambience.particles.options(spec.size, spec.fps)
+        )
+        result["description"]["particles"]["kind"] = ambience.particles.kind
+    return result
+
+
 # --------------------------------------------------------------------------- #
 # step 1: audio
 # --------------------------------------------------------------------------- #
@@ -1050,8 +1687,8 @@ def _audio_plan(spec):
 def prepare_audio(spec):
     """Normalize, assemble and (study) chime-mix the audio; resumable.
 
-    Writes ``audio/masters/<id>.flac`` (two-pass linear loudnorm to the
-    target with an exact-frame contract), ``audio/music.flac`` (looped
+    Writes ``audio/masters/<id>.flac`` (S14 soundx staging and loudness to
+    the target with an exact-frame contract; ``audio.loudness_backend``), ``audio/music.flac`` (looped
     chapters joined with crossfades and edge fades), in study mode with chimes
     ``audio/chime.wav`` and ``audio/audio.flac`` (chimes mixed at the phase
     boundaries, ``below_music_db`` under the local music, no ducking), each
@@ -1087,6 +1724,7 @@ def prepare_audio(spec):
             "lufs": audio.target_lufs,
             "tp": audio.true_peak,
             "lra": audio.lra,
+            "loudness_backend": audio.loudness_backend,
         }
 
         def normalize(partial, source=source):
@@ -1096,6 +1734,7 @@ def prepare_audio(spec):
                 target_lufs=audio.target_lufs,
                 true_peak=audio.true_peak,
                 lra=audio.lra,
+                backend=audio.loudness_backend,
             )
 
         masters.append(_resumable(target, config, normalize))
@@ -1194,7 +1833,7 @@ def _cycle_factory(loops, segment, crossfade, fps, size):
     )
 
 
-def prepare_visual(spec):
+def _prepare_cycle(spec):
     """Export one seamless loop per clip and the scene cycle; resumable.
 
     Writes ``visual/loops/loop-NN.mp4`` (``seamless_loop`` of the first
@@ -1300,6 +1939,75 @@ def prepare_visual(spec):
     return {"loops": loops, "cycle": cycle, "background": paths["cycle"]}
 
 
+def prepare_particles(spec):
+    """Export the transparent particle loop ``visual/particles.mov``; resumable.
+
+    Uses ``ambience.export_overlay_loop`` (lossless ``qtrle`` with alpha, a
+    seamless seeded loop of ``ambience.particles.period`` seconds) and the
+    usual exclusive-create evidence; the seed and every option are part of the
+    settings hash, so a changed particle setting is detected as stale.
+
+    Parameters
+    ----------
+    spec : MusicEpisodeSpec
+        The episode.
+
+    Returns
+    -------
+    dict or None
+        The artifact evidence (with ``skipped``), or ``None`` without
+        ``ambience.particles``.
+    """
+    particles = spec.ambience.particles
+    if particles is None:
+        return None
+    path = music_paths(spec)["particles"]
+    options = particles.options(spec.size, spec.fps)
+    config = {"kind": particles.kind, "options": _plain(options)}
+
+    def export(partial):
+        stale = Path(str(partial) + ".json")
+        if stale.exists():
+            stale.unlink()
+        try:
+            facts = export_overlay_loop(
+                (_particle_factory, (particles.kind, options)),
+                partial,
+                workers=spec.workers,
+            )
+        finally:
+            if stale.exists():
+                stale.unlink()
+        facts = dict(facts)
+        facts["particles"] = config
+        return facts
+
+    return _resumable(path, config, export, kind="visual")
+
+
+def prepare_visual(spec):
+    """Export the loops, the scene cycle and the particle loop; resumable.
+
+    See the cycle export below for the loops and the cycle; with
+    ``ambience.particles`` the transparent ``visual/particles.mov`` is added
+    (``prepare_particles``).
+
+    Parameters
+    ----------
+    spec : MusicEpisodeSpec
+        The episode.
+
+    Returns
+    -------
+    dict
+        ``loops`` (list), ``cycle``, ``background`` (the cycle path) and
+        ``particles`` (evidence or ``None``).
+    """
+    report = _prepare_cycle(spec)
+    report["particles"] = prepare_particles(spec)
+    return report
+
+
 # --------------------------------------------------------------------------- #
 # step 3: overlays
 # --------------------------------------------------------------------------- #
@@ -1348,12 +2056,43 @@ def _text_writer(text):
     return make
 
 
+def _ass_text(spec, sheet):
+    """Return the ASS text of the episode (study layers and/or track cards)."""
+    cards = spec.cards
+    options = None
+    if cards.enabled:
+        options = {
+            "titles": cards.titles,
+            "position": cards.position,
+            "hold": cards.hold,
+            "offset": cards.offset,
+            "skip_first": cards.skip_first,
+        }
+    try:
+        if spec.mode == "study_pomodoro":
+            schedule = spec.schedule()
+            if not (spec.study_ring or spec.study_timeline or cards.enabled):
+                return schedule.to_ass(compact=spec.study_compact)
+            return combine_study_ass(
+                schedule,
+                ring=spec.study_ring,
+                timeline=spec.study_timeline,
+                cards=None if options is None else dict(options, cues=sheet),
+                compact=spec.study_compact,
+            )
+        return sleep_cards_ass(sheet, **options)
+    except ValueError as error:
+        raise MusicEpisodeError(f"cards/ring/timeline: {error}") from None
+
+
 def prepare_overlays(spec):
-    """Write the spectrum levels, the study ASS and the chapters; resumable.
+    """Write the spectrum levels, the ASS and the chapters; resumable.
 
     ``overlays/levels.npy`` is ``analyze_spectrum`` of the final audio (one
     row per video frame; only when ``spectrum.enabled``), ``overlays/study.ass``
-    is ``StudySchedule.to_ass()`` (study mode) and
+    is ``StudySchedule.to_ass()`` merged with the progress ring, session
+    timeline and track cards when configured (study mode), or
+    ``overlays/cards.ass`` with the track cards (sleep mode, ``cards.enabled``);
     ``overlays/chapters.ffmeta`` holds the study chapters (study) or the
     chapters of the cue sheet at the crossfade centres (sleep). Requires the
     audio step to have run.
@@ -1411,18 +2150,18 @@ def prepare_overlays(spec):
             analyse,
         )
     ffmeta = None
-    if spec.mode == "study_pomodoro":
-        schedule = spec.schedule()
-        text = schedule.to_ass(compact=spec.study_compact)
+    sheet = json.loads(music_evidence.read_text(encoding="utf-8"))
+    if paths["ass"] is not None:
+        text = _ass_text(spec, sheet)
         report["ass"] = _resumable(
             paths["ass"],
             {"ass": hashlib.sha256(text.encode("utf-8")).hexdigest()},
             _text_writer(text),
         )
+    if spec.mode == "study_pomodoro":
         if spec.chapters:
-            ffmeta = schedule.chapters_ffmetadata()
+            ffmeta = spec.schedule().chapters_ffmetadata()
     elif spec.chapters:
-        sheet = json.loads(music_evidence.read_text(encoding="utf-8"))
         ffmeta = _sleep_ffmetadata(spec, sheet)
     if ffmeta is not None:
         report["chapters"] = _resumable(
@@ -1525,7 +2264,7 @@ def render(spec, *, preview=None):
     for key in ("audio", "cycle"):
         if not Path(paths[key]).is_file():
             raise MusicEpisodeError(f"render needs the {key} artifact: {paths[key]}")
-    for key in ("levels", "ass", "chapters"):
+    for key in ("particles", "levels", "ass", "chapters"):
         if paths[key] is not None and not Path(paths[key]).is_file():
             raise MusicEpisodeError(f"render needs the {key} artifact: {paths[key]}")
     info = audio_info(paths["audio"])
@@ -1537,12 +2276,19 @@ def render(spec, *, preview=None):
         )
     evidence = _evidence_path(output)
     log = Path(str(output) + ".ffmpeg.log")
+    ambience = resolve_ambience(spec, info["seconds"])
+    config_hash = _digest(_render_config(spec, paths, window, ambience))
     if output.exists():
         if not evidence.is_file():
             raise MusicEpisodeError(f"{output} exists without evidence; remove it")
         recorded = json.loads(evidence.read_text(encoding="utf-8"))
         if recorded.get("output_sha256") != _sha256(output):
             raise MusicEpisodeError(f"{output} no longer matches its recorded hash")
+        if recorded.get("config_sha256", config_hash) != config_hash:
+            raise MusicEpisodeError(
+                f"{output} was rendered from different settings or inputs; "
+                "remove it (and its evidence) to render again"
+            )
         recorded["skipped"] = True
         return recorded
     if log.exists() and not evidence.exists():
@@ -1578,6 +2324,10 @@ def render(spec, *, preview=None):
         workers=spec.workers,
         audio_bitrate=spec.audio_bitrate,
         loop_frames=loop_frames,
+        overlay_loops=([(paths["particles"], 0, 0, 1.0)] if paths["particles"] else []),
+        video_filters=ambience["video_filters"],
+        audio_filters=ambience["audio_filters"],
+        final_filters=ambience["final_filters"],
     )
     output.parent.mkdir(parents=True, exist_ok=True)
     if window is None:
@@ -1587,8 +2337,188 @@ def render(spec, *, preview=None):
             options["chapters"] = None
         report = preview_window(output, start=window[0], seconds=window[1], **options)
     report = dict(report)
+    report["config_sha256"] = config_hash
+    report["ambience"] = ambience["description"]
+    with open(evidence, "w", encoding="utf-8") as stream:
+        json.dump(report, stream, ensure_ascii=False, indent=2, default=_json_default)
     report["skipped"] = False
     return report
+
+
+def _render_config(spec, paths, window, ambience):
+    """Return the settings and input hashes that determine a render."""
+    artifacts = {
+        key: _artifact_sha(paths[key])
+        for key in ("audio", "cycle", "particles", "levels", "ass", "chapters")
+        if paths[key] is not None
+    }
+    return {
+        "artifacts": artifacts,
+        "fps": spec.fps,
+        "size": list(spec.size),
+        "encoder": spec.encoder,
+        "quality": spec.quality,
+        "audio_bitrate": spec.audio_bitrate,
+        "spectrum": _asdict(spec.spectrum) if spec.spectrum.enabled else None,
+        "ambience": ambience["description"],
+        "window": None if window is None else list(window),
+    }
+
+
+# --------------------------------------------------------------------------- #
+# step 5: thumbnail
+# --------------------------------------------------------------------------- #
+
+
+def make_thumbnail(spec):
+    """Render ``publish/<thumbnail.output>`` from the cycle; resumable.
+
+    One frame of the background cycle (``thumbnail.time`` seconds, default a
+    third of the cycle) gets the trilingual titles, optional subtitle and the
+    duration badge (``"auto"`` is the formatted total duration) through
+    ``thumbnail.render_thumbnail`` at 1280x720; the evidence (text boxes,
+    contrast, fonts) is written next to it. The text needs the Windows fonts
+    of ``thumbnail.DEFAULT_FONTS``.
+
+    Parameters
+    ----------
+    spec : MusicEpisodeSpec
+        The episode (``thumbnail.enabled`` must be true).
+
+    Returns
+    -------
+    dict
+        The artifact evidence plus ``skipped``.
+
+    Raises
+    ------
+    MusicEpisodeError
+        If the cycle is missing, a font or glyph is missing, the text does
+        not fit or the contrast is too low.
+    """
+    if not spec.thumbnail.enabled:
+        raise MusicEpisodeError("thumbnail.enabled is false")
+    paths = music_paths(spec)
+    cycle = _require_file(paths["cycle"], "thumbnail needs the cycle")
+    total = _audio_plan(spec)["total_seconds"]
+    try:
+        thumbnail = spec.thumbnail.render_spec(total)
+    except (ValueError, TypeError) as error:
+        raise MusicEpisodeError(f"thumbnail: {error}") from None
+    config = {
+        "cycle": _artifact_sha(cycle),
+        "titles": thumbnail.titles,
+        "subtitle": thumbnail.subtitle,
+        "badge": thumbnail.duration_badge,
+        "layout": thumbnail.layout,
+        "time": spec.thumbnail.time,
+        "size": list(_THUMBNAIL_SIZE),
+        "require_contrast": spec.thumbnail.require_contrast,
+    }
+
+    def make(partial):
+        frame = grab_frame(cycle, spec.thumbnail.time)
+        _, facts = render_thumbnail(
+            thumbnail,
+            frame,
+            partial,
+            size=_THUMBNAIL_SIZE,
+            require_contrast=spec.thumbnail.require_contrast,
+        )
+        facts["frame_time"] = spec.thumbnail.time
+        facts["background_source"] = f"{cycle} @ {spec.thumbnail.time}"
+        return facts
+
+    try:
+        return _resumable(paths["thumbnail"], config, make, kind="visual")
+    except (ValueError, OSError) as error:
+        if isinstance(error, MusicEpisodeError):
+            raise
+        raise MusicEpisodeError(f"thumbnail: {error}") from None
+
+
+# --------------------------------------------------------------------------- #
+# step 6: qa
+# --------------------------------------------------------------------------- #
+
+
+def run_qa(spec):
+    """Run the automated QA on the rendered MP4 into ``qa/<name>.qa.json``.
+
+    ``music_qa.qa_report`` checks flashing (WCAG 2.3.1 approximation),
+    loudness, silence and clipping of the real encoded file. The JSON is an
+    exclusive create that also records the render's SHA-256 and the QA
+    settings; an existing report for the same render and settings is skipped,
+    one for a different render raises. Human listening and visual checks stay
+    ``NOT_RUN``.
+
+    Parameters
+    ----------
+    spec : MusicEpisodeSpec
+        The episode (``qa.enabled`` must be true).
+
+    Returns
+    -------
+    dict
+        ``path``, ``overall`` and ``verdicts`` of the report, ``render_sha256``
+        and ``skipped``.
+
+    Raises
+    ------
+    MusicEpisodeError
+        If the render is missing, or the report belongs to another render.
+    """
+    if not spec.qa.enabled:
+        raise MusicEpisodeError("qa.enabled is false")
+    paths = music_paths(spec)
+    video = Path(paths["video"])
+    if not video.is_file() or not _evidence_path(video).is_file():
+        raise MusicEpisodeError(f"qa needs the rendered video and evidence: {video}")
+    render_hash = _sha256(video)
+    recorded_hash = json.loads(_evidence_path(video).read_text(encoding="utf-8"))
+    if recorded_hash.get("output_sha256") != render_hash:
+        raise MusicEpisodeError(f"{video} no longer matches its recorded hash")
+    settings = {"targets": spec.qa.targets, "flash_seconds": spec.qa.flash_seconds}
+    settings_hash = _digest(settings)
+    out = Path(paths["qa"])
+    if out.exists():
+        report = json.loads(out.read_text(encoding="utf-8"))
+        if (
+            report.get("render_sha256") != render_hash
+            or report.get("config_sha256") != settings_hash
+        ):
+            raise MusicEpisodeError(
+                f"{out} belongs to a different render or QA settings; remove it "
+                "to run the QA again"
+            )
+        skipped = True
+    else:
+        try:
+            report = qa_report(
+                video,
+                targets=spec.qa.targets or None,
+                flash_seconds=spec.qa.flash_seconds,
+            )
+        except (ValueError, OSError) as error:
+            raise MusicEpisodeError(f"qa: {error}") from None
+        report.update(
+            render_sha256=render_hash, config_sha256=settings_hash, settings=settings
+        )
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with open(out, "x", encoding="utf-8") as stream:
+            json.dump(
+                report, stream, ensure_ascii=False, indent=2, default=_json_default
+            )
+        skipped = False
+    return {
+        "path": str(out),
+        "overall": report["overall"],
+        "verdicts": report["verdicts"],
+        "render_sha256": render_hash,
+        "human_listening": report["human_listening"],
+        "human_visual": report["human_visual"],
+        "skipped": skipped,
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -1610,7 +2540,10 @@ def validate_music_episode(spec, *, check_files=True):
     -------
     dict
         ``ok``, ``missing`` (files), ``problems`` (messages), ``plan`` (audio
-        lengths or ``None`` when the plan could not be made) and ``paths``.
+        lengths or ``None`` when the plan could not be made), ``paths`` and
+        ``soundx`` (the ``check_soundx`` result as a dict, or ``None`` when
+        ``audio.loudness_backend`` is ``"ffmpeg"``). A missing or too old
+        soundx is a problem when the backend is ``"soundx"``.
     """
     missing, problems, plan = [], [], None
     if check_files:
@@ -1630,25 +2563,47 @@ def validate_music_episode(spec, *, check_files=True):
             isinstance(spec.study, str) and not Path(spec.study).is_file()
         ):  # a missing study file is already reported as missing
             problems.append(str(error))
+    if plan is not None:
+        try:
+            resolve_ambience(spec, plan["total_seconds"])
+        except MusicEpisodeError as error:
+            problems.append(f"ambience: {error}")
+    soundx = None
+    if spec.audio.loudness_backend == "soundx":
+        check = check_soundx()
+        soundx = asdict(check)
+        problems.extend(f"soundx: {problem}" for problem in check.problems)
     return {
         "ok": not missing and not problems,
         "missing": missing,
         "problems": problems,
         "plan": plan,
         "paths": music_paths(spec),
+        "soundx": soundx,
     }
 
 
-def build_music_episode(spec, *, steps=STEPS, preview=None):
+def _step_enabled(spec, step):
+    if step == "thumbnail":
+        return spec.thumbnail.enabled
+    if step == "qa":
+        return spec.qa.enabled
+    return True
+
+
+def build_music_episode(spec, *, steps=None, preview=None):
     """Run the chosen steps in order and return a combined report.
 
     Parameters
     ----------
     spec : MusicEpisodeSpec
         The episode.
-    steps : sequence of str
-        Any of ``"audio"``, ``"visual"``, ``"overlays"``, ``"render"``; they
-        always run in that order.
+    steps : sequence of str or str, optional
+        Any of ``"audio"``, ``"visual"``, ``"overlays"``, ``"render"``,
+        ``"thumbnail"``, ``"qa"`` (a comma-separated string works too); they
+        always run in that order. The default runs the four core steps and
+        the ``thumbnail`` / ``qa`` steps when enabled in the spec; naming a
+        disabled step explicitly reports it as skipped.
     preview : tuple of float, optional
         ``(start, seconds)``; applies to the ``render`` step.
 
@@ -1659,6 +2614,8 @@ def build_music_episode(spec, *, steps=STEPS, preview=None):
         (all ``"NOT_RUN"``: full listening, full visual watch, rights,
         private upload).
     """
+    if steps is None:
+        steps = [s for s in STEPS if _step_enabled(spec, s)]
     if isinstance(steps, str):
         steps = [s for s in steps.split(",") if s]
     steps = list(steps)
@@ -1670,11 +2627,16 @@ def build_music_episode(spec, *, steps=STEPS, preview=None):
         "visual": prepare_visual,
         "overlays": prepare_overlays,
         "render": lambda s: render(s, preview=preview),
+        "thumbnail": make_thumbnail,
+        "qa": run_qa,
     }
     results = {}
     for step in STEPS:
         if step in steps:
-            results[step] = runners[step](spec)
+            if _step_enabled(spec, step):
+                results[step] = runners[step](spec)
+            else:
+                results[step] = {"enabled": False, "skipped": True}
     return {
         "name": spec.name,
         "mode": spec.mode,
@@ -1695,6 +2657,8 @@ _README = """\
 [ ] 4. 建置素材：python -m moviepy.ae.templates music build music.json --steps audio,visual,overlays
 [ ] 5. 預覽 60 秒：python -m moviepy.ae.templates music build music.json --steps render --preview 0 60
 [ ] 6. 正式輸出：python -m moviepy.ae.templates music build music.json --steps render
+[ ] 7. 縮圖與自動檢查：python -m moviepy.ae.templates music build music.json --steps thumbnail,qa
+       （在 music.json 填好 thumbnail.titles 與 cards.titles；氛圍層在 ambience）
 所有輸出皆為獨佔建立（不覆寫）；每一步寫入證據 JSON，中斷後重跑會驗證雜湊並略過已完成者。
 若修改設定，須先刪除對應產物與其 .json 證據才能重建。
 
@@ -1776,7 +2740,11 @@ def _parser():
     p_val.add_argument("--allow-missing", action="store_true", help="skip file checks")
     p_build = sub.add_parser("build", help="run the resumable build steps")
     p_build.add_argument("spec")
-    p_build.add_argument("--steps", default=",".join(STEPS))
+    p_build.add_argument(
+        "--steps",
+        default=None,
+        help=f"comma-separated subset of {','.join(STEPS)} (default: all enabled)",
+    )
     p_build.add_argument("--preview", type=float, nargs=2, metavar=("START", "SECONDS"))
     p_build.add_argument("--workers", type=int, default=None)
     p_build.add_argument("--encoder", choices=ENCODERS, default=None)

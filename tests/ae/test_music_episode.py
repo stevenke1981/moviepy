@@ -12,7 +12,7 @@ import numpy as np
 import pytest
 
 from moviepy import VideoClip
-from moviepy.ae.templates import music_episode as me
+from moviepy.ae.templates import music_episode as me, soundx as sx
 from moviepy.ae.templates._audio_io import AudioWriter, audio_info
 from moviepy.ae.templates.music_episode import (
     MusicEpisodeError,
@@ -24,12 +24,22 @@ from moviepy.ae.templates.music_episode import (
     validate_music_episode,
 )
 from moviepy.config import FFMPEG_BINARY
+from tests.ae._fake_soundx import install_fake_soundx
 
 
 FPS = 12
 SIZE = (160, 90)
 ROOT = Path(__file__).resolve().parents[2]
 CONFIGS = ROOT / "moviepy" / "ae" / "templates" / "configs"
+
+
+@pytest.fixture(scope="module", autouse=True)
+def fake_soundx(tmp_path_factory):
+    """Run every build in this module against a fake soundx 0.2.0 (CI has none)."""
+    launcher = install_fake_soundx(tmp_path_factory.mktemp("fake_soundx"), "0.2.0")
+    with pytest.MonkeyPatch.context() as patch:
+        patch.setenv("MOVIEPY_SOUNDX", str(launcher))
+        yield launcher
 
 
 def tone(path, seconds, hertz, seed):
@@ -328,7 +338,7 @@ def test_validate_reports_missing_files(sleep_spec, tmp_path):
 
 def test_sleep_build_outputs(sleep_spec, sleep_report):
     steps = sleep_report["steps"]
-    assert set(steps) == set(me.STEPS)
+    assert set(steps) == {"audio", "visual", "overlays", "render"}  # new steps off
     assert sleep_report["human_gates"] == {
         "full_listening": "NOT_RUN",
         "full_visual_watch": "NOT_RUN",
@@ -576,3 +586,476 @@ def test_python_dash_m_dispatch(tmp_path):
     )  # fmt: skip
     assert run.returncode == 0, run.stderr
     assert (folder / "music.json").exists()
+
+
+# ---- ambience, cards, ring, timeline, thumbnail, qa ------------------------------- #
+
+from moviepy.ae.templates.thumbnail import DEFAULT_FONTS  # noqa: E402
+
+
+FONTS = all(Path(p).is_file() for p in DEFAULT_FONTS.values())
+needs_fonts = pytest.mark.skipif(not FONTS, reason="Windows fonts not installed")
+TITLES = {
+    "A": {"zh": "第一首", "en": "First", "ja": "一曲目"},
+    "B": {"zh": "第二首", "en": "Second", "ja": "二曲目"},
+}
+
+
+def rich_sections(**extra):
+    sections = {
+        "ambience": {
+            "particles": {
+                "kind": "fireflies",
+                "period": 2,
+                "count": 6,
+                "seed": 3,
+                "opacity": 0.9,
+            },
+            "light_arc": {
+                "keyframes": [[0, {}], [-1, {"brightness": -0.2}]],
+                "max_rate": 5,
+            },
+            "sleep_fade": {"start": -3, "floor": 0.3, "max_rate": 5},
+        },
+        "cards": {"enabled": True, "titles": TITLES},
+        "thumbnail": {
+            "enabled": True,
+            "titles": {"zh": "測試", "en": "Test"},
+            "time": 1,
+            "require_contrast": False,
+        },
+        "qa": {"enabled": True, "flash_seconds": 5},
+    }
+    sections.update(extra)
+    return sections
+
+
+def seeded_copy(source_spec, target, **changes):
+    """Spec with extra sections whose audio/visual artifacts are copied over."""
+    import shutil
+
+    for part in ("audio", "visual"):
+        shutil.copytree(Path(source_spec.output_dir) / part, target / part)
+    data = source_spec.to_dict()
+    data.update(output_dir=str(target), **changes)
+    return MusicEpisodeSpec.from_dict(data)
+
+
+@pytest.fixture(scope="module")
+def rich_sleep(sleep_spec, sleep_report, tmp_path_factory):
+    folder = tmp_path_factory.mktemp("rich_sleep")
+    spec = seeded_copy(sleep_spec, folder / "build", **rich_sections())
+    path = folder / "music.json"
+    spec.to_json(path)
+    report = build_music_episode(spec, steps=["audio", "visual", "overlays", "render"])
+    return spec, report, path
+
+
+@pytest.fixture(scope="module")
+def rich_study(study_spec, study_report, tmp_path_factory):
+    folder = tmp_path_factory.mktemp("rich_study")
+    spec = seeded_copy(
+        study_spec,
+        folder / "build",
+        cards={"enabled": True, "titles": TITLES, "offset": 0.5},
+        study_ring=True,
+        study_timeline=True,
+    )
+    return spec, build_music_episode(spec)
+
+
+BASE = {
+    "mode": "sleep_longform",
+    "tracks": [{"id": "A", "source": "a.wav", "chapter_seconds": 60}],
+    "visual": {"clips": ["c.mp4"]},
+}
+FAST = {"keyframes": [[0, {}], [1, {"brightness": -0.5}]]}
+
+
+@pytest.mark.parametrize(
+    "patch, message",
+    [
+        ({"ambience": {"x": 1}}, "ambience: unknown key"),
+        ({"ambience": {"particles": {"kind": "lava"}}}, "kind must be one of"),
+        (
+            {"ambience": {"particles": {"period": 0.51}}},
+            "ambience: particles: .*whole number",
+        ),
+        (
+            {"ambience": {"particles": {"region": [0, 0, 5000, 10]}}},
+            "ambience: particles: .*inside the layer",
+        ),
+        ({"ambience": {"particles": {"region": [0, 0]}}}, "region must be"),
+        ({"ambience": {"particles": {"count": -1}}}, "count must be >= 0"),
+        ({"ambience": {"particles": {"opacity": 2}}}, "opacity must be <= 1"),
+        ({"ambience": {"particles": {"seed": 1.5}}}, "seed must be a whole number"),
+        (
+            {"ambience": {"light_arc": {"preset": "dusk", "keyframes": [[0, {}]]}}},
+            "preset or keyframes, not both",
+        ),
+        ({"ambience": {"light_arc": {"preset": "noon"}}}, "preset must be one of"),
+        (
+            {"ambience": {"light_arc": {"keyframes": [[0, {"hue": 1}]]}}},
+            r"keyframes\[0\]: unknown parameter",
+        ),
+        (
+            {"ambience": {"light_arc": {"keyframes": [[0, {}], [-100, {}]]}}},
+            r"keyframes\[1\] time = -100 s is outside the 60 s video",
+        ),
+        (
+            {"ambience": {"light_arc": FAST}},
+            "ambience: light_arc: brightness changes",
+        ),
+        (
+            {"ambience": {"light_arc": {"keyframes": [[5, {}], [5, {}]]}}},
+            "strictly increase",
+        ),
+        ({"ambience": {"sleep_fade": {}}}, "sleep_fade: missing required key"),
+        ({"ambience": {"sleep_fade": {"start": -30, "floor": 1}}}, "floor must be < 1"),
+        (
+            {"ambience": {"sleep_fade": {"start": 30, "end": 100}}},
+            "sleep_fade: end = 100 s is outside the 60 s video",
+        ),
+        (
+            {"ambience": {"sleep_fade": {"start": 0, "end": 5}}},
+            "ambience: sleep_fade: fade changes",
+        ),
+        (
+            {"ambience": {"sleep_fade": {"start": 40, "end": 20}}},
+            "ambience: sleep_fade: need 0 <= start < end",
+        ),
+        ({"cards": {"enabled": True}}, "cards: titles missing for track id"),
+        ({"cards": {"titles": {"Z": {"en": "x"}}}}, "unknown track id"),
+        ({"cards": {"titles": {"A": {"fr": "x"}}}}, "unknown language"),
+        ({"cards": {"titles": {"A": {}}}}, "needs zh, en or ja"),
+        ({"cards": {"position": "middle"}}, "position must be one of"),
+        ({"cards": {"hold": -1}}, "hold must be >= 0"),
+        ({"study_ring": True}, "need study_pomodoro mode"),
+        ({"study_timeline": "yes"}, "study_timeline must be true or false"),
+        ({"thumbnail": {"enabled": True}}, r"titles\['zh'\] is required"),
+        ({"thumbnail": {"layout": "wide"}}, "layout must be one of"),
+        ({"thumbnail": {"output": "a/b.jpg"}}, "output must be a simple"),
+        ({"thumbnail": {"output": "t.gif"}}, "output must be a simple"),
+        ({"thumbnail": {"duration_badge": -3}}, "duration_badge must be >= 0"),
+        ({"thumbnail": {"titles": {"en": "x"}}}, "zh"),
+        ({"qa": {"targets": {"loud": 1}}}, "targets: unknown key"),
+        ({"qa": {"flash_seconds": 0}}, "flash_seconds must be positive"),
+        ({"qa": {"enabled": "yes"}}, "qa: enabled must be true or false"),
+    ],
+)
+def test_new_section_validation(patch, message):
+    data = json.loads(json.dumps(BASE))
+    data.update(patch)
+    with pytest.raises(MusicEpisodeError, match=message):
+        MusicEpisodeSpec.from_dict(data)
+
+
+def test_absent_sections_keep_old_behaviour():
+    spec = MusicEpisodeSpec.from_dict(BASE)
+    assert spec.ambience.particles is None and not spec.ambience.light_arc.active
+    assert spec.ambience.sleep_fade is None
+    assert not (spec.cards.enabled or spec.thumbnail.enabled or spec.qa.enabled)
+    paths = music_paths(spec)
+    assert paths["particles"] is paths["ass"] is paths["thumbnail"] is None
+    assert paths["qa"] is None
+    assert MusicEpisodeSpec.from_dict(spec.to_dict()) == spec
+    assert me.resolve_ambience(spec, 60)["video_filters"] == []
+
+
+def test_shipped_configs_enrichment_defaults():
+    sleep = MusicEpisodeSpec.from_json(CONFIGS / "music_sleep_longform.json")
+    amb = sleep.ambience
+    assert amb.particles.kind == "fireflies" and amb.light_arc.preset == "day_to_night"
+    assert (amb.sleep_fade.start, amb.sleep_fade.floor) == (-1800, 0.15)
+    assert sleep.cards.enabled and sleep.thumbnail.enabled and sleep.qa.enabled
+    assert sleep.thumbnail.duration_badge == "auto"
+    resolved = me.resolve_ambience(sleep, 19200)
+    fade = resolved["sleep_fade"]
+    assert (fade.start, fade.end) == (17400.0, 19200.0)
+    assert len(resolved["audio_filters"]) == 1
+    assert resolved["light_arc"].keyframes[-1][0] == 19200
+    study = MusicEpisodeSpec.from_json(CONFIGS / "music_study_pomodoro.json")
+    assert study.ambience.particles is None and study.ambience.sleep_fade is None
+    assert not study.ambience.light_arc.active
+    assert study.study_ring and study.study_timeline and study.cards.enabled
+    assert study.thumbnail.enabled and study.qa.enabled
+    assert set(study.cards.titles) == {t.id for t in study.tracks}
+    for spec in (sleep, study):
+        assert MusicEpisodeSpec.from_dict(spec.to_dict()) == spec
+
+
+def test_negative_times_resolve_against_total():
+    spec = MusicEpisodeSpec.from_dict(
+        dict(
+            BASE,
+            ambience={
+                "light_arc": {
+                    "keyframes": [{"time": 0}, {"time": -10, "brightness": -0.1}]
+                },
+                "sleep_fade": {"start": -30, "floor": 0.2},
+            },
+        )
+    )
+    resolved = me.resolve_ambience(spec, 60)
+    assert [t for t, _ in resolved["light_arc"].keyframes] == [0.0, 50.0]
+    assert (resolved["sleep_fade"].start, resolved["sleep_fade"].end) == (30.0, 60.0)
+    with pytest.raises(MusicEpisodeError, match="outside the 20 s video"):
+        me.resolve_ambience(spec, 20)  # start -30 lies before the beginning
+    assert resolved["description"]["sleep_fade"]["start"] == 30.0
+
+
+def test_inline_study_total_is_checked_in_the_spec():
+    data = dict(
+        BASE,
+        mode="study_pomodoro",
+        study=pomodoro_schedule("S", focus=60, rest=30, rounds=2, closing=30),
+        ambience={"sleep_fade": {"start": 400, "end": 500, "max_rate": 1}},
+    )
+    with pytest.raises(MusicEpisodeError, match="outside the 180 s video"):
+        MusicEpisodeSpec.from_dict(data)
+
+
+def test_rich_sleep_outputs(rich_sleep):
+    spec, report, _ = rich_sleep
+    paths = music_paths(spec)
+    steps = report["steps"]
+    assert set(steps) == {"audio", "visual", "overlays", "render"}
+    assert Path(paths["particles"]).is_file()
+    particles = steps["visual"]["particles"]
+    assert particles["particles"]["options"]["seed"] == 3 and not particles["skipped"]
+    assert particles["human_visual"] == "NOT_RUN"
+    assert not list(Path(paths["particles"]).parent.glob("*.partial*"))
+    ass = Path(paths["ass"]).read_text(encoding="utf-8")
+    assert paths["ass"].endswith("cards.ass") and "CardEN" in ass
+    render = steps["render"]
+    assert render["overlay_loops"][0]["path"] == str(Path(paths["particles"]).resolve())
+    assert len(render["video_filters"]) == 1 and len(render["final_filters"]) == 1
+    assert len(render["audio_filters"]) == 1 and render["config_sha256"]
+    assert render["ambience"]["sleep_fade"]["start"] == 4.0
+    frames = frames_of(paths["video"])
+    assert len(frames) == 7 * FPS
+    # the sleep fade (floor 0.3 plus the arc) darkens the picture at the end
+    assert frames[-1].mean() < 0.6 * frames[2].mean()
+    assert frames[5 * FPS].mean() < frames[2].mean()
+
+
+def test_rich_sleep_audio_fades(rich_sleep):
+    spec, _, _ = rich_sleep
+    run = subprocess.run(
+        [FFMPEG_BINARY, "-v", "error", "-i", music_paths(spec)["video"],
+         "-f", "s16le", "-ac", "1", "-ar", "48000", "-"],
+        capture_output=True,
+        check=True,
+    )  # fmt: skip
+    pcm = np.abs(np.frombuffer(run.stdout, np.int16).astype(float))
+    early = pcm[48000 : int(1.5 * 48000)].mean()
+    late = pcm[int(6.0 * 48000) : int(6.4 * 48000)].mean()
+    assert late < 0.7 * early
+
+
+def test_rich_sleep_resume_and_stale_detection(rich_sleep):
+    spec, _, _ = rich_sleep
+    again = build_music_episode(spec, steps="audio,visual,overlays,render")
+    assert again["steps"]["visual"]["particles"]["skipped"]
+    assert again["steps"]["overlays"]["ass"]["skipped"]
+    assert again["steps"]["render"]["skipped"]
+    seed = dataclasses.replace(
+        spec.ambience.particles, seed=spec.ambience.particles.seed + 1
+    )
+    changed = dataclasses.replace(
+        spec, ambience=dataclasses.replace(spec.ambience, particles=seed)
+    )
+    with pytest.raises(MusicEpisodeError, match="different settings"):
+        me.prepare_visual(changed)
+    fade = dataclasses.replace(spec.ambience.sleep_fade, floor=0.5)
+    dimmer = dataclasses.replace(
+        spec, ambience=dataclasses.replace(spec.ambience, sleep_fade=fade)
+    )
+    with pytest.raises(MusicEpisodeError, match="different settings"):
+        me.render(dimmer)
+    titles = {"A": {"en": "Changed"}, "B": TITLES["B"]}
+    retitled = dataclasses.replace(
+        spec, cards=dataclasses.replace(spec.cards, titles=titles)
+    )
+    with pytest.raises(MusicEpisodeError, match="different settings"):
+        me.prepare_overlays(retitled)
+
+
+def test_rich_sleep_preview_window_uses_global_time(rich_sleep):
+    spec, _, _ = rich_sleep
+    me.render(spec, preview=(3, 4))
+    window = frames_of(Path(spec.output_dir) / "render" / "tiny-preview-3-4.mp4")
+    full = frames_of(music_paths(spec)["video"])
+    assert len(window) == 4 * FPS
+    # the preview's last frame is the same instant of the fade as the full one
+    assert abs(float(window[-1].mean()) - float(full[7 * FPS - 1].mean())) < 6
+
+
+def test_disabled_steps_are_skipped_not_run(sleep_spec, sleep_report):
+    report = build_music_episode(sleep_spec, steps="thumbnail,qa")
+    assert report["steps"] == {
+        "thumbnail": {"enabled": False, "skipped": True},
+        "qa": {"enabled": False, "skipped": True},
+    }
+    with pytest.raises(MusicEpisodeError, match="thumbnail.enabled is false"):
+        me.make_thumbnail(sleep_spec)
+    with pytest.raises(MusicEpisodeError, match="qa.enabled is false"):
+        me.run_qa(sleep_spec)
+
+
+def test_qa_step_on_real_render(rich_sleep):
+    spec, _, _ = rich_sleep
+    first = build_music_episode(spec, steps=["qa"])["steps"]["qa"]
+    assert not first["skipped"] and first["overall"] in ("PASS", "REVIEW", "FAIL")
+    path = Path(music_paths(spec)["qa"])
+    assert path.name == "tiny.qa.json"
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    assert saved["render_sha256"] == me._sha256(music_paths(spec)["video"])
+    assert saved["human_listening"] == saved["human_visual"] == "NOT_RUN"
+    assert saved["flash"]["verdict"] in ("PASS", "REVIEW", "FAIL")
+    before = path.read_bytes()
+    second = build_music_episode(spec, steps=["qa"])["steps"]["qa"]
+    assert second["skipped"] and path.read_bytes() == before
+    other = dataclasses.replace(spec, qa=dataclasses.replace(spec.qa, flash_seconds=3))
+    with pytest.raises(MusicEpisodeError, match="different render or QA settings"):
+        me.run_qa(other)
+
+
+def test_qa_needs_a_render(rich_sleep, tmp_path):
+    spec, _, _ = rich_sleep
+    empty = dataclasses.replace(spec, output_dir=str(tmp_path / "none"))
+    with pytest.raises(MusicEpisodeError, match="qa needs the rendered video"):
+        me.run_qa(empty)
+
+
+@needs_fonts
+def test_thumbnail_step_and_resume(rich_sleep):
+    spec, _, _ = rich_sleep
+    first = build_music_episode(spec, steps=["thumbnail"])["steps"]["thumbnail"]
+    path = Path(music_paths(spec)["thumbnail"])
+    assert path.parts[-2:] == ("publish", "thumbnail.jpg") and path.is_file()
+    assert not first["skipped"] and first["size"] == [1280, 720]
+    assert first["badge"]["text"] == "0:07"  # auto badge = the formatted duration
+    assert first["human_visual"] == "NOT_RUN" and first["sha256"] == me._sha256(path)
+    assert not list(path.parent.glob("*.partial*"))
+    again = build_music_episode(spec, steps=["thumbnail"])["steps"]["thumbnail"]
+    assert again["skipped"]
+    th = dataclasses.replace(spec.thumbnail, time=2)
+    with pytest.raises(MusicEpisodeError, match="different settings"):
+        me.make_thumbnail(dataclasses.replace(spec, thumbnail=th))
+
+
+def test_rich_study_outputs(study_spec, study_report, rich_study):
+    spec, report = rich_study
+    paths = music_paths(spec)
+    plain = music_paths(study_spec)
+    text = Path(paths["ass"]).read_text(encoding="utf-8")
+    base = Path(plain["ass"]).read_text(encoding="utf-8")
+    assert text.count("Dialogue") > base.count("Dialogue") + 8
+    for line in base.splitlines():
+        if line.startswith("Dialogue"):
+            assert line in text  # every original S14 event is unchanged
+    assert "CardEN" in text
+    assert report["steps"]["render"]["frames"] == len(frames_of(paths["video"]))
+    assert set(report["steps"]) == {"audio", "visual", "overlays", "render"}
+
+
+def test_rich_study_ring_is_visible(study_spec, study_report, rich_study):
+    spec, _ = rich_study
+    rich = frames_of(music_paths(spec)["video"])
+    plain = frames_of(music_paths(study_spec)["video"])
+    assert rich.shape == plain.shape
+    # ring centre (1186, 234) on 1280x720 -> about (148, 29) at 160x90
+    diff = np.abs(rich[12, 22:37, 138:159].astype(int) - plain[12, 22:37, 138:159])
+    assert diff.max() > 8
+
+
+def test_rich_study_resume(rich_study):
+    spec, _ = rich_study
+    again = build_music_episode(spec)
+    assert again["steps"]["overlays"]["ass"]["skipped"]
+    assert again["steps"]["render"]["skipped"]
+
+
+def test_study_cards_failure_is_reported(rich_study):
+    spec, _ = rich_study
+    wide = {"A": {"en": "x" * 400}, "B": TITLES["B"]}
+    bad = dataclasses.replace(spec, cards=dataclasses.replace(spec.cards, titles=wide))
+    with pytest.raises(MusicEpisodeError, match="cards/ring/timeline"):
+        me.prepare_overlays(bad)
+
+
+def test_cli_steps_accept_new_names(rich_sleep, capsys):
+    _, _, path = rich_sleep
+    assert me.main(["build", str(path), "--steps", "qa", "--workers", "1"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert list(out["steps"]) == ["qa"]
+    assert me.main(["build", str(path), "--steps", "render,qa", "--workers", "1"]) == 0
+    out = json.loads(capsys.readouterr().out)
+    assert list(out["steps"]) == ["render", "qa"] and out["steps"]["qa"]["skipped"]
+    assert me.main(["validate", str(path)]) == 0
+    assert me.STEPS[-2:] == ("thumbnail", "qa")
+
+
+# ---- soundx loudness backend ---------------------------------------------------- #
+
+
+def test_loudness_backend_field(sleep_spec):
+    assert sleep_spec.audio.loudness_backend == "soundx"
+    data = sleep_spec.to_dict()
+    assert data["audio"]["loudness_backend"] == "soundx"
+    assert MusicEpisodeSpec.from_dict(data) == sleep_spec
+    data["audio"]["loudness_backend"] = "ffmpeg"
+    assert MusicEpisodeSpec.from_dict(data).audio.loudness_backend == "ffmpeg"
+    data["audio"]["loudness_backend"] = "sox"
+    with pytest.raises(MusicEpisodeError, match="loudness_backend"):
+        MusicEpisodeSpec.from_dict(data)
+
+
+@pytest.mark.parametrize("name", ["music_sleep_longform", "music_study_pomodoro"])
+def test_shipped_configs_select_soundx(name):
+    config = json.loads((CONFIGS / f"{name}.json").read_text(encoding="utf-8"))
+    assert config["audio"]["loudness_backend"] == "soundx"
+
+
+def test_validate_reports_soundx_status(sleep_spec, monkeypatch, tmp_path):
+    result = validate_music_episode(sleep_spec)
+    assert result["ok"] and result["soundx"]["ok"]
+    assert result["soundx"]["version"] == "soundx 0.2.0"
+    assert result["soundx"]["has_loudness"] is False
+    monkeypatch.delenv("MOVIEPY_SOUNDX")
+    monkeypatch.setenv("PATH", str(tmp_path / "empty"))
+    monkeypatch.setitem(
+        sx.SOUNDX_REQUIREMENTS, "windows_default", str(tmp_path / "nowhere.exe")
+    )
+    result = validate_music_episode(sleep_spec)
+    assert not result["ok"] and not result["soundx"]["ok"]
+    assert any(
+        "MOVIEPY_SOUNDX" in p and p.startswith("soundx:") for p in result["problems"]
+    )
+    ffmpeg_only = dataclasses.replace(
+        sleep_spec,
+        audio=dataclasses.replace(sleep_spec.audio, loudness_backend="ffmpeg"),
+    )
+    result = validate_music_episode(ffmpeg_only)
+    assert result["ok"] and result["soundx"] is None
+
+
+def test_backend_is_part_of_the_settings_hash(sleep_spec, sleep_report, tmp_path):
+    """Changing the backend invalidates the finished masters (hash mismatch)."""
+    other = dataclasses.replace(
+        sleep_spec,
+        audio=dataclasses.replace(sleep_spec.audio, loudness_backend="ffmpeg"),
+    )
+    with pytest.raises(MusicEpisodeError, match="different settings"):
+        prepare_audio(other)
+
+
+def test_audio_step_records_soundx_evidence(sleep_spec, sleep_report):
+    master = sleep_report["steps"]["audio"]["masters"][0]
+    assert master["backend"] == "soundx"
+    assert master["lufs_backend"].startswith("ffmpeg-loudnorm")
+    assert master["soundx"]["version"] == "soundx 0.2.0"
+    assert master["soundx"]["stage"]["frames"] == master["output"]["frames"]
+    evidence = json.loads(Path(master["path"] + ".json").read_text(encoding="utf-8"))
+    assert evidence["soundx"]["backend_chain"]

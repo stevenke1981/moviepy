@@ -238,3 +238,15 @@ def test_missing_glyph_raises_instead_of_tofu():
     spec = _spec(titles={"zh": "雨夜書房\U0010fffd"})
     with pytest.raises(th.ThumbnailError, match="glyph"):
         th.render_thumbnail(spec, DARK)
+
+
+@needs_fonts
+def test_auto_panel_darkens_until_contrast_passes():
+    bright = np.full((720, 1280, 3), 235, np.uint8)
+    spec = _spec(panel_opacity=0.35)
+    image, evidence = th.render_thumbnail(spec, bright)
+    assert evidence["contrast"]["passes"]
+    assert evidence["panel"]["opacity"] > 0.35
+    assert evidence["panel"]["auto_steps"][0] == 0.35
+    with pytest.raises(th.ContrastError):
+        th.render_thumbnail(_spec(panel_opacity=0.35, auto_panel=False), bright)
