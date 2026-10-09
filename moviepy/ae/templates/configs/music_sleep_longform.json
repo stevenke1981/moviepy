@@ -1,0 +1,43 @@
+{
+  "mode": "sleep_longform",
+  "name": "sleep_longform_episode",
+  "size": [1280, 720],
+  "fps": 24,
+  "tracks": [
+    {"id": "G01", "source": "tracks/PLACEHOLDER_01.wav", "chapter_seconds": 3210, "title": "PLACEHOLDER 第一章"},
+    {"id": "G02", "source": "tracks/PLACEHOLDER_02.wav", "chapter_seconds": 3210, "title": "PLACEHOLDER 第二章"},
+    {"id": "G03", "source": "tracks/PLACEHOLDER_03.wav", "chapter_seconds": 3210, "title": "PLACEHOLDER 第三章"},
+    {"id": "G04", "source": "tracks/PLACEHOLDER_04.wav", "chapter_seconds": 3210, "title": "PLACEHOLDER 第四章"},
+    {"id": "G05", "source": "tracks/PLACEHOLDER_05.wav", "chapter_seconds": 3210, "title": "PLACEHOLDER 第五章"},
+    {"id": "G06", "source": "tracks/PLACEHOLDER_06.wav", "chapter_seconds": 3210, "title": "PLACEHOLDER 第六章"}
+  ],
+  "audio": {
+    "target_lufs": -18.0,
+    "true_peak": -1.8,
+    "lra": 11.0,
+    "loop_overlap": 10.0,
+    "chapter_crossfade": 12.0,
+    "edge_fade": 4.0
+  },
+  "visual": {
+    "clips": [
+      "visual/PLACEHOLDER_clip_01.mp4",
+      "visual/PLACEHOLDER_clip_02.mp4",
+      "visual/PLACEHOLDER_clip_03.mp4",
+      "visual/PLACEHOLDER_clip_04.mp4"
+    ],
+    "clip_length": 8.0,
+    "loop_crossfade": 2.0,
+    "segment": 120.0,
+    "scene_crossfade": 2.0,
+    "cycle_path": null
+  },
+  "spectrum": {"enabled": false},
+  "chime": {"enabled": false},
+  "chapters": true,
+  "encoder": "auto",
+  "quality": "high",
+  "workers": null,
+  "audio_bitrate": "256k",
+  "output_dir": "build"
+}

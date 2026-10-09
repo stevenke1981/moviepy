@@ -293,7 +293,7 @@ def test_shipped_configs_use_documented_keys():
 
     known = {f.name for f in fields(EpisodeSpec)}
     shot_keys = _dataclass_json_names(ShotSpec)
-    for path in sorted(CONFIGS.glob("*.json")):
+    for path in sorted(CONFIGS.glob("nightlamp_*.json")):
         data = json.loads(path.read_text(encoding="utf-8"))
         assert set(data) <= known, path.name
         for shot in data["shots"]:

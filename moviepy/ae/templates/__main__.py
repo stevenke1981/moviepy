@@ -1,7 +1,19 @@
-"""``python -m moviepy.ae.templates``: episode project command line."""
+"""``python -m moviepy.ae.templates``: episode and music project command line."""
+
+import sys
 
 from moviepy.ae.templates.episode import main
 
 
+def run(argv=None):
+    """Dispatch ``music ...`` to the music episode CLI, the rest to episodes."""
+    argv = sys.argv[1:] if argv is None else list(argv)
+    if argv and argv[0] == "music":
+        from moviepy.ae.templates.music_episode import main as music_main
+
+        return music_main(argv[1:])
+    return main(argv)
+
+
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(run())
