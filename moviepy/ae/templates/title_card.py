@@ -38,7 +38,7 @@ NO_LINE_START = set("、。，．・：；？！)]}）】》〉」』〕〗〙�
 NO_LINE_END = set("([{（【《〈「『〔〖〘〚")
 _ASCII_NO_START = set(",.;:!?%")
 
-LAYOUTS = ("right_column", "center")
+LAYOUTS = ("right_column", "left_column", "center")
 ROLES = ("intro", "outro")
 
 #: R23 tokens.json (1080p reference pixels), by segment role.
@@ -329,8 +329,9 @@ class TitleCardSpec:
     ----------
     brand, title, subtitle : str
         ``subtitle`` is the hook line(s); ``hook`` is an alias.
-    layout : {"right_column", "center"}
-        R23's right text column or a centered stack.
+    layout : {"right_column", "left_column", "center"}
+        R23's right text column, a left column (the r2b opening title over
+        footage) or a centered stack.
     role : {"intro", "outro"}
         Chooses R23's intro or smaller outro title tokens.
     title_keep_together, subtitle_keep_together : tuple of str
@@ -436,8 +437,14 @@ def _check_glyphs(text, font_path, label):
             raise ValueError(f"{label}: font has no glyph for {char!r}")
 
 
-def _render_text(lines, font_path, size, tracking, leading, color, align, pad):
-    """Rasterise ``lines`` to a straight-alpha RGB + alpha pair."""
+def _render_text(
+    lines, font_path, size, tracking, leading, color, align, pad, outline=None
+):
+    """Rasterise ``lines`` to a straight-alpha RGB + alpha pair.
+
+    ``outline`` is ``(width_px, rgb)``: a stroke drawn under the fill so the
+    text reads over moving footage (transparent cards).
+    """
     font = _font(font_path, size)
     ascent, descent = font.getmetrics()
     widths = []
@@ -448,28 +455,45 @@ def _render_text(lines, font_path, size, tracking, leading, color, align, pad):
     pitch = size * leading
     text_h = (len(lines) - 1) * pitch + ascent + descent
     width, height = int(math.ceil(text_w)) + 2 * pad, int(math.ceil(text_h)) + 2 * pad
-    alpha = Image.new("L", (width, height), 0)
-    draw = ImageDraw.Draw(alpha)
-    for row, line in enumerate(lines):
-        x0 = pad + ((text_w - widths[row]) / 2 if align == "center" else 0.0)
-        baseline = pad + ascent + row * pitch
-        units = clusters(line)
-        prefix = ""
-        for index, unit in enumerate(units):
-            x = x0 + font.getlength(prefix) + index * tracking
-            draw.text((x, baseline), unit, font=font, fill=255, anchor="ls")
-            prefix += unit
-    mask = np.asarray(alpha, dtype=np.float64) / 255.0
+    stroke = 0 if outline is None else max(0, int(round(outline[0])))
+
+    def paint(stroke_width):
+        alpha = Image.new("L", (width, height), 0)
+        draw = ImageDraw.Draw(alpha)
+        for row, line in enumerate(lines):
+            x0 = pad + ((text_w - widths[row]) / 2 if align == "center" else 0.0)
+            baseline = pad + ascent + row * pitch
+            units = clusters(line)
+            prefix = ""
+            for index, unit in enumerate(units):
+                x = x0 + font.getlength(prefix) + index * tracking
+                draw.text((x, baseline), unit, font=font, fill=255, anchor="ls",
+                          stroke_width=stroke_width, stroke_fill=255)  # fmt: skip
+                prefix += unit
+        return np.asarray(alpha, dtype=np.float64) / 255.0
+
+    mask = paint(0)
     rgb = np.empty((height, width, 3), np.uint8)
     rgb[:] = tuple(int(c) for c in color)
+    if stroke:
+        # Straight colour of fill over stroke, alpha of their union.
+        edge = np.maximum(paint(stroke), mask)
+        safe = np.where(edge > 0, edge, 1.0)[..., None]
+        fill = np.asarray(color, np.float64)
+        under = np.asarray(outline[1], np.float64)
+        mix = (fill * mask[..., None] + under * (edge - mask)[..., None]) / safe
+        rgb = np.rint(mix).clip(0, 255).astype(np.uint8)
+        mask = edge
     return rgb, mask, (text_w, text_h)
 
 
-def _text_layer(name, lines, font_path, size, tracking, leading, color, align, pad):
+def _text_layer(
+    name, lines, font_path, size, tracking, leading, color, align, pad, outline=None
+):
     from moviepy import ImageClip
 
     rgb, mask, box = _render_text(
-        lines, font_path, size, tracking, leading, color, align, pad
+        lines, font_path, size, tracking, leading, color, align, pad, outline
     )
     clip = ImageClip(rgb).with_mask(ImageClip(mask, is_mask=True))
     layer = AVLayer(clip, name)
@@ -574,10 +598,19 @@ def build_title_card(spec, preset, background=None, *, fonts=None, transparent=F
     if center:
         col_w = min(size_w - 2 * margin_x, size_w * token["center_width"])
         col_x = size_w / 2
+    elif spec.layout == "left_column":
+        # The 武則天 r2b opening title: a left column over the footage.
+        left = margin_x
+        col_w = min(size_w * token["column_width"], size_w - 2 * margin_x)
+        col_x = left
     else:
         left = max(size_w * token["column_x"], margin_x)
         col_w = min(size_w * token["column_width"], size_w - margin_x - left)
         col_x = left
+    if transparent:
+        # Room for the outline drawn on overlay text, inside the safe margin.
+        col_w -= 6 * s
+        col_x += 0 if center else 3 * s
     if col_w <= 0:
         raise ValueError("safe margins leave no room for the text column")
 
@@ -612,8 +645,15 @@ def build_title_card(spec, preset, background=None, *, fonts=None, transparent=F
         )
     align = "center" if center else "left"
     pad = max(2, round(px(8)))
-    ink = tuple(preset.color("ink", (243, 236, 220)))
-    secondary = tuple(preset.color("secondary_ink", (232, 223, 204)))
+    # ``card_ink`` lets a channel whose ``ink`` is dark (paper props) keep
+    # light type on its cards.
+    ink = tuple(preset.color("card_ink", preset.color("ink", (243, 236, 220))))
+    secondary = tuple(
+        preset.color(
+            "card_secondary_ink", preset.color("secondary_ink", (232, 223, 204))
+        )
+    )
+    outline = (max(1.0, 3 * s), (20, 16, 12)) if transparent else None
     accent = tuple(preset.color("lamp", (217, 164, 95)))
 
     entries = []  # (name, layer, info, gap_before, timing, rise)
@@ -628,6 +668,7 @@ def build_title_card(spec, preset, background=None, *, fonts=None, transparent=F
             secondary,
             align,
             pad,
+            outline,
         )
         entries.append(
             (
@@ -665,6 +706,7 @@ def build_title_card(spec, preset, background=None, *, fonts=None, transparent=F
         ink,
         align,
         pad,
+        outline,
     )
     entries.append(
         (
@@ -687,6 +729,7 @@ def build_title_card(spec, preset, background=None, *, fonts=None, transparent=F
             secondary,
             align,
             pad,
+            outline,
         )
         entries.append(
             (

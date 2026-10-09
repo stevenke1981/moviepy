@@ -64,9 +64,30 @@ KEN_BURNS_DEFAULTS = {
     # Moves are eased in-out (AE easy-ease, zero speed at both ends) so the
     # motion starts and stops without a visible step.
     "easing": "easy_ease",
+    # Drift = pan and push in at once, ending framed on the focus (the r2b
+    # "move sideways and enlarge, settle on the main subject" camera). The window
+    # travels ``drift_distance`` of the SOURCE width on each side of the middle
+    # of the move, i.e. twice that in total, while zooming over ``drift_zoom``.
+    # The drift moves are not in ``auto_cycle``: appending would change nothing
+    # for existing indices, but inserting would, so ``auto`` stays untouched and
+    # callers pick ``drift-left`` / ``drift-right`` explicitly.
+    "drift_zoom": (1.02, 1.10),
+    "drift_distance": 0.035,
 }
 
-MOVES = ("push", "pull", "pan-left", "pan-right", "pan-up", "pan-down")
+MOVES = (
+    "push",
+    "pull",
+    "pan-left",
+    "pan-right",
+    "pan-up",
+    "pan-down",
+    "drift-left",
+    "drift-right",
+)
+
+# Sign of the viewing-window motion for the drift moves (+1 = window moves right).
+_DRIFT = {"drift-left": -1, "drift-right": 1}
 
 # axis (0 = x, 1 = y) and sign of the viewing-window motion. Positive x/y
 # moves the window right/down, so the picture slides left/up.
@@ -169,6 +190,7 @@ def ken_burns(
     hold=None,
     lead=0.0,
     easing=None,
+    segment=(0.0, 1.0),
 ):
     """Return a Composition that moves across one still image.
 
@@ -182,16 +204,21 @@ def ken_burns(
         Composition length in seconds.
     move : str
         ``"push"``, ``"pull"``, ``"pan-left"``, ``"pan-right"``, ``"pan-up"``,
-        ``"pan-down"`` or ``"auto"`` (cycles through the auto order by ``index``).
+        ``"pan-down"``, ``"drift-left"``, ``"drift-right"`` or ``"auto"``
+        (cycles through the auto order by ``index``; the drift moves are not part
+        of that cycle). A drift pans horizontally while pushing in and ends
+        framed on ``focus``, then holds that framing for ``hold`` seconds.
     index : int
         Position in the auto cycle; ignored unless ``move="auto"``.
     zoom : float or (float, float), optional
         Zoom relative to cover, at least 1. Push and pull take a pair; pans take
-        one value. Defaults come from ``KEN_BURNS_DEFAULTS``.
+        one value. Drift takes a pair (default ``drift_zoom``). Defaults come
+        from ``KEN_BURNS_DEFAULTS``.
     focus : (float, float), optional
         Subject point as fractions of the source width and height.
     distance : float, optional
-        Pan travel as a fraction of the output width (pans only).
+        Pan travel as a fraction of the output width (pans). For drifts it is
+        the half-travel as a fraction of the source width (default 0.035).
     hold : float, optional
         Seconds at the end that keep the final framing. Defaults to
         ``preset.hold``.
@@ -199,6 +226,11 @@ def ken_burns(
         Seconds of stillness before the move starts.
     easing : Ease, optional
         Curve for the move. Defaults to AE easy-ease (in-out).
+    segment : (float, float)
+        Drift only. The part ``(a, b)`` of the whole move, as fractions of its
+        eased progress, that this shot shows. Consecutive shots of one still use
+        ``(0, .5)`` then ``(.5, 1)`` to continue a single move without a seam:
+        the first ends exactly where the second starts. Default ``(0, 1)``.
 
     Returns
     -------
@@ -235,6 +267,11 @@ def ken_burns(
     if t1 <= t0:
         raise ValueError("duration must exceed lead plus hold")
     move = _resolve_move(move, index)
+    seg_a, seg_b = (_finite(v, "segment", 0) for v in segment)
+    if not 0 <= seg_a < seg_b <= 1:
+        raise ValueError("segment must satisfy 0 <= a < b <= 1")
+    if (seg_a, seg_b) != (0.0, 1.0) and move not in _DRIFT:
+        raise ValueError("segment applies to drift moves only")
     ease = Ease.easy_ease() if easing is None else easing
     if not isinstance(ease, Ease):
         raise TypeError("easing must be an Ease")
@@ -247,7 +284,63 @@ def ken_burns(
         raise ValueError("focus fractions must lie in [0, 1]")
     focus_px = (fx * (iw - 1), fy * (ih - 1))
 
-    if move in ("push", "pull"):
+    if move in _DRIFT:
+        z0, z1 = _zoom_pair(zoom, KEN_BURNS_DEFAULTS["drift_zoom"])
+        half = KEN_BURNS_DEFAULTS["drift_distance"]
+        if distance is not None:
+            half = _finite(distance, "distance", 0, strict=True)
+        if half > 0.5:
+            raise ValueError("drift distance is a fraction of width and must be <= 0.5")
+        # Window centre x at progress p: it arrives on the focus at p = 1 having
+        # slid ``2 * half`` of the source width, so p = 0.5 is the middle of the
+        # travel as in r2b. CameraFraming clamps it so no border ever shows.
+        shift = _DRIFT[move] * 2 * half * iw
+
+        def reachable(z, point):
+            # Nearest centre the rig can honour at constant zoom ``z``.
+            probe = CameraFraming((iw, ih), (width, height), overscan=1.0, zoom=z)
+            probe.focus = point
+            return probe.sample(0).center
+
+        # The reachable window grows with zoom, so clamping both ends once keeps
+        # the straight path between them inside the limits at every zoom in
+        # between (the bounds are convex/concave in zoom). The rig therefore
+        # never clips mid-move, which would show up as a kink in the speed.
+        end_c = reachable(z1, focus_px)
+        start_c = reachable(z0, (end_c[0] - shift, end_c[1]))
+
+        def at(p):
+            return (
+                z0 + (z1 - z0) * p,
+                (
+                    start_c[0] + (end_c[0] - start_c[0]) * p,
+                    start_c[1] + (end_c[1] - start_c[1]) * p,
+                ),
+            )
+
+        if (seg_a, seg_b) == (0.0, 1.0):
+            (za, ca), (zb, cb) = at(0.0), at(1.0)
+            zoom_keys = [Keyframe(t0, za, out_ease=ease), Keyframe(t1, zb)]
+            focus_keys = [Keyframe(t0, ca, out_ease=ease), Keyframe(t1, cb)]
+        else:
+            # Sample the globally eased curve once per frame so adjoining segments
+            # share their boundary value and speed.
+            count = max(2, int(math.ceil((t1 - t0) * preset.fps)) + 1)
+            zoom_keys, focus_keys = [], []
+            for k in range(count):
+                u = k / (count - 1)
+                t = t0 + (t1 - t0) * u
+                zk, ck = at(ease(seg_a + (seg_b - seg_a) * u))
+                zoom_keys.append(Keyframe(t, zk))
+                focus_keys.append(Keyframe(t, ck))
+        framing = CameraFraming(
+            (iw, ih),
+            (width, height),
+            overscan=1.0,
+            zoom=zoom_keys,
+            focus=focus_keys,
+        )
+    elif move in ("push", "pull"):
         if distance is not None:
             raise ValueError("distance applies to pan moves only")
         default = KEN_BURNS_DEFAULTS["push_zoom" if move == "push" else "pull_zoom"]
