@@ -219,9 +219,13 @@ def test_loudness_and_normalize_wrappers(fake_030, source, tmp_path):
     with pytest.raises(FileExistsError):
         sx.soundx_normalize(staged, target)
     streamed = tmp_path / "streamed.wav"
-    sx.soundx_normalize(staged, streamed, stream=True, target_lufs=-20.0)
+    stat = sx.soundx_normalize(staged, streamed, stream=True, target_lufs=-20.0)
     argv = calls(tmp_path, "calls030.log")[-1]
     assert argv[0] == "stream" and "--loudness-target=-20.0" in argv
+    assert "--stat-json" in argv and "--bits=24" in argv
+    assert stat["loudness"]["output"]["integrated_lufs"] == pytest.approx(
+        -20.0, abs=0.05
+    )
     assert audio_info(streamed)["frames"] == audio_info(staged)["frames"]
 
 

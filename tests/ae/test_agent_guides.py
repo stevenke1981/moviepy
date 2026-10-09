@@ -16,6 +16,7 @@ These tests keep the guides honest:
 
 import contextlib
 import dataclasses
+import importlib
 import io
 import re
 from pathlib import Path
@@ -180,10 +181,26 @@ def _number(value, line, flag):
         raise AssertionError(f"{line!r}: {flag} needs numbers, got {value!r}") from None
 
 
+def _check_module_command(line, tokens):
+    """Check ``python -m moviepy.ae.templates.<module> --flags`` against its help."""
+    module = importlib.import_module("moviepy.ae.templates" + tokens[0])
+    out = io.StringIO()
+    with contextlib.redirect_stdout(out), pytest.raises(SystemExit) as stop:
+        module.main(["--help"])
+    assert stop.value.code in (0, None), f"{line!r}: --help failed"
+    for token in tokens[1:]:
+        if token.startswith("--"):
+            flag = token.split("=", 1)[0]
+            assert flag in out.getvalue(), f"{line!r}: {flag} not in help"
+
+
 def _check_command(line):
     """Parse one command line with the real CLI help; fail with a clear message."""
     command = re.split(r"\s+\d?>", line, maxsplit=1)[0]
     tokens = command[len(PREFIX) :].split()
+    if command[len(PREFIX) :].startswith("."):
+        _check_module_command(line, tokens)
+        return
     group = []
     if tokens and tokens[0] == "music":
         group = ["music"]

@@ -523,7 +523,7 @@ def soundx_normalize(
     stream : bool, optional
         Force or forbid the streaming command; ``None`` chooses by file size.
     bits : int
-        WAV depth for ``convert`` (``stream`` keeps the input depth).
+        Output WAV depth for both ``convert`` and ``stream``.
     overwrite : bool
         Replace an existing ``target`` instead of raising.
     executable : str or Path, optional
@@ -557,11 +557,9 @@ def soundx_normalize(
         )
     goal = [option("loudness-target", float(target_lufs))]
     goal.append(option("true-peak", float(true_peak)))
-    if stream:
-        args = ["stream", str(source), str(target), *goal]
-    else:
-        args = ["convert", str(source), str(target), option("bits", int(bits))]
-        args += [*goal, "--stat-json"]
+    command = "stream" if stream else "convert"
+    args = [command, str(source), str(target), option("bits", int(bits))]
+    args += [*goal, "--stat-json"]
     stat = _convert(check.executable, args, target, existed)
     return stat if isinstance(stat, dict) else {}
 
