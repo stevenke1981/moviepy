@@ -12,6 +12,11 @@
 
 要用 ``python -m moviepy.ae.templates`` 製作一集新影片（建立專案、撰寫 ``episode.json``、驗證、預覽與正式輸出），請直接閱讀 :doc:`episode_workflow`。本頁說明的是各個單一模板的 API。
 
+音樂頻道製作流程
+----------------
+
+要製作長篇音樂影片（睡眠長片、番茄讀書片；``python -m moviepy.ae.templates music``），請閱讀 :doc:`music_workflow`。其中說明 ``music.json`` 的欄位、時長規則、續跑機制與人工驗收關卡。
+
 預設值：``ChannelPreset``
 -------------------------
 
