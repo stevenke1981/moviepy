@@ -5,7 +5,7 @@ from pathlib import Path
 import pytest
 
 from moviepy.ae.templates import presets
-from moviepy.ae.templates.presets import PRESETS, source_han_font
+from moviepy.ae.templates.presets import PRESETS, get_preset, source_han_font
 
 
 def test_presets_default_to_source_han():
@@ -52,3 +52,16 @@ def test_source_han_font_accepts_duplicate_download_names(tmp_path, monkeypatch)
     # The plain name wins over a numbered copy.
     (user / "SourceHanSerifTW-Bold.otf").write_bytes(b"")
     assert source_han_font("serif") == str(user / "SourceHanSerifTW-Bold.otf")
+
+
+def test_paper_ink_reads_on_paper():
+    from moviepy.ae.templates.presets import _contrast
+
+    story = get_preset("nightlamp_story")
+    assert _contrast(story.color("ink"), (239, 228, 204)) < 2
+    assert story.paper_ink() == (30, 26, 22)
+    history = get_preset("nightlamp_history")
+    assert history.paper_ink() == history.color("ink")
+    custom = story.with_overrides(palette={**story.palette, "paper_ink": "#102030"})
+    assert custom.paper_ink() == (16, 32, 48)
+    assert _contrast((0, 0, 0), (255, 255, 255)) == pytest.approx(21.0)

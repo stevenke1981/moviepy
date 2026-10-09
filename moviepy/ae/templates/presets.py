@@ -45,6 +45,18 @@ def _color(value, name):
     return tuple(result)
 
 
+def _contrast(a, b):
+    """WCAG contrast ratio of two sRGB colours (1 .. 21)."""
+
+    def lum(rgb):
+        c = [v / 255.0 for v in rgb]
+        c = [v / 12.92 if v <= 0.04045 else ((v + 0.055) / 1.055) ** 2.4 for v in c]
+        return 0.2126 * c[0] + 0.7152 * c[1] + 0.0722 * c[2]
+
+    hi, lo = sorted((lum(a), lum(b)), reverse=True)
+    return (hi + 0.05) / (lo + 0.05)
+
+
 def _number(value, name, low, high):
     if isinstance(value, bool) or not isinstance(value, (int, float)):
         raise ValueError(f"{name} must be a number")
@@ -220,6 +232,28 @@ class ChannelPreset:
     def color(self, role, default=(255, 255, 255)):
         """Return palette RGB codes for ``role`` or ``default``."""
         return self.palette.get(role, _color(default, "default"))
+
+    def paper_ink(self, paper=None, default=(30, 26, 22)):
+        """Return the ink colour for text printed on paper (tags, scrolls).
+
+        Uses the ``paper_ink`` role when set, else ``ink`` when it reads on
+        ``paper`` (WCAG contrast at least 4.5), else ``default``. A channel
+        whose ``ink`` is a light colour meant for footage would otherwise
+        print almost invisible text on its paper strips.
+
+        >>> get_preset("nightlamp_story").paper_ink()
+        (30, 26, 22)
+        >>> get_preset("nightlamp_history").paper_ink() == get_preset(
+        ...     "nightlamp_history").color("ink")
+        True
+        """
+        if "paper_ink" in self.palette:
+            return self.palette["paper_ink"]
+        paper = paper or self.color("paper", (239, 228, 204))
+        ink = self.palette.get("ink")
+        if ink is not None and _contrast(ink, paper) >= 4.5:
+            return ink
+        return _color(default, "default")
 
     def font(self, role, explicit=None):
         """Resolve a font path for ``role``; raise if it does not exist.

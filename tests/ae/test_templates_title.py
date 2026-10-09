@@ -535,3 +535,17 @@ def test_baked_cover_matches_transform_cover():
     # Same provenance either way; the bake is an implementation detail.
     assert baked.provenance["crop_box"] == live.provenance["crop_box"]
     assert baked.provenance["baked"] is True and live.provenance["baked"] is False
+
+
+def test_overlay_column_stays_above_the_subtitle_zone():
+    preset = get_preset("nightlamp_story")
+    spec = TitleCardSpec(
+        title=SPEC.title, brand=SPEC.brand, subtitle=SPEC.subtitle, layout="left_column"
+    )
+    overlay = build_title_card(spec, preset, fonts=LATIN, transparent=True)
+    card = build_title_card(spec, preset, fonts=LATIN)
+    bottom = max(box[3] for box in overlay.title_report["ink_boxes"].values())
+    assert bottom <= 1080 * 0.6
+    # An opaque card keeps the column centred in the whole safe area.
+    card_bottom = max(box[3] for box in card.title_report["ink_boxes"].values())
+    assert card_bottom > bottom

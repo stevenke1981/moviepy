@@ -176,7 +176,7 @@ def chapter_tag(
     fpath = preset.font("title", font)
     S = preset.size[1] / 1080.0
     paper = preset.color("paper", (239, 228, 204))
-    ink = preset.color("ink", (30, 26, 22))
+    ink = preset.paper_ink(paper)
     seal_rgb = preset.color("seal", (176, 30, 28))
 
     fs = int(size * S)

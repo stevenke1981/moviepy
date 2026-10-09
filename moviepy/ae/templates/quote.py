@@ -528,7 +528,7 @@ def vertical_quote(
     S = H / 1080.0
     paper = preset.color("paper", (239, 228, 204))
     shadow_rgb = preset.color("paper_shadow", (201, 180, 140))
-    ink = preset.color("ink", (30, 26, 22))
+    ink = preset.paper_ink(paper)
     seal_rgb = preset.color("seal", (176, 30, 28))
     bamboo_rgb = preset.color("bamboo", (200, 168, 106))
     bamboo_dark = preset.color("bamboo_dark", (138, 106, 52))

@@ -39,6 +39,9 @@ NO_LINE_END = set("([{（【《〈「『〔〖〘〚")
 _ASCII_NO_START = set(",.;:!?%")
 
 LAYOUTS = ("right_column", "left_column", "center")
+# Lower edge (fraction of the height) of the band an overlay column is
+# centred in, above the burned-subtitle zone.
+_OVERLAY_BAND = 0.6
 ROLES = ("intro", "outro")
 
 #: R23 tokens.json (1080p reference pixels), by segment role.
@@ -774,7 +777,14 @@ def build_title_card(spec, preset, background=None, *, fonts=None, transparent=F
         comp.add_layer(footage)
         comp.add_layer(overlay)
 
-    cursor = margin_y + (available - total) / 2
+    band = available
+    if transparent and not center:
+        # An overlay column sits over footage that carries burned subtitles
+        # in its lower part; centre it in the upper band when it fits there.
+        upper = size_h * _OVERLAY_BAND - margin_y
+        if total <= upper:
+            band = upper
+    cursor = margin_y + (band - total) / 2
     report_boxes = {}
     for name, layer, info, gap, (start, length), rise in entries:
         cursor += gap
