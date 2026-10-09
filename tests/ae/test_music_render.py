@@ -252,3 +252,196 @@ def test_still_image_background(media, tmp_path):
     render(media, "still.mp4", background=image, duration=1.0)
     frame = decode(media["folder"] / "still.mp4")[3]
     assert abs(int(frame[..., 1].mean()) - 200) < 12
+
+
+# --------------------------------------------------------------------------- #
+# overlay loops, video filters, audio filters
+# --------------------------------------------------------------------------- #
+
+
+class StepBox:
+    """A 12-frame loop: a 10x10 red box moving 10 px right per frame."""
+
+    size = (160, 30)
+    fps = float(FPS)
+    duration = 1.0
+
+    def fast_rgba(self, t):
+        n = int(round(t * FPS)) % 12
+        out = np.zeros((30, 160, 4), np.uint8)
+        out[10:20, n * 10 : n * 10 + 10] = (255, 0, 0, 255)
+        return out
+
+    def close(self):
+        pass
+
+
+@pytest.fixture(scope="module")
+def grey(tmp_path_factory):
+    from PIL import Image
+
+    from moviepy.ae.templates.ambience import export_overlay_loop
+
+    folder = tmp_path_factory.mktemp("ambience")
+    image = folder / "grey.png"
+    Image.new("RGB", (320, 180), (128, 128, 128)).save(image)
+    loop = folder / "steps.mov"
+    export_overlay_loop(StepBox(), loop, codec="qtrle")
+    t = np.arange(48000 * 4) / 48000
+    tone = (0.2 * np.sin(2 * np.pi * 440 * t)).astype(np.float32)
+    wav = folder / "tone.wav"
+    with AudioWriter(wav, rate=48000, channels=1, subtype="PCM_16") as writer:
+        writer.write(tone[:, None])
+    return {"folder": folder, "image": image, "loop": loop, "wav": wav}
+
+
+def render_grey(grey, name, **kw):
+    options = dict(OPTIONS, background=grey["image"], audio=grey["wav"])
+    options.update(kw)
+    return render_music_video(grey["folder"] / name, **options)
+
+
+def box_x(frame):
+    """Left edge of the red box (row 40 of the 160x90 frame), or None."""
+    row = frame[40].astype(int)
+    red = (row[:, 0] > 180) & (row[:, 1] < 90)
+    return int(np.argmax(red)) if red.any() else None
+
+
+def test_overlay_loops_and_video_filters_exact_frames(grey):
+    report = render_grey(
+        grey,
+        "loops.mp4",
+        overlay_loops=[(grey["loop"], 0, 25, 1.0)],
+        video_filters=["eq=brightness=-0.2"],
+    )
+    frames = decode(grey["folder"] / "loops.mp4")
+    assert frames.shape[0] == 48 and report["frames"] == 48
+    # the loop repeats every 12 frames with the box 10 px further each frame
+    assert [box_x(frames[i]) for i in (0, 1, 2, 12, 13, 25)] == [0, 10, 20, 0, 10, 10]
+    assert abs(float(frames[0, 60:, 100:].mean()) - 128) > 20  # filter darkened
+    assert frames[0, 60:, 100:].std() < 2
+    assert report["video_filters"] == ["eq=brightness=-0.2"]
+    assert report["overlay_loops"][0]["x"] == 0
+    saved = json.loads((grey["folder"] / "loops.mp4.json").read_text("utf-8"))
+    assert saved["overlay_loops"] == report["overlay_loops"]
+    assert saved["audio_filters"] == []
+    assert "-stream_loop" in saved["command"]
+
+
+def test_overlay_loop_opacity_blends(grey):
+    render_grey(
+        grey, "half.mp4", overlay_loops=[(grey["loop"], 0, 25, 0.5)], duration=1.0
+    )
+    frame = decode(grey["folder"] / "half.mp4")[0]
+    inside = frame[38:42, 2:8].astype(int)
+    assert 180 < inside[..., 0].mean() < 215 and 45 < inside[..., 1].mean() < 80
+
+
+def test_overlay_loops_with_ae_overlay_order(grey):
+    render_grey(
+        grey,
+        "stack.mp4",
+        overlay_loops=[(grey["loop"], 0, 25, 1.0)],
+        overlay=(red_box, ()),
+        overlay_position=(100, 50),
+        duration=1.0,
+    )
+    frame = decode(grey["folder"] / "stack.mp4")[0]
+    assert box_x(frame) == 0 and frame[60, 115, 0] > 200
+
+
+def test_preview_offset_matches_full_render(grey):
+    from moviepy.ae.templates.ambience import LightArc, SleepFade
+
+    arc = LightArc([(0, {}), (4, {"brightness": -0.3})], max_rate=None)
+    fade = SleepFade(1, 4, floor=0.3, max_rate=None)
+    kw = dict(
+        overlay_loops=[(grey["loop"], 0, 25, 1.0)],
+        video_filters=[arc.to_ffmpeg_filter(), fade.video_filter()],
+        audio_filters=[fade.audio_filter()],
+    )
+    full = decode(render_grey(grey, "pfull.mp4", **kw) and grey["folder"] / "pfull.mp4")
+    out = grey["folder"] / "pwin.mp4"
+    preview_window(
+        out,
+        background=grey["image"],
+        audio=grey["wav"],
+        start=2.0,
+        seconds=2.0,
+        **OPTIONS,
+        **kw,
+    )
+    window = decode(out)
+    assert window.shape[0] == 24
+    for i in (0, 11, 23):
+        # same picture as the full render at the same global instant ...
+        assert (
+            abs(
+                float(window[i, 60:, 100:].mean())
+                - float(full[24 + i, 60:, 100:].mean())
+            )
+            < 3
+        )
+        # ... and the loop is advanced to the same position
+        assert box_x(window[i]) == box_x(full[24 + i])
+    # a render without the offset would look different: the filters ramp with t
+    assert (
+        abs(float(full[0, 60:, 100:].mean()) - float(full[24, 60:, 100:].mean())) > 15
+    )
+    pcm = run_ffmpeg(
+        "-v", "error", "-i", str(out), "-f", "s16le", "-ac", "1", "-ar", "48000", "-"
+    ).stdout
+    whole = run_ffmpeg(
+        "-v", "error", "-i", str(grey["folder"] / "pfull.mp4"),
+        "-f", "s16le", "-ac", "1", "-ar", "48000", "-",
+    ).stdout  # fmt: skip
+    a = np.abs(np.frombuffer(pcm, np.int16).astype(float))
+    b = np.abs(np.frombuffer(whole, np.int16).astype(float))[96000:]
+    n = min(len(a), len(b)) - 2000
+    assert abs(a[1000:n].mean() - b[1000:n].mean()) < 0.1 * b[1000:n].mean() + 5
+
+
+def test_long_filter_graph_uses_script_file(grey):
+    from moviepy.ae.templates.ambience import LightArc
+
+    keys = [
+        (i * 0.05, {"brightness": -0.05 * (i % 2), "saturation": 1 - 0.1 * (i % 3),
+                    "warmth": 0.2 * (i % 2)})
+        for i in range(60)
+    ]  # fmt: skip
+    arc = LightArc(keys, max_rate=None)
+    expr = arc.to_ffmpeg_filter()
+    assert len(expr) > 6000
+    report = render_grey(
+        grey, "long.mp4", video_filters=[expr], duration=1.0, audio=None
+    )
+    assert "-filter_complex_script" in report["command"]
+    assert (grey["folder"] / "long.mp4.filtergraph.txt").is_file()
+    assert decode(grey["folder"] / "long.mp4").shape[0] == 12
+
+
+def test_filter_arguments_validated(grey):
+    with pytest.raises(ValueError):
+        render_grey(grey, "badop.mp4", overlay_loops=[(grey["loop"], 0, 0, 2.0)])
+    with pytest.raises(FileNotFoundError):
+        render_grey(grey, "nofile.mp4", overlay_loops=[("nope.mov", 0, 0, 1.0)])
+    with pytest.raises(ValueError):
+        render_grey(
+            grey, "noaudio.mp4", audio=None, duration=1.0, audio_filters=["volume=1"]
+        )
+
+
+def test_final_filters_dim_overlay_but_video_filters_do_not(grey):
+    from moviepy.ae.templates.ambience import SleepFade
+
+    fade = SleepFade(0.0, 1.0, floor=0.3, max_rate=None)
+    base = dict(overlay_loops=[(grey["loop"], 0, 25, 1.0)], duration=4.0)
+    report = render_grey(grey, "ff.mp4", final_filters=[fade.video_filter()], **base)
+    render_grey(grey, "vf.mp4", video_filters=[fade.video_filter()], **base)
+    # frame 36 (t = 3 s): faded to the floor, and the box is at its x = 0 phase
+    dimmed = decode(grey["folder"] / "ff.mp4")[36][38:42, 2:8].astype(float)
+    plain = decode(grey["folder"] / "vf.mp4")[36][38:42, 2:8].astype(float)
+    assert plain[..., 0].mean() > 200
+    assert dimmed[..., 0].mean() < 130
+    assert report["final_filters"] == [fade.video_filter()]

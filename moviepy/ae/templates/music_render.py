@@ -44,6 +44,7 @@ _NO_WINDOW = getattr(subprocess, "CREATE_NO_WINDOW", 0) if os.name == "nt" else 
 _IMAGE_SUFFIXES = (".png", ".jpg", ".jpeg", ".bmp", ".webp", ".tif", ".tiff")
 _SAFE_NAME = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_.\-]*$")
 _RATE = 48000
+_GRAPH_INLINE_LIMIT = 6000
 
 
 def frame_count(seconds, fps, *, tolerance=1e-6):
@@ -118,6 +119,9 @@ def _rgba_frame(clip, t):
     ``to_uint8_rgb`` and alpha from the buffer, as the channel's spectrum step
     does); any other clip uses its frame and optional mask.
     """
+    fast = getattr(clip, "fast_rgba", None)
+    if fast is not None:
+        return fast(float(t))
     render = getattr(clip, "render_buffer", None)
     if render is not None:
         buffer = render(float(t))
@@ -233,6 +237,11 @@ def _build_command(
     if has_chapters:
         command += ["-f", "ffmetadata", "-i", plan["chapters"]]
         chapter_index, index = index, index + 1
+    loop_indices = []
+    for item in plan["loops"]:
+        command += ["-stream_loop", "-1", "-i", item["path"]]
+        loop_indices.append(index)
+        index += 1
 
     chain = [f"fps={ratio}"]
     if plan["trim_frames"]:
@@ -243,31 +252,69 @@ def _build_command(
         f"crop={width}:{height}",
         "setsar=1",
     ]
+    if plan["video_filters"]:
+        # Filters see the global time ``t``: shift the PTS, filter, shift back.
+        if plan["start"]:
+            chain.append(f"setpts=PTS+{plan['start']:.6f}/TB")
+        chain += plan["video_filters"]
+        if plan["start"]:
+            chain.append("setpts=PTS-STARTPTS")
     graph = f"[{background_index}:v:0]" + ",".join(chain) + "[bg]"
     top = "bg"
+    for k, (item, at) in enumerate(zip(plan["loops"], loop_indices)):
+        sub = [f"fps={ratio}"]
+        if item["trim_frames"]:
+            sub += [f"trim=start_frame={item['trim_frames']}", "setpts=PTS-STARTPTS"]
+        sub.append("format=rgba")
+        if item["opacity"] < 1.0:
+            sub.append(f"colorchannelmixer=aa={item['opacity']:.6g}")
+        graph += f";[{at}:v:0]" + ",".join(sub) + f"[ol{k}]"
+        graph += f";[{top}][ol{k}]overlay={item['x']}:{item['y']}:format=auto[lp{k}]"
+        top = f"lp{k}"
     if overlay_index is not None:
         x, y = plan["overlay_position"]
-        graph += f";[bg][{overlay_index}:v:0]overlay={x}:{y}:shortest=1:format=auto[ov]"
+        graph += (
+            f";[{top}][{overlay_index}:v:0]overlay={x}:{y}:shortest=1:format=auto[ov]"
+        )
         top = "ov"
     tail = []
+    shifted = False
+    if plan["start"] and (plan["ass"] is not None or plan["final_filters"]):
+        # Subtitle events and final filters use global times: give the frames
+        # global PTS once, and restore local PTS afterwards.
+        tail.append(f"setpts=PTS+{plan['start']:.6f}/TB")
+        shifted = True
     if plan["ass"] is not None:
-        if plan["start"]:
-            # Subtitle events carry global times; give the frames global PTS.
-            tail.append(f"setpts=PTS+{plan['start']:.6f}/TB")
         tail.append(f"ass=filename={plan['ass_name']}")
-        if plan["start"]:
-            tail.append("setpts=PTS-STARTPTS")
     tail.append("format=yuv420p")
+    tail += plan["final_filters"]
+    if shifted:
+        tail.append("setpts=PTS-STARTPTS")
     graph += f";[{top}]" + ",".join(tail) + "[v]"
     if audio_index is not None:
         first = int(round(plan["start"] * _RATE))
         last = first + int(round(plan["seconds"] * _RATE))
-        graph += (
-            f";[{audio_index}:a:0]aresample={_RATE},"
-            f"atrim=start_sample={first}:end_sample={last},"
-            "asetpts=PTS-STARTPTS[a]"
-        )
-    command += ["-filter_complex", graph, "-map", "[v]"]
+        achain = [
+            f"aresample={_RATE}",
+            f"atrim=start_sample={first}:end_sample={last}",
+            "asetpts=PTS-STARTPTS",
+        ]
+        if plan["audio_filters"]:
+            if plan["start"]:
+                achain.append(f"asetpts=PTS+{plan['start']:.6f}/TB")
+            achain += plan["audio_filters"]
+            if plan["start"]:
+                achain.append("asetpts=PTS-STARTPTS")
+        graph += f";[{audio_index}:a:0]" + ",".join(achain) + "[a]"
+    if len(graph) > _GRAPH_INLINE_LIMIT:
+        # A long expression chain (many LightArc keyframes) would exceed the
+        # Windows command-line limit: hand the graph to FFmpeg as a file.
+        script = Path(plan["output"] + ".filtergraph.txt")
+        script.write_text(graph, encoding="utf-8")
+        command += ["-filter_complex_script", str(script)]
+    else:
+        command += ["-filter_complex", graph]
+    command += ["-map", "[v]"]
     if audio_index is not None:
         command += ["-map", "[a]"]
     command += [
@@ -350,6 +397,10 @@ def render_music_video(
     overwrite=False,
     metadata=None,
     loop_frames=None,
+    overlay_loops=(),
+    video_filters=(),
+    audio_filters=(),
+    final_filters=(),
 ):
     """Render a long music video in one FFmpeg pass.
 
@@ -407,6 +458,26 @@ def render_music_video(
     loop_frames : int, optional
         Frames in one background loop at ``fps``; measured by decoding when
         ``start`` is not zero and this is omitted.
+    overlay_loops : sequence of tuple
+        ``(path, x, y, opacity)`` transparent loops (for example from
+        ``ambience.export_overlay_loop``) repeated with ``-stream_loop -1`` and
+        overlaid, in order, between the background and the AE overlay. With
+        ``start`` they are advanced to the same loop position as the background.
+    video_filters : sequence of str
+        FFmpeg filters applied to the background after cover-fitting (for
+        example ``LightArc.to_ffmpeg_filter()`` or ``SleepFade.video_filter()``).
+        They see the global time ``t = start + i / fps``, so a window rendered
+        with ``start`` looks like the same instant of the full render. The
+        particle loops, AE overlay and subtitles are not filtered.
+    audio_filters : sequence of str
+        FFmpeg audio filters applied after the sample-exact cut, also with
+        global time (for example ``SleepFade.audio_filter()``).
+    final_filters : sequence of str
+        FFmpeg filters applied to the whole composited frame after every
+        overlay and the ASS burn (full-frame post filters), so a
+        ``SleepFade.video_filter()`` here also dims particles, spectrum and
+        text. They see the global time ``t = start + i / fps`` like
+        ``video_filters``.
 
     Returns
     -------
@@ -493,6 +564,30 @@ def render_music_video(
                 close()
             probe = None
     x, y = (int(v) for v in overlay_position)
+    video_filters = [str(f) for f in video_filters]
+    audio_filters = [str(f) for f in audio_filters]
+    final_filters = [str(f) for f in final_filters]
+    if audio is None and audio_filters:
+        raise ValueError("audio_filters need an audio file")
+
+    loops = []
+    for item in overlay_loops:
+        lpath, lx, ly, lopacity = item
+        lpath = Path(lpath).resolve()
+        if not lpath.is_file():
+            raise FileNotFoundError(lpath)
+        lopacity = float(lopacity)
+        if not 0.0 <= lopacity <= 1.0:
+            raise ValueError("overlay loop opacity must be in 0..1")
+        count = None
+        ltrim = 0
+        if start:
+            count = _looped_frames(lpath, fps)
+            ltrim = int(round(start * fps)) % count
+        loops.append(
+            {"path": str(lpath), "x": int(lx), "y": int(ly), "opacity": lopacity,
+             "loop_frames": count, "trim_frames": ltrim}
+        )  # fmt: skip
 
     trim = 0
     period = None
@@ -515,6 +610,10 @@ def render_music_video(
         "frames": frames,
         "trim_frames": trim,
         "output": str(output),
+        "loops": loops,
+        "video_filters": video_filters,
+        "audio_filters": audio_filters,
+        "final_filters": final_filters,
     }
 
     chosen = detect_encoder(encoder)
@@ -616,6 +715,10 @@ def render_music_video(
             }
         ),
         "overlay": overlay_plan,
+        "overlay_loops": loops,
+        "video_filters": video_filters,
+        "audio_filters": audio_filters,
+        "final_filters": final_filters,
         "ass": plan["ass"],
         "chapters": plan["chapters"],
         "metadata": dict(metadata or {}),
