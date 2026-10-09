@@ -17,6 +17,92 @@
 
 要製作長篇音樂影片（睡眠長片、番茄讀書片；``python -m moviepy.ae.templates music``），請閱讀 :doc:`music_workflow`。其中說明 ``music.json`` 的欄位、時長規則、續跑機制與人工驗收關卡。
 
+模板庫：``library``
+---------------------
+
+``moviepy.ae.templates.library`` 是所有夜燈說書模板的目錄。每一筆 ``TemplateInfo`` 記錄模板名稱、負責建構它的模組與函式、對應的 ``episode.json`` 欄位（沒有則為空字串，表示只能由 Python 呼叫），以及它取自哪一集。編輯者要查「武則天的字幕底框怎麼做」時，不必先讀原始碼。
+
+命令列有三個子命令：
+
+.. code-block:: console
+
+    python -m moviepy.ae.templates library list --tag wuzetian
+    python -m moviepy.ae.templates library show glossary
+    python -m moviepy.ae.templates library recipes
+
+``library list [--tag TAG]`` 以對齊的純文字列出模板，``--tag`` 篩選標籤（例如 ``wuzetian``、``subtitle``、``overlay``、``camera``）。``library show NAME`` 以 JSON 印出一個模板或一份配方。``library recipes`` 列出整集配方：``history`` （夜燈說書・歷史人物）與 ``story`` （夜燈說書・聊齋故事），兩者都以 ``configs`` 目錄下的 JSON 為準。``init DIR --channel history`` 會複製對應的配方，因此新集的起點就是武則天 r2b 的版式。
+
+Python 介面如下，``get_template(name)`` 回傳 ``TemplateInfo``，``list_templates(tag)`` 回傳這種物件的清單，``get_recipe(name)`` 回傳 ``Recipe``：
+
+.. code-block:: python
+
+    from moviepy.ae.templates.library import get_recipe, get_template, list_templates
+
+    info = get_template("glossary")
+    print(info.module, info.entry, info.episode_field)  # subtitles load_glossary subtitles.highlight
+    print([t.name for t in list_templates("wuzetian")])
+
+    recipe = get_recipe("history")
+    print(recipe.config, sorted(recipe.templates))
+    config = recipe.load()  # 與 configs/nightlamp_history.json 相同的 dict
+
+``Recipe.load()`` 回傳配方的 dict；``Recipe.path`` 為 JSON 的絕對路徑。配方是整集的起點，不是可直接渲染的成品：所有 ``PLACEHOLDER`` 值都要換成人類提供的素材與文字。
+
+武則天 r2b 手法對照
+-------------------
+
+武則天 r2b `影片 <https://www.youtube.com/watch?v=SA2kFayJ8Ok>`_ 的做法拆成下表的各項手法，每一項對應一個模板或 ``episode.json`` 欄位。欄位的完整說明見 :doc:`episode_workflow`，相關章節為 4.5、4.6、4.8、4.12 至 4.14 節，這裡不重複列出。
+
+.. list-table::
+   :header-rows: 1
+   :widths: 26 40 34
+
+   * - r2b 手法
+     - 模板／欄位
+     - 說明
+   * - 5% 貼字黑底
+     - ``SubtitleStyle`` 的 ``plate_opacity`` 0.05、``plate_color`` 黑、``plate_padding``
+     - 字幕後方的半透明底，預設由 preset 提供。
+   * - 專名土黃 ``#C9A35D``
+     - ``SubtitleStyle.highlight_color``；``subtitles.glossary``、``subtitles.highlight``
+     - 詞表中的人名、地名以土黃上色，中英文兩行都套用。
+   * - 繁中 72、英文 42
+     - ``SubtitleStyle.primary_size`` 72、``secondary_size`` 42
+     - 以 1080 高為參考，燒錄時依 ``scaled_px`` 等比縮放。
+   * - 左右移動同時放大、停在主體上對焦
+     - ``shots[].move`` 為 ``drift-left`` 或 ``drift-right``，``shots[].hold`` 1.15
+     - ``ken_burns`` 的 drift 模式，放大 1.02 至 1.10，左右各 3.5%。
+   * - 同一張圖分段運鏡
+     - ``shots[].segment``
+     - 只取 drift 曲線的一段，讓同一張圖接兩個鏡頭。
+   * - 片頭影片 0.75 倍
+     - ``shots[].speed`` 0.75
+     - 影片段以較慢速度播放，時長由 ``(out - in) / speed`` 算出。
+   * - 素材定格
+     - ``shots[].freeze_at``
+     - 播到指定來源秒數後停在該格，後段仍佔用鏡頭時長。
+   * - 左上章節紙條每 38 秒重現 7.4 秒
+     - ``chapters[].repeat_every`` 38、``chapters[].visible`` 7.4
+     - ``chapter_tag`` 的週期版本，每次只露出 7.4 秒。
+   * - 片頭標題疊字
+     - ``title_overlay`` （``TitleOverlaySpec``），``layout`` 為 ``left_column``
+     - 文字直接疊在播放中的畫面上，無底卡；透明卡加描邊。
+   * - 直式史書引文
+     - ``quotes``
+     - ``vertical_quote``，由右至左書寫。
+   * - 史料圖完整呈現加 12 號引用
+     - ``source_inserts``，``layout`` 為 ``full``，``citation``
+     - ``SourceInsert``：圖不裁切、放大不超過 2 倍；出處字級基準 12 px。
+   * - 片尾按讚、訂閱、分享
+     - ``end_card`` （``start`` 為 null 時置於片尾）
+     - ``EndCard``，三個按鈕輪流高亮。
+   * - 兩首配樂章節組接，成片響度
+     - ``assemble_chapters``；``normalize_loudness``
+     - 渲染之後另行處理，見下文「響度標準化」。
+   * - 三語軟字幕與章節封裝
+     - ``mux_delivery`` （zh-TW、en、zh-CN，章節 FFMETADATA）
+     - 無聲成片加混音，封裝為一支 MP4。
+
 預設值：``ChannelPreset``
 -------------------------
 
@@ -121,6 +207,25 @@
 
 ``fonts`` 參數預設讀取 preset 的字型。若要使用 Pillow 內建的拉丁字型，必須明確傳入 ``{"title": None, "body": None}``。
 
+``title_overlay``：片頭標題疊字
+------------------------------------
+
+武則天 r2b 的片頭標題不放在底卡上，而是直接疊在開頭的影片上，文字淡入、淡出，畫面持續播放。``build_title_card(spec, preset, background=None, *, fonts=None, transparent=False)`` 的 ``transparent=True`` 即為此模式：不畫底，並為文字加上描邊。``TitleCardSpec(layout="left_column")`` 把文字區放在左欄；``layout`` 還可為 ``right_column`` 與 ``center``。
+
+在 ``episode.json`` 中以 ``title_overlay`` 描述，欄位與 ``intro``、``outro`` 相同，另有 ``start`` （時間軸上的秒數）。它不接受轉場（``transition`` 必須為 ``cut``）。
+
+.. code-block:: python
+
+    from moviepy.ae.templates.presets import get_preset
+    from moviepy.ae.templates.title_card import TitleCardSpec, build_title_card
+
+    preset = get_preset("nightlamp_history")
+    overlay = build_title_card(
+        TitleCardSpec(title="片頭標題", subtitle="副標", layout="left_column"),
+        preset,
+        transparent=True,
+    )
+
 ``subtitles``：雙語字幕
 -----------------------
 
@@ -186,6 +291,23 @@
 
 燒錄時改用 ``subtitle_layer(..., overflow="split", words=words)`` 或 ``burn_subtitles(..., overflow="split")``，圖層會用自己的字型量測後再拆句，``layer.reflow_report`` 記錄哪些字幕被拆開、用哪種方式對時。用《嬌娜》全片 532 句實測：輸出 616 句，文字完全一致，最寬一句 1340 px（上限 1352），沒有重疊，只有 5 句因整句沒有標點而必須在詞間切開。
 
+字幕底框、專名色與詞表
+~~~~~~~~~~~~~~~~~~~~~~
+
+``SubtitleStyle`` 的 ``plate_opacity`` 大於 0 時，每條字幕後方會畫一個 ``plate_color`` 的矩形底，``plate_padding`` 為四周留白（以參考高度計）。夜燈說書兩套 preset 預設為 5% 黑底。``highlight_color`` 是專名的顏色；未設定時退回 preset 的 ``accent``，兩者都沒有就報錯。
+
+``load_glossary(source)`` 讀入 r2b 的 ``glossary.json`` 格式（路徑、JSON 字串或 dict 皆可），回傳去重後、由長到短排序的 tuple。詞表中的 ``李治／唐高宗`` 這類寫法會拆成各自的詞；英文值也都是詞。把結果傳給 ``highlight=`` 即可。
+
+.. code-block:: python
+
+    from moviepy.ae.templates.subtitles import burn_subtitles, load_glossary
+
+    terms = load_glossary("glossary.json")
+    print(preset.subtitles.plate_opacity, preset.subtitles.highlight_color)
+    comp = burn_subtitles(comp, zh, preset, secondary=en, highlight=terms)
+
+``subtitle_layer(cues, preset, *, secondary=None, font=None, secondary_font=None, highlight=(), **kw)`` 的 ``highlight`` 參數相同。在 ``episode.json`` 中，對應欄位為 ``subtitles.glossary`` （詞表路徑）與 ``subtitles.highlight`` （額外的詞）。
+
 ``ken_burns``：靜圖次像素運鏡
 -------------------------------
 
@@ -206,6 +328,17 @@
 
 ``check_motion(clip_or_comp, start, duration, *, box=None)`` 以相位相關法量測位移，回傳 ``verdict``（``SMOOTH``、``STATIC`` 或 ``JITTER``）。這是 NLH ``motion-check`` 的對應功能，門檻也相同。
 
+``move="drift-left"`` 與 ``move="drift-right"`` 是武則天 r2b 的左右移動：視窗水平移動左右各 3.5%（``KEN_BURNS_DEFAULTS`` 的 ``drift_distance``），同時從 1.02 放大到 1.10（``drift_zoom``）。``segment=(a, b)`` （``0 <= a < b <= 1``）只取這段運動曲線，讓同一張圖可以分兩段接上；``segment`` 只能搭配 drift 模式使用。
+
+.. code-block:: python
+
+    from moviepy.ae.templates.ken_burns import ken_burns
+    from moviepy.ae.templates.presets import get_preset
+
+    preset = get_preset("nightlamp_history")
+    first = ken_burns("still.png", preset, duration=8.0, move="drift-left", segment=(0.0, 0.5), hold=1.15)
+    second = ken_burns("still.png", preset, duration=8.0, move="drift-left", segment=(0.5, 1.0), hold=1.15)
+
 ``chapter_tag``：章節標籤
 -------------------------
 
@@ -222,6 +355,8 @@
     )
     x, y = int(tag.meta["x"]), int(tag.meta["y"])
     # 疊到影片上時，把 tag.composition 放在 (x, y)
+
+週期重現由 ``episode.json`` 的 ``chapters[].repeat_every`` 與 ``chapters[].visible`` 控制（見 :doc:`episode_workflow`）：紙條在章節開始時滑入 ``visible`` 秒，之後每隔 ``repeat_every`` 秒重現一次，直到章節結束。武則天 r2b 的設定是每 38 秒重現、每次 7.4 秒，``visible`` 的預設值即為 7.4。
 
 ``vertical_quote``：直式引文
 ----------------------------
@@ -297,6 +432,88 @@ R5 的章節疊圖：左上頻道 logo（圖檔或文字）、右上半透明浮
 
 ``EpisodeSpec`` 也接受這三項：``subtitles.overflow`` / ``subtitles.words``、``scene_overlay``（``chapters``、``logo``、``watermark``、``cta_text``、``layout``），以及 ``name_tags``（``NameTag.to_dict`` 格式的清單）。``build_episode`` 會檢查它們不與片頭片尾字卡重疊，並寫入 ``episode_report``。
 
+``source_insert``：史料圖插入與引用
+-----------------------------------
+
+``SourceInsert`` 描述一張史料圖（掃描件、畫作或照片）的出現時段與出處。``layout="full"`` 把整張圖置中放在字幕安全框之上，保持原比例、不裁切，只在必要時放大，且最多 2 倍；圖片只做縮放，像素不會被編修。``layout="portrait"`` 是目錄卡版式：圖在左側以原尺寸顯示，右欄依序為 ``title``、``caption``、``note``。
+
+``citation`` 是必填的出處短句，以 1080 高為基準 12 px 的字級放在角落，位置不與字幕或圖片重疊。``citation_corner="auto"`` 會挑出最安靜的角落；指定的角落若壓到字幕區會報錯。``background`` 可為 ``"paper"``、``"dark"`` 或背景圖路徑。``fade`` 為淡入與淡出秒數。``sha256`` 可選填，渲染時會核對圖檔摘要。
+
+``add_source_inserts(comp, inserts, **kw)`` 把多張插入加入 ``comp``，``font`` 與 ``title_font`` 經 ``**kw`` 傳給 ``source_insert_layers``。
+
+.. code-block:: python
+
+    from moviepy.ae.templates.source_insert import SourceInsert, add_source_inserts
+
+    insert = SourceInsert(
+        "media/scan.jpg",
+        start=3.0,
+        duration=5.0,
+        citation="出處：示例館藏",
+        layout="full",
+    )
+    add_source_inserts(comp, [insert])
+
+``end_card``：片尾按讚・訂閱・分享輪播
+--------------------------------------------------
+
+``EndCard`` 是片尾的按讚・訂閱・分享卡。``actions`` 為 1 至 5 個按鈕文字（預設為「按讚」、「訂閱」、「分享」），每 ``period`` 秒（預設 1.6）換一個按鈕高亮；高亮的按鈕依 80%、106%、100% 的比例彈出（30 fps 下為 10 格），其餘按鈕淡化。圖示以 Pillow 多邊形繪製，不需要 emoji 字型。``channel`` 為頻道名，``line`` 為按鈕上方的號召語，``question`` 為選填的留言問題。
+
+``add_end_card(comp, card, **kw)`` 把卡片加入 ``comp``。在 ``episode.json`` 中，``end_card.start`` 設為 null 時，卡片會放在時間軸的結尾，長度為 ``duration``。
+
+.. code-block:: python
+
+    from moviepy.ae.templates.end_card import EndCard, add_end_card
+
+    card = EndCard(start=100.0, duration=6.0, channel="夜燈說書")
+    add_end_card(comp, card)
+
+``delivery``：成片封裝
+-----------------------
+
+``mux_delivery`` 把無聲成片、旁白或母帶混音、數條 SRT 字幕與章節合成一支 MP4，即武則天 r2b 原本以手動 ffmpeg 完成的步驟。影片串流直接複製，音訊編為 AAC（``audio_bitrate`` 預設 ``256k``）；每個 SRT 成為一條 ``mov_text`` 軟字幕軌，語言標籤轉為 ISO 639-2（``zh-TW`` 與 ``zh-CN`` 為 ``zho``，``en`` 為 ``eng``）。軌道名稱預設為「繁體中文（臺灣）」、「简体中文」與「English」，可由 ``subtitle_titles`` 覆寫；``default_subtitle`` 指定預設的字幕軌。
+
+輸出會先寫成 ``<stem>.muxing.mp4``，完成後再改名。目標檔已存在時拋出 ``FileExistsError``，要覆寫須傳入 ``overwrite=True``。回傳值包含 ``streams``、``chapters``、``duration`` 與 ``probe``。
+
+.. code-block:: python
+
+    from moviepy.ae.templates.delivery import chapters_ffmetadata, mux_delivery
+
+    info = mux_delivery(
+        "final/video.mp4",
+        "delivery/episode.mp4",
+        audio="final/narration.wav",
+        subtitles={
+            "zh-TW": "subtitles/zh-TW.srt",
+            "en": "subtitles/en.srt",
+            "zh-CN": "subtitles/zh-CN.srt",
+        },
+        default_subtitle="zh-TW",
+        chapters=[(0.0, 26.0, "第一章"), (26.0, 54.5, "第二章")],
+    )
+    print(info["streams"], info["chapters"], info["duration"])
+    print(chapters_ffmetadata([(0, 1.5, "A=B")]))
+
+響度標準化：``normalize_loudness``
+-----------------------------------
+
+``build_episode`` **不做響度標準化**。旁白與配樂依 ``audio`` 中的增益相加，成片的 LUFS 與真峰值不保證符合規格。武則天 r2b 的做法是渲染完成後，再以 soundx 把成片音軌調到 −16 LUFS、真峰值不超過 −1.5 dBTP。``normalize_loudness`` 的預設值是 −18 LUFS 與 −1.8 dBTP，因此必須明確傳入目標：
+
+.. code-block:: python
+
+    from moviepy.ae.templates.music_audio import normalize_loudness
+
+    report = normalize_loudness(
+        "final/mix.wav",
+        "final/mix_norm.wav",
+        target_lufs=-16.0,
+        true_peak=-1.5,
+        backend="soundx",
+    )
+    print(report["output"])  # 重新量測的結果，應檢查它是否達到目標
+
+配樂章節組接使用 ``assemble_chapters(sources, seconds, output, ...)``：每首配樂循環至章節長度，章節之間預設以 12 秒交叉淡化（``chapter_crossfade``）。
+
 ``paper``：紙張與印章輔助
 -------------------------
 
@@ -331,6 +548,8 @@ R5 的章節疊圖：左上頻道 logo（圖檔或文字）、右上半透明浮
 
 - ``media_background`` 只取**單一影格**並靜止保持，不做影片播放；需要動態背景請自行組合 ``AVLayer``。
 - ``ken_burns`` 的來源必須是不透明影像；含透明像素會拋出 ``ValueError``。運鏡是二維裁切、平移與等比縮放，不會產生新的視角或視差。
+- ``build_episode`` 不做響度標準化；渲染後請以 ``normalize_loudness`` 處理成片音軌。
+- ``mux_delivery`` 只複製影片串流，不轉碼；字幕軌以 ``mov_text`` 寫入 MP4，ffmpeg 失敗時拋出的 ``RuntimeError`` 會附上 stderr 的末段。
 - ``fit_lines`` 不截斷文字：放不下時直接拋出錯誤，需由呼叫端縮短文案或增加 ``max_lines``。
 - ``vertical_quote`` 的引文應照原文輸入，模板不做繁簡轉換或校對。
 - ``to_ass`` 預設字型名稱為 ``Microsoft JhengHei``，與燒錄用的思源黑體不同；若要 ASS 與燒錄外觀一致，請傳入 ``font_name="Source Han Sans TW"``。

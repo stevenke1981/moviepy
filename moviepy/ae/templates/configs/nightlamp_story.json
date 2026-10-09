@@ -1,12 +1,17 @@
 {
   "name": "nightlamp_story_episode",
   "preset": "nightlamp_story",
-  "preset_overrides": {"fps": 24},
+  "preset_overrides": {
+    "fps": 24
+  },
   "fonts": {},
   "background": {
     "source": "media/PLACEHOLDER_background.jpg",
     "frame_time": null,
-    "focal_point": [0.5, 0.5],
+    "focal_point": [
+      0.5,
+      0.5
+    ],
     "overlay_opacity": 0.5
   },
   "intro": {
@@ -16,21 +21,38 @@
     "layout": "right_column",
     "duration": 6.0
   },
-  "outro": {
-    "title": "PLACEHOLDER 謝謝收看",
-    "brand": "夜燈故事",
-    "subtitle": "",
-    "layout": "right_column",
-    "duration": 6.0
-  },
+  "outro": null,
   "shots": [
-    {"image": "media/PLACEHOLDER_shot_01.jpg", "duration": 8.0, "move": "auto", "hold": 1.5},
-    {"image": "media/PLACEHOLDER_shot_02.jpg", "duration": 8.0, "move": "auto", "hold": 1.5,
-     "transition": "crossfade", "transition_duration": 0.6},
-    {"image": "media/PLACEHOLDER_shot_03.jpg", "duration": 8.0, "move": "auto", "hold": 1.5,
-     "transition": "crossfade", "transition_duration": 0.6},
-    {"image": "media/PLACEHOLDER_shot_04.jpg", "duration": 8.0, "move": "auto", "hold": 1.5,
-     "transition": "crossfade", "transition_duration": 0.6}
+    {
+      "image": "media/PLACEHOLDER_shot_01.jpg",
+      "duration": 8.0,
+      "move": "drift-right",
+      "hold": 1.15
+    },
+    {
+      "image": "media/PLACEHOLDER_shot_02.jpg",
+      "duration": 8.0,
+      "move": "drift-left",
+      "hold": 1.15,
+      "transition": "crossfade",
+      "transition_duration": 0.6
+    },
+    {
+      "image": "media/PLACEHOLDER_shot_03.jpg",
+      "duration": 8.0,
+      "move": "drift-right",
+      "hold": 1.15,
+      "transition": "crossfade",
+      "transition_duration": 0.6
+    },
+    {
+      "image": "media/PLACEHOLDER_shot_04.jpg",
+      "duration": 8.0,
+      "move": "drift-left",
+      "hold": 1.15,
+      "transition": "crossfade",
+      "transition_duration": 0.6
+    }
   ],
   "chapters": [],
   "quotes": [],
@@ -39,7 +61,12 @@
     "secondary": "subtitles/PLACEHOLDER_en.srt",
     "protected": [],
     "primary_lang": "zh-TW",
-    "secondary_lang": "en"
+    "secondary_lang": "en",
+    "overflow": "split",
+    "glossary": null,
+    "highlight": [
+      "PLACEHOLDER 人名"
+    ]
   },
   "audio": {
     "narration": "media/PLACEHOLDER_narration.wav",
@@ -54,6 +81,47 @@
     "trim_audio": false
   },
   "chapter_period": 5.5,
-  "dip_color": [0, 0, 0],
-  "seed": 7
+  "dip_color": [
+    0,
+    0,
+    0
+  ],
+  "seed": 7,
+  "end_card": {
+    "start": null,
+    "duration": 8.0,
+    "channel": "夜燈說書",
+    "line": "訂閱・下一回聽下一個故事",
+    "question": "PLACEHOLDER 你最喜歡哪個角色？"
+  },
+  "name_tags": [
+    {
+      "name": "PLACEHOLDER 人名",
+      "role": "PLACEHOLDER 身分",
+      "subject_box": [
+        1180,
+        220,
+        420,
+        760
+      ],
+      "start": 10.0,
+      "duration": 4.0
+    }
+  ],
+  "scene_overlay": {
+    "chapters": [
+      [
+        8.0,
+        "PLACEHOLDER 第一章 章名"
+      ],
+      [
+        24.0,
+        "PLACEHOLDER 第二章 章名"
+      ]
+    ],
+    "logo": "夜燈說書",
+    "watermark": "夜燈說書",
+    "cta_text": "立即訂閱",
+    "layout": {}
+  }
 }

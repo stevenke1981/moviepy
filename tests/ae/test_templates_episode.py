@@ -153,11 +153,21 @@ def test_shipped_configs_round_trip():
         assert all("PLACEHOLDER" in s.source for s in spec.shots)
     history = EpisodeSpec.from_json(CONFIGS / "nightlamp_history.json")
     assert history.chapter_period == 5.5
-    assert {s.zoom for s in history.shots} == {(1.0, 1.08)}
-    assert {s.hold for s in history.shots} == {2.0}
-    assert {s.transition_duration for s in history.shots[1:]} == {0.5}
+    # The 武則天 r2b look: slowed opening video, drift moves held 1.15 s,
+    # re-announced chapters, a title over the footage, a source insert and
+    # the closing carousel instead of bookend cards.
+    assert history.shots[0].speed == 0.75
+    stills = [s for s in history.shots if s.image]
+    assert {s.move for s in stills} == {"drift-left", "drift-right"}
+    assert {s.hold for s in stills} == {1.15}
+    assert {c.repeat_every for c in history.chapters} == {38.0}
+    assert history.intro is None and history.outro is None
+    assert history.title_overlay is not None and history.source_inserts
+    assert history.end_card is not None
+    assert history.to_dict()["end_card"]["start"] is None
     story = EpisodeSpec.from_json(CONFIGS / "nightlamp_story.json")
     assert story.background.overlay_opacity == 0.5
+    assert story.name_tags and story.scene_overlay and story.end_card
     assert story.resolve_preset().fps == 24
 
 
@@ -444,23 +454,45 @@ def test_chapters_and_quotes(media):
         build_episode(EpisodeSpec.from_dict(data))
 
 
-@needs_kaiu
+@pytest.mark.skipif(not KAIU.is_file(), reason="kaiu.ttf is missing")
 @pytest.mark.parametrize("name", ["nightlamp_story", "nightlamp_history"])
 def test_shipped_configs_build(name, tmp_path):
+    import moviepy
+
     shutil.copy(CONFIGS / f"{name}.json", tmp_path / "ep.json")
     spec = EpisodeSpec.from_json(tmp_path / "ep.json")
-    sources = [spec.background.source] + [s.image for s in spec.shots]
-    for k, path in enumerate(sources):
+    images = [s.image for s in spec.shots if s.image]
+    images += [i.image for i in spec.source_inserts]
+    if spec.background is not None:
+        images.append(spec.background.source)
+    for k, path in enumerate(images):
         _image(path, list(COLORS.values())[k % 3])
+    for shot in spec.shots:
+        if shot.video:
+            frames = [np.full((90, 160, 3), 30 * i % 255, np.uint8) for i in range(72)]
+            clip = moviepy.ImageSequenceClip(frames, fps=12)
+            try:
+                clip.write_videofile(shot.video, logger=None, audio=False)
+            except Exception as error:  # no ffmpeg / codec here
+                pytest.skip(f"cannot write a test video: {error}")
+            finally:
+                clip.close()
     assert spec.audio is not None and spec.audio.music is None
     _wav(spec.audio.narration, 1.0, 0.3)
-    small = {**spec.preset_overrides, **SMALL}
+    # Big enough for the portrait insert column and the name card.
+    small = {**spec.preset_overrides, **SMALL, "size": [960, 540]}
+    roles = ("title", "body", "quote", "chapter", "subtitle")
+    fonts = {role: str(KAIU) for role in roles}
 
     # Pass 1 without subtitles gives the built timeline length for the SRTs.
     bare = EpisodeSpec.from_dict(
-        {**spec.to_dict(), "preset_overrides": small, "subtitles": None}
-    )
-    total = build_episode(bare).duration
+        {**spec.to_dict(), "preset_overrides": small, "subtitles": None,
+         "fonts": fonts}
+    )  # fmt: skip
+    first = build_episode(bare)
+    total = first.duration
+    for clip in first.episode_clips:
+        clip.close()
     last = int(total) - 2
     cues = f"1\n00:00:08,000 --> 00:00:10,000\n你好，世界。\n\n2\n00:00:{last:02d},000 --> 00:00:{last + 1:02d},000\n再會。\n"
     srt = Path(spec.subtitles.primary)
@@ -468,20 +500,32 @@ def test_shipped_configs_build(name, tmp_path):
     srt.write_text(cues, encoding="utf-8")
     Path(spec.subtitles.secondary).write_text(cues, encoding="utf-8")
 
-    full = EpisodeSpec.from_dict({**spec.to_dict(), "preset_overrides": small})
+    full = EpisodeSpec.from_dict(
+        {**spec.to_dict(), "preset_overrides": small, "fonts": fonts}
+    )
     comp = build_episode(full)
-    report = episode_report(comp)
-    assert report["preset"] == name
-    assert report["layers"][0]["name"] == "Subtitles"
-    assert report["subtitles"]["secondary"]["cues"] == 2
-    shots = [s for s in report["timeline"] if s["kind"] == "shot"]
-    for prev, cur in zip(shots, shots[1:]):
-        assert cur["transition"] == "crossfade"
-        assert prev["end"] - cur["start"] <= prev["hold"] + 1e-6
-    if name == "nightlamp_history":
-        assert [c["number"] for c in report["chapters"]] == [1, 2]
-        assert len(report["quotes"]) == 1
-    assert comp.get_frame(report["duration"] / 2).shape == (180, 320, 3)
+    try:
+        report = episode_report(comp)
+        assert report["preset"] == name
+        assert report["layers"][0]["name"] == "Subtitles"
+        assert report["subtitles"]["secondary"]["cues"] == 2
+        shots = [s for s in report["timeline"] if s["kind"] == "shot"]
+        for prev, cur in zip(shots, shots[1:]):
+            if cur["transition"] == "crossfade":
+                assert prev["end"] - cur["start"] <= prev["hold"] + 1e-6
+        assert comp.episode["end_card"]["end"] == pytest.approx(total)
+        if name == "nightlamp_history":
+            assert [c["number"] for c in report["chapters"]] == [1, 2]
+            assert len(report["quotes"]) == 1
+            assert comp.episode["title_overlay"]["start"] == 1.0
+            assert len(comp.episode["source_inserts"]) == 1
+        else:
+            assert len(comp.episode["name_tags"]) == 1
+        for t in (report["duration"] / 2, total - 3):
+            assert comp.get_frame(t).shape == (540, 960, 3)
+    finally:
+        for clip in comp.episode_clips:
+            clip.close()
 
 
 # --------------------------------------------------------------------------- #

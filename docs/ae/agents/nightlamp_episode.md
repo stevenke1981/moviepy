@@ -37,6 +37,10 @@ Ask the human for every missing item. Never invent, substitute or generate media
 | Subtitles | `subtitles/zh-TW.srt` and `subtitles/en.srt` (UTF-8, BOM and CRLF accepted), in `subtitles.primary` and `subtitles.secondary` | Ask for the SRT files. Do not write subtitles yourself. |
 | Titles and brand | `intro.title`, `intro.brand`, `intro.subtitle`, `outro.*`, `chapters[].items`, `chapters[].number` | Ask. Do not invent titles or chapter text. |
 | Character names (optional) | `name_tags[].name`, `role`, `subject_box` (the person's box in 1920x1080 pixels), `start` | Ask for the names and the times they appear. Do not guess who is in a picture. |
+| Glossary (optional) | `subtitles.glossary` (path to an r2b `glossary.json`) and `subtitles.highlight` (extra terms) | Ask for the glossary file or the terms. Never write proper nouns or translations yourself. |
+| Title overlay (optional) | `title_overlay.title`, `title_overlay.subtitle`, `title_overlay.start` | Ask for the text and the start second. Text over the opening footage, not a card. |
+| Source images (optional) | `source_inserts[].image`, `source_inserts[].citation`, and `title` / `caption` / `note` for `portrait` | Ask for each image and its citation. Never invent a source or a citation. |
+| End card (optional) | `end_card.channel`, `end_card.line`, `end_card.question`, `end_card.actions` | Defaults are in section 4. Ask before changing the wording. |
 | Chapter overlay (optional) | `scene_overlay.chapters` (`[start, title]`), `logo`, `watermark` | Ask for the chapter titles and the logo. |
 | ASR word timing (optional) | `subtitles.words` (Qwen3ASR JSON with `words`) | Use only with `subtitles.overflow: "split"`. |
 | Quotes (optional) | `quotes[].text`, `source`, `dynasty`, `year`, `title` as supplied | Only the text the human supplies. Never create a classical quote or source. |
@@ -119,20 +123,28 @@ Only the fields an agent usually edits. Full tables: `docs/ae/episode_workflow.r
 | `intro.subtitle` | BookendSpec | `""` | Subtitle line. |
 | `intro.duration` | BookendSpec | `5.0` | Seconds on screen. |
 | `outro.title` | BookendSpec | required | Outro title text (human-supplied). |
+| `title_overlay.title` | TitleOverlaySpec | required | Opening title text drawn over the footage, with no card behind it (human-supplied). Same keys as `intro`. |
+| `title_overlay.start` | TitleOverlaySpec | `0.0` | Timeline second when the title appears. `transition` must stay `cut`. |
+| `title_overlay.layout` | TitleOverlaySpec | `left_column` | `left_column` for the 武則天 r2b look; `right_column` and `center` also exist. |
 | `shots[].image` | ShotSpec | none | Still image path. Give exactly one of `image` or `video`. |
 | `shots[].video` | ShotSpec | none | Video path. Give exactly one of `image` or `video`. |
 | `shots[].duration` | ShotSpec | required for image | Seconds. Image shots need it. For video shots, never give a `duration` that contradicts `out - in`. |
-| `shots[].move` | ShotSpec | none | One of `push`, `pull`, `pan-left`, `pan-right`, `pan-up`, `pan-down`. |
+| `shots[].move` | ShotSpec | none | One of `auto`, `static`, `push`, `pull`, `pan-left`, `pan-right`, `pan-up`, `pan-down`, `drift-left`, `drift-right`. `static` takes no `zoom`, `focus` or `distance`. Image shots only. |
 | `shots[].zoom` | ShotSpec | none | Pair, start and end zoom, each >= 1. |
 | `shots[].hold` | ShotSpec | none | Seconds held still. The motion check (G4) covers `duration - hold`. |
 | `shots[].transition` | ShotSpec | `cut` | `cut`, `crossfade` or `dip`. The first shot must be `cut`. |
 | `shots[].transition_duration` | ShotSpec | none | Seconds. Not used with `cut`. |
 | `shots[].clip_in` | ShotSpec | none | JSON key `in`. Video shots only. |
 | `shots[].clip_out` | ShotSpec | none | JSON key `out`. Video shots only. Must be greater than `in`. |
+| `shots[].speed` | ShotSpec | none | Video shots only. Playback rate; `0.75` stretches a 6 s clip to 8 s. Without `duration`, the length is `(out - in) / speed`. |
+| `shots[].freeze_at` | ShotSpec | none | Video shots only. Source second after which the frame holds still while the shot runs on. |
+| `shots[].segment` | ShotSpec | `[0, 1]` | Image shots with a `drift-left` or `drift-right` move only. `[a, b]` with `0 <= a < b <= 1` plays part of the motion, so one still can cover two shots. |
 | `chapters[].start` | ChapterSpec | required | Start second. |
 | `chapters[].end` | ChapterSpec | required | End second. Must be greater than `start`. |
 | `chapters[].items` | ChapterSpec | required | Non-empty list of strings (human-supplied). |
 | `chapters[].number` | ChapterSpec | required | Integer >= 1. |
+| `chapters[].repeat_every` | ChapterSpec | none | Seconds between re-appearances of the chapter tag, from `start` until `end`. The 武則天 r2b value is 38. |
+| `chapters[].visible` | ChapterSpec | `7.4` | Seconds each appearance stays on screen. Needs `repeat_every`; must not exceed it. |
 | `quotes[].start` | QuoteSpec | required | Start second. Quotes must not overlap. |
 | `quotes[].text` | QuoteSpec | required | Quote text, as supplied by the human. |
 | `quotes[].source` | QuoteSpec | none | Source title, as supplied by the human. |
@@ -144,15 +156,39 @@ Only the fields an agent usually edits. Full tables: `docs/ae/episode_workflow.r
 | `subtitles.secondary_lang` | SubtitleSpec | `en` | Language tag for the secondary SRT. |
 | `subtitles.overflow` | SubtitleSpec | `wrap` | `split` turns a cue that does not fit into several shorter cues, cut at punctuation first. Use it when a render fails with a layout error. |
 | `subtitles.words` | SubtitleSpec | none | ASR word-timing JSON, used to time the split cues. Only with `overflow: "split"`. |
+| `subtitles.glossary` | SubtitleSpec | none | Path to a glossary JSON in the r2b `glossary.json` format (categories of `{zh: en}`). Its terms are drawn in the highlight colour. Human-supplied only. |
+| `subtitles.highlight` | SubtitleSpec | `[]` | Extra terms drawn in the highlight colour, added to the glossary terms. Both nightlamp presets use `#C9A35D`. |
 | `scene_overlay.chapters` | SceneOverlaySpec | required | List of `[start, title]`. Each chapter overlay lasts `layout.duration` (4 s) and must not touch the intro or outro card. |
 | `scene_overlay.logo` / `watermark` / `cta_text` | SceneOverlaySpec | none / none / `立即訂閱` | Logo image path or text, watermark text, subscribe button text. |
 | `name_tags[].name` / `role` / `subject_box` / `start` / `duration` / `side` / `seal` / `leader` | NameTag | duration 4 s, side `auto` | One card per character appearance (EpisodeSpec field `name_tags`). The card is placed beside `subject_box`, never over it or over the subtitles. |
+| `source_inserts[].image` | SourceInsert | required | Source image path. Only resized, never edited (human-supplied). |
+| `source_inserts[].start` / `duration` | SourceInsert | required | Timeline seconds the insert is on screen. Must lie inside the episode. |
+| `source_inserts[].citation` | SourceInsert | required | Short source line in a corner. Human-supplied; never invented. |
+| `source_inserts[].layout` | SourceInsert | `full` | `full` centres the whole image above the subtitles. `portrait` is a catalogue card: image at native size on the left, `title`, `caption` and `note` in a right column. |
+| `source_inserts[].citation_corner` | SourceInsert | `auto` | `auto`, `top_right`, `bottom_right`, `top_left` or `bottom_left`. A corner that overlaps the subtitle area is an error. |
+| `end_card.start` | EndCard | `0.0` | Seconds. `null` places the card at the end of the timeline, lasting `duration`. |
+| `end_card.actions` | EndCard | `按讚`, `訂閱`, `分享` | One to five button labels. Each is highlighted in turn every `period` seconds. |
+| `end_card.period` | EndCard | `1.6` | Seconds each button stays highlighted. |
+| `end_card.channel` | EndCard | `夜燈說書` | Channel name shown as the large title. Must not be empty. |
 | `audio.narration` | AudioSpec | required | Narration file path. |
 | `audio.narration_gain_db` | AudioSpec | `0.0` | Narration gain. |
 | `audio.music` | AudioSpec | none | Music bed path (rights confirmed by human). |
 | `audio.music_gain_db` | AudioSpec | `-18.0` | Music bed level. |
 | `audio.music_duck_db` | AudioSpec | `-8.0` | Fixed reduction while narration plays. Must be <= 0. |
 | `audio.fade_in` / `audio.fade_out` | AudioSpec | `0.0` | Seconds. |
+
+### 4.1 武則天 r2b 版式 checklist
+
+Use this when the human asks for the 武則天 r2b look (reference film: https://www.youtube.com/watch?v=SA2kFayJ8Ok). `init` copies `nightlamp_history.json` or `nightlamp_story.json`, which already switch on most of these fields. Check each item against the episode JSON. Leave out what the human did not supply; do not invent it.
+
+- Subtitles: the preset gives 72 px Chinese, 42 px English, a 5 % black plate and `#C9A35D` highlight. Put proper nouns the human supplies in `subtitles.glossary` or `subtitles.highlight`. Use `subtitles.overflow` `split` only if a render fails with a layout error.
+- Opening: `title_overlay` puts the text over the first footage with no card. Use it only if the human wants the r2b opening; keep `transition` at `cut`.
+- Opening footage: a video shot with `speed` `0.75`. Its `duration` is `(out - in) / speed`. Use `freeze_at` for a held frame.
+- Camera: image shots with `move` `drift-left` or `drift-right` and `hold` `1.15`. Use `segment` to split one still over two shots. Check every such shot with G4.
+- Chapter tag: `chapters[].repeat_every` `38` and `chapters[].visible` `7.4`. The chapter `items` are human-supplied.
+- Source images: `source_inserts` with `layout` `full`, or `portrait` for a catalogue card. Each needs a human-supplied `citation`.
+- End card: `end_card` with `start` `null`, so it sits at the end of the timeline. The default buttons are 按讚, 訂閱, 分享.
+- Audio and delivery are separate steps outside the CLI. `build_episode` does not normalise loudness. If the human asks for the r2b audio finish, normalise the mix with `normalize_loudness` (soundx, target -16 LUFS, true peak -1.5 dBTP) and package the deliverable with `mux_delivery`. Both are Python APIs; see `docs/ae/templates.rst` (sections 成片封裝 and 響度標準化). If they were not run, report them as NOT RUN.
 
 ## 5. Verification gates
 
@@ -234,12 +270,22 @@ Match the message fragment. The full message may add values after the fragment.
 | `an episode needs at least one shot` | `shots` is empty. | Add shots with approved media. |
 | `give exactly one of image or video` | A shot has both or neither. | Keep one. |
 | `an image shot needs a duration` | Image shot without `duration`. | Add `duration`. |
-| `duration contradicts out - in` | Video shot: `duration` disagrees with `out - in`. | Give one of them only. |
+| `duration contradicts (out - in) / speed` | Video shot: `duration` disagrees with `(out - in) / speed` (no `freeze_at`). | Give one of them only. |
 | `shots[0]: no previous segment, transition must be cut` | First shot uses a transition. | Set `transition` to `cut`. |
 | `quotes overlap` | Two quotes share screen time. | Move one `start`. |
 | `lies outside the` | A subtitle cue is outside the timeline. | Fix the SRT timing or the shot durations. |
 | `invalid episode JSON` | `episode.json` is not valid JSON. | Fix the syntax (commas, quotes, encoding). |
 | `an episode must be a JSON object` | Top level is not an object. | Wrap the content in `{ }`. |
+| `a title overlay takes no transition` | `title_overlay` has a `transition` other than `cut`. | Remove `transition` from `title_overlay`. |
+| `in/out apply to video shots only` | `in` or `out` set on an image shot. | Remove them, or make it a video shot. |
+| `speed/freeze_at apply to video shots only` | `speed` or `freeze_at` set on an image shot. | Remove them, or make it a video shot. |
+| `a static shot takes no zoom/focus/distance` | `move` is `static` with `zoom`, `focus` or `distance`. | Remove those fields, or change `move`. |
+| `segment applies to drift moves only` | `segment` on a shot whose `move` is not `drift-left` or `drift-right`. | Remove `segment`, or change `move`. |
+| `segment must satisfy` | `segment` is not `[a, b]` with `0 <= a < b <= 1`. | Fix the two numbers. |
+| `visible needs repeat_every` | `chapters[].visible` given without `repeat_every`. | Add `repeat_every`, or remove `visible`. |
+| `visible must not exceed repeat_every` | `chapters[].visible` is larger than `repeat_every`. | Lower `visible`. |
+| `citation must be a non-empty string` | A `source_inserts` entry has an empty `citation`. | Ask the human for the citation. Never invent one. |
+| `citation_corner must be one of` | `citation_corner` is not one of the five listed values. | Use one of the listed values. |
 | `ERROR:` (any exit 1) | Generic wrapper for the messages above. | Read the text after `ERROR:` and match the table. |
 | `ffmpeg (` followed by `failed:` | The encoder failed. | Read the log printed in the error. Try `--encoder libx264`. Report the log tail. |
 

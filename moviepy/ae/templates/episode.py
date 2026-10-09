@@ -74,11 +74,14 @@ import math
 from dataclasses import MISSING, dataclass, field, fields
 from pathlib import Path
 
+from moviepy.ae.templates.end_card import EndCard
 from moviepy.ae.templates.name_tag import NameTag
+from moviepy.ae.templates.source_insert import SourceInsert
 
 
 __all__ = [
     "EpisodeError",
+    "TitleOverlaySpec",
     "BackgroundSpec",
     "BookendSpec",
     "ShotSpec",
@@ -291,7 +294,7 @@ class BookendSpec:
         _str(self.title, "title")
         _str(self.brand, "brand", empty=True)
         _str(self.subtitle, "subtitle", empty=True)
-        _choice(self.layout, "layout", ("right_column", "center"))
+        _choice(self.layout, "layout", ("right_column", "left_column", "center"))
         object.__setattr__(
             self, "duration", _num(self.duration, "duration", positive=True)
         )
@@ -318,6 +321,44 @@ class BookendSpec:
             f.name: getattr(self, f.name)
             for f in fields(self)
             if f.name not in ("transition", "transition_duration")
+        }
+        try:
+            return TitleCardSpec(role=role, **kwargs)
+        except ValueError as error:
+            raise EpisodeError(str(error)) from None
+
+
+class _TailEndCard(EndCard):
+    """An ``EndCard`` whose JSON ``start`` was null: placed at the timeline end."""
+
+
+@dataclass(frozen=True)
+class TitleOverlaySpec(BookendSpec):
+    """Transparent opening title over the picture (no card behind it).
+
+    The ``BookendSpec`` copy and timing fields with ``start`` (timeline
+    seconds); the text fades in and out over whatever shot is playing, like
+    the 武則天 r2b title over its opening footage. ``transition`` must stay
+    ``cut`` (the overlay joins nothing).
+    """
+
+    start: float = 0.0
+    layout: str = "left_column"
+
+    def __post_init__(self):
+        super().__post_init__()
+        object.__setattr__(self, "start", _num(self.start, "start", low=0))
+        if self.transition != "cut" or self.transition_duration is not None:
+            raise EpisodeError("a title overlay takes no transition")
+
+    def card_spec(self, role="intro"):
+        """Return the ``TitleCardSpec`` (``start`` is a timeline field)."""
+        from moviepy.ae.templates.title_card import TitleCardSpec
+
+        kwargs = {
+            f.name: getattr(self, f.name)
+            for f in fields(self)
+            if f.name not in ("transition", "transition_duration", "start")
         }
         try:
             return TitleCardSpec(role=role, **kwargs)
@@ -381,10 +422,14 @@ class ShotSpec:
     """One picture segment: a Ken Burns still, a static still or a video clip.
 
     Exactly one of ``image`` / ``video``. Images take ``move`` (``auto``,
-    ``push``, ``pull``, ``pan-*`` or ``static``) with ``zoom``, ``focus``,
-    ``distance``, ``hold``, ``lead`` (see ``ken_burns``). Videos take
+    ``push``, ``pull``, ``pan-*``, ``drift-*`` or ``static``) with ``zoom``,
+    ``focus``, ``distance``, ``hold``, ``lead`` and, for drift moves,
+    ``segment`` (see ``ken_burns``). Videos take
     ``clip_in`` / ``clip_out`` (JSON keys ``in`` / ``out``); ``duration``
-    defaults to ``clip_out - clip_in`` or the rest of the file.
+    defaults to ``(clip_out - clip_in) / speed`` or the rest of the file.
+    ``speed`` is the playback rate (``0.75`` stretches a 6 s clip to 8 s) and
+    ``freeze_at`` a source time after which the frame holds, so a clip whose
+    tail drifts can stop on its best frame while the shot runs on.
     ``transition`` joins this shot to the previous segment.
     """
 
@@ -397,8 +442,11 @@ class ShotSpec:
     distance: float = None
     hold: float = None
     lead: float = None
+    segment: tuple = None
     clip_in: float = None
     clip_out: float = None
+    speed: float = None
+    freeze_at: float = None
     transition: str = "cut"
     transition_duration: float = None
 
@@ -415,13 +463,23 @@ class ShotSpec:
                 raise EpisodeError("an image shot needs a duration")
             if self.clip_in is not None or self.clip_out is not None:
                 raise EpisodeError("in/out apply to video shots only")
+            if self.speed is not None or self.freeze_at is not None:
+                raise EpisodeError("speed/freeze_at apply to video shots only")
             move = "auto" if self.move is None else self.move
             _choice(
                 move,
                 "move",
                 ("auto", "static", "push", "pull")
-                + ("pan-left", "pan-right", "pan-up", "pan-down"),
+                + ("pan-left", "pan-right", "pan-up", "pan-down")
+                + ("drift-left", "drift-right"),
             )
+            if self.segment is not None:
+                if not move.startswith("drift-"):
+                    raise EpisodeError("segment applies to drift moves only")
+                a, b = _pair(self.segment, "segment", 0, 1)
+                if b <= a:
+                    raise EpisodeError("segment must be [a, b] with a < b")
+                object.__setattr__(self, "segment", (a, b))
             object.__setattr__(self, "move", move)
             zoom = self.zoom
             if zoom is not None:
@@ -444,7 +502,15 @@ class ShotSpec:
             ):
                 raise EpisodeError("a static shot takes no zoom/focus/distance")
         else:
-            for name in ("move", "zoom", "focus", "distance", "hold", "lead"):
+            for name in (
+                "move",
+                "zoom",
+                "focus",
+                "distance",
+                "hold",
+                "lead",
+                "segment",
+            ):
                 if getattr(self, name) is not None:
                     raise EpisodeError(f"{name} applies to image shots only")
             object.__setattr__(self, "clip_in", _opt_num(self.clip_in, "in", low=0))
@@ -454,13 +520,33 @@ class ShotSpec:
             start = self.clip_in or 0.0
             if self.clip_out is not None and self.clip_out <= start:
                 raise EpisodeError("out must be greater than in")
+            object.__setattr__(
+                self, "speed", _opt_num(self.speed, "speed", positive=True)
+            )
+            object.__setattr__(
+                self, "freeze_at", _opt_num(self.freeze_at, "freeze_at", low=0)
+            )
+            if self.freeze_at is not None:
+                if self.freeze_at <= start:
+                    raise EpisodeError("freeze_at must be later than in")
+                if self.clip_out is not None and self.freeze_at > self.clip_out:
+                    raise EpisodeError("freeze_at must not be later than out")
             if (
                 self.duration is not None
                 and self.clip_out is not None
-                and abs(self.duration - (self.clip_out - start)) > _EPS
+                and self.freeze_at is None
+                and abs(self.duration - (self.clip_out - start) / (self.speed or 1.0))
+                > _EPS
             ):
-                raise EpisodeError("duration contradicts out - in; give one of them")
+                raise EpisodeError(
+                    "duration contradicts (out - in) / speed; give one of them"
+                )
         _transition_fields(self, "")
+
+    @property
+    def is_retimed(self):
+        """True for a video shot played at another speed or frozen."""
+        return self.speed is not None or self.freeze_at is not None
 
     @property
     def is_ken_burns(self):
@@ -478,6 +564,11 @@ class ChapterSpec:
     """A top-left chapter tag over ``[start, end)`` (see ``chapter_tag``).
 
     ``period`` overrides ``EpisodeSpec.chapter_period`` for this chapter.
+    With ``repeat_every`` the tag does not stay up for the whole chapter: it
+    slides in for ``visible`` seconds (default 7.4, the 夜燈說書 r2b value) at
+    ``start`` and again every ``repeat_every`` seconds until ``end``, so a long
+    chapter is re-announced without covering the picture. An appearance shorter
+    than 2 s at the chapter end is skipped.
     """
 
     start: float
@@ -487,6 +578,8 @@ class ChapterSpec:
     period: float = None
     seal: str = None
     position: str = "top_left"
+    repeat_every: float = None
+    visible: float = None
 
     def __post_init__(self):
         object.__setattr__(self, "start", _num(self.start, "start", low=0))
@@ -506,6 +599,38 @@ class ChapterSpec:
         )
         _opt_str(self.seal, "seal")
         _choice(self.position, "position", ("top_left", "bottom_left"))
+        object.__setattr__(
+            self,
+            "repeat_every",
+            _opt_num(self.repeat_every, "repeat_every", positive=True),
+        )
+        object.__setattr__(
+            self, "visible", _opt_num(self.visible, "visible", positive=True)
+        )
+        if self.visible is not None and self.repeat_every is None:
+            raise EpisodeError("visible needs repeat_every")
+        if self.repeat_every is not None and self.shown > self.repeat_every:
+            raise EpisodeError("visible must not exceed repeat_every")
+
+    @property
+    def shown(self):
+        """Seconds per appearance (the whole chapter without ``repeat_every``)."""
+        if self.repeat_every is None:
+            return self.end - self.start
+        return 7.4 if self.visible is None else self.visible
+
+    def appearances(self):
+        """Return the ``(start, end)`` windows in which the tag is on screen."""
+        if self.repeat_every is None:
+            return [(self.start, self.end)]
+        out = []
+        t = self.start
+        while t < self.end - _EPS:
+            end = min(t + self.shown, self.end)
+            if end - t >= 2.0 or not out:
+                out.append((t, end))
+            t += self.repeat_every
+        return out
 
 
 @dataclass(frozen=True)
@@ -602,7 +727,10 @@ class SubtitleSpec:
     across lines. ``overflow="split"`` turns a cue that does not fit into
     several shorter cues (``subtitles.reflow_cues``), timed from ``words``
     (an ASR word-timing JSON path or list, see ``subtitles.load_words``)
-    when given.
+    when given. ``glossary`` (a glossary JSON path, see
+    ``subtitles.load_glossary``) and ``highlight`` (extra terms) name proper
+    nouns drawn in the preset's ``highlight_color`` in both languages and
+    never split across lines.
     """
 
     primary: object
@@ -612,6 +740,8 @@ class SubtitleSpec:
     secondary_lang: str = "en"
     overflow: str = "wrap"
     words: object = None
+    glossary: str = None
+    highlight: tuple = ()
 
     def __post_init__(self):
         object.__setattr__(self, "primary", _cue_list(self.primary, "primary"))
@@ -633,6 +763,26 @@ class SubtitleSpec:
             raise EpisodeError("words must be a JSON path or a list of words")
         if self.words is not None and self.overflow != "split":
             raise EpisodeError("words are only used with overflow='split'")
+        _opt_str(self.glossary, "glossary")
+        if not isinstance(self.highlight, (list, tuple)):
+            raise EpisodeError("highlight must be a list of strings")
+        object.__setattr__(
+            self,
+            "highlight",
+            tuple(_str(t, "highlight entry") for t in self.highlight),
+        )
+
+    def highlight_terms(self):
+        """Return the glossary terms plus ``highlight`` (glossary file read)."""
+        from moviepy.ae.templates.subtitles import load_glossary
+
+        terms = list(self.highlight)
+        if self.glossary is not None:
+            try:
+                terms += load_glossary(Path(self.glossary))
+            except (OSError, ValueError) as error:
+                raise EpisodeError(f"subtitles.glossary: {error}") from None
+        return tuple(dict.fromkeys(terms))
 
 
 @dataclass(frozen=True)
@@ -719,6 +869,14 @@ class EpisodeSpec:
         ``subject_box`` in 1920x1080 reference pixels).
     audio : AudioSpec or None
         Narration/music mix attached to the composition (see ``AudioSpec``).
+    title_overlay : TitleOverlaySpec or None
+        Transparent opening title over the picture.
+    source_inserts : sequence of SourceInsert
+        Historical source images with a small corner citation (see
+        ``source_insert.SourceInsert``); they cover the picture while shown.
+    end_card : EndCard or None
+        Closing 按讚・訂閱・分享 carousel (see ``end_card.EndCard``). A JSON
+        ``start`` of null (or no ``start``) places it at the timeline end.
     chapter_period : float
         Default seconds per chapter item (NLH: 5.5).
     dip_color : tuple
@@ -747,6 +905,9 @@ class EpisodeSpec:
     audio: AudioSpec = None
     scene_overlay: SceneOverlaySpec = None
     name_tags: tuple = ()
+    title_overlay: TitleOverlaySpec = None
+    source_inserts: tuple = ()
+    end_card: EndCard = None
 
     def __post_init__(self):
         _str(self.name, "name")
@@ -774,6 +935,7 @@ class EpisodeSpec:
             ("subtitles", SubtitleSpec),
             ("audio", AudioSpec),
             ("scene_overlay", SceneOverlaySpec),
+            ("title_overlay", TitleOverlaySpec),
         ):
             value = getattr(self, name)
             if value is not None and not isinstance(value, cls):
@@ -811,6 +973,33 @@ class EpisodeSpec:
             except (TypeError, ValueError) as error:
                 raise EpisodeError(f"name_tags[{k}]: {error}") from None
         object.__setattr__(self, "name_tags", tuple(tags))
+        if not isinstance(self.source_inserts, (list, tuple)):
+            raise EpisodeError("source_inserts must be a list")
+        inserts = []
+        for k, item in enumerate(self.source_inserts):
+            try:
+                inserts.append(
+                    item
+                    if isinstance(item, SourceInsert)
+                    else SourceInsert.from_dict(item)
+                )
+            except (TypeError, ValueError) as error:
+                raise EpisodeError(f"source_inserts[{k}]: {error}") from None
+        object.__setattr__(self, "source_inserts", tuple(inserts))
+        card = self.end_card
+        if isinstance(card, dict):
+            card = dict(card)
+            cls = EndCard
+            if card.get("start") is None:
+                card["start"] = 0.0
+                cls = _TailEndCard
+            try:
+                card = cls.from_dict(card)
+            except (TypeError, ValueError) as error:
+                raise EpisodeError(f"end_card: {error}") from None
+        elif card is not None and not isinstance(card, EndCard):
+            raise EpisodeError("end_card must be an object")
+        object.__setattr__(self, "end_card", card)
         object.__setattr__(
             self,
             "chapter_period",
@@ -888,7 +1077,14 @@ class EpisodeSpec:
                 None if self.scene_overlay is None else _spec_dict(self.scene_overlay)
             ),
             "name_tags": [tag.to_dict() for tag in self.name_tags],
+            "title_overlay": (
+                None if self.title_overlay is None else _spec_dict(self.title_overlay)
+            ),
+            "source_inserts": [item.to_dict() for item in self.source_inserts],
+            "end_card": None if self.end_card is None else self.end_card.to_dict(),
         }
+        if isinstance(self.end_card, _TailEndCard):
+            value["end_card"]["start"] = None
         return value
 
     @classmethod
@@ -963,7 +1159,15 @@ def _resolve_paths(data, base):
     fix_in(data.get("audio"), ("narration", "music"))
     subs = data.get("subtitles")
     if isinstance(subs, dict):
-        fix_in(subs, ("primary", "secondary", "words"))
+        fix_in(subs, ("primary", "secondary", "words", "glossary"))
+    for item in data.get("source_inserts") or ():
+        fix_in(item, ("image",))
+        if isinstance(item, dict) and item.get("background") not in (
+            None,
+            "paper",
+            "dark",
+        ):
+            fix_in(item, ("background",))
     overlay = data.get("scene_overlay")
     if isinstance(overlay, dict) and isinstance(overlay.get("logo"), str):
         # A logo is an image path or plain text; only rebase existing files.
@@ -1213,12 +1417,15 @@ def build_episode(spec):
     from moviepy.ae.composition import Composition
     from moviepy.ae.layers.av import AVLayer
     from moviepy.ae.layers.comp import CompLayer
+    from moviepy.ae.properties import Keyframe, Property
     from moviepy.ae.templates.background import media_background
     from moviepy.ae.templates.chapter_tag import chapter_tag
+    from moviepy.ae.templates.end_card import add_end_card
     from moviepy.ae.templates.ken_burns import ken_burns
     from moviepy.ae.templates.name_tag import add_name_tags
     from moviepy.ae.templates.quote import vertical_quote
     from moviepy.ae.templates.scene_overlay import add_scene_overlays
+    from moviepy.ae.templates.source_insert import add_source_inserts
     from moviepy.ae.templates.subtitles import load_words, subtitle_layer
     from moviepy.ae.templates.title_card import build_title_card
     from moviepy.ae.transform import Transform
@@ -1276,6 +1483,7 @@ def build_episode(spec):
                     distance=shot.distance,
                     hold=shot.hold,
                     lead=0.0 if shot.lead is None else shot.lead,
+                    **({} if shot.segment is None else {"segment": shot.segment}),
                 )
             except ValueError as error:
                 raise EpisodeError(f"{label}: {error}") from None
@@ -1290,16 +1498,26 @@ def build_episode(spec):
             clip = VideoFileClip(shot.video, audio=False)
             clips.append(clip)
             start_in = shot.clip_in or 0.0
+            speed = shot.speed or 1.0
             end_out = shot.clip_out if shot.clip_out is not None else clip.duration
-            if shot.duration is not None and shot.clip_out is None:
-                end_out = start_in + shot.duration
-            if end_out > clip.duration + 1e-3:
+            duration = (end_out - start_in) / speed
+            if shot.duration is not None:
+                duration = shot.duration
+                if shot.clip_out is None:
+                    end_out = start_in + duration * speed
+            if shot.freeze_at is not None:
+                end_out = min(end_out, shot.freeze_at)
+            # Containers report the length up to a frame short (the last
+            # frame's start); the reader holds that frame, so allow one frame.
+            frame = 1.0 / clip.fps if clip.fps else 0.0
+            if end_out > clip.duration + frame + 1e-3:
                 raise EpisodeError(
                     f"{label}: out {end_out:g} s is past the end of the video "
                     f"({clip.duration:g} s)"
                 )
-            seg = dict(clip=clip, duration=end_out - start_in, hold=None,
-                       clip_in=start_in)  # fmt: skip
+            seg = dict(clip=clip, duration=duration, hold=None, clip_in=start_in)
+            if shot.is_retimed:
+                seg["remap"] = (start_in, speed, end_out)
         segments.append(
             dict(kind="shot", name=name, source=shot.source,
                  transition=shot.transition, td=shot.transition_duration, **seg)
@@ -1369,18 +1587,24 @@ def build_episode(spec):
     chapter_tags = []
     for k, chapter in enumerate(spec.chapters, 1):
         inside(f"chapters[{k - 1}]", chapter.start, chapter.end)
-        tag = chapter_tag(
-            chapter.items,
-            chapter.number,
-            chapter.end - chapter.start,
-            preset,
-            period=chapter.period or spec.chapter_period,
-            font=spec.fonts.get("chapter"),
-            position=chapter.position,
-            seal=chapter.seal,
-            seed=spec.seed,
-        )
-        chapter_tags.append((k, chapter, tag))
+        tags = {}
+        shows = []
+        for start, end in chapter.appearances():
+            length = round(end - start, 6)
+            if length not in tags:
+                tags[length] = chapter_tag(
+                    chapter.items,
+                    chapter.number,
+                    length,
+                    preset,
+                    period=chapter.period or spec.chapter_period,
+                    font=spec.fonts.get("chapter"),
+                    position=chapter.position,
+                    seal=chapter.seal,
+                    seed=spec.seed,
+                )
+            shows.append((start, end, tags[length]))
+        chapter_tags.append((k, chapter, shows))
 
     quote_comps = []
     for k, quote in enumerate(spec.quotes, 1):
@@ -1430,6 +1654,9 @@ def build_episode(spec):
         if isinstance(subs.words, str):
             _check_file(subs.words, "subtitles.words")
             sources[subs.words] = _sha256(subs.words)
+        if subs.glossary is not None:
+            note(subs.glossary, "subtitles.glossary")
+        highlight = subs.highlight_terms()
         for lane, cues in cue_sets.items():
             for cue in cues:
                 if cue.end > total + _EPS:
@@ -1439,6 +1666,35 @@ def build_episode(spec):
                     )
     for k, tag in enumerate(spec.name_tags):
         inside(f"name_tags[{k}]", tag.start, tag.end)
+    for k, item in enumerate(spec.source_inserts):
+        inside(f"source_inserts[{k}]", item.start, item.end)
+        note(item.image, f"source_inserts[{k}].image")
+        if item.background not in ("paper", "dark"):
+            note(item.background, f"source_inserts[{k}].background")
+    end_card = spec.end_card
+    if isinstance(end_card, _TailEndCard):
+        end_card = EndCard.from_dict(
+            {**end_card.to_dict(), "start": max(0.0, total - end_card.duration)}
+        )
+    if end_card is not None:
+        inside("end_card", end_card.start, end_card.end)
+    title_overlay = None
+    if spec.title_overlay is not None:
+        try:
+            title_overlay = build_title_card(
+                spec.title_overlay.card_spec("intro"),
+                preset,
+                None,
+                fonts=card_fonts,
+                transparent=True,
+            )
+        except (ValueError, FileNotFoundError) as error:
+            raise EpisodeError(f"title_overlay: {error}") from None
+        inside(
+            "title_overlay",
+            spec.title_overlay.start,
+            spec.title_overlay.start + title_overlay.duration,
+        )
     if spec.scene_overlay is not None:
         overlay = spec.scene_overlay
         layout = overlay.scene_layout()
@@ -1479,6 +1735,20 @@ def build_episode(spec):
                 CompLayer, seg["comp"], seg["name"], seg["start"], seg["end"], transform
             )
         clip = seg["clip"]
+        extra = {"start_time": origin}
+        if "remap" in seg:
+            # Played at ``speed`` from ``in`` and held once ``end`` is reached;
+            # keys on the layer clock, which now starts with the segment.
+            first, speed, last = seg["remap"]
+            hold_at = (last - first) / speed
+            keys = [Keyframe(0.0, first, interp="linear")]
+            if hold_at > _EPS:
+                keys.append(Keyframe(hold_at, last, interp="linear"))
+            extra = {
+                "start_time": seg["start"],
+                "time_remap": Property(first, keyframes=keys),
+            }
+            opacity = _opacity(seg["start"], seg.get("fade_in"), seg.get("fade_out"))
         return place(
             AVLayer,
             clip,
@@ -1486,7 +1756,7 @@ def build_episode(spec):
             seg["start"],
             seg["end"],
             _cover_transform(size, clip.size, opacity),
-            start_time=origin,
+            **extra,
         )
 
     for seg in segments:
@@ -1495,15 +1765,6 @@ def build_episode(spec):
     for k, quote, qcomp in quote_comps:
         place(CompLayer, qcomp, f"Quote {k:02d}", quote.start,
               quote.start + qcomp.duration)  # fmt: skip
-    for k, chapter, tag in chapter_tags:
-        transform = Transform(
-            anchor_point=(0, 0), position=(tag.meta["x"], tag.meta["y"])
-        )
-        place(CompLayer, tag.composition, f"Chapter {k:02d}", chapter.start,
-              chapter.end, transform)  # fmt: skip
-    for seg in segments:
-        if seg["kind"] != "shot":
-            segment_layer(seg)
 
     def role_font(role):
         # An explicit ``fonts`` entry wins (null = Pillow's default font);
@@ -1514,6 +1775,31 @@ def build_episode(spec):
             return preset.font(role)
         except FileNotFoundError as error:
             raise EpisodeError(str(error)) from None
+
+    if spec.source_inserts:
+        try:
+            add_source_inserts(
+                comp,
+                spec.source_inserts,
+                font=role_font("body"),
+                title_font=role_font("title"),
+            )
+        except ValueError as error:
+            raise EpisodeError(f"source_inserts: {error}") from None
+    for k, chapter, shows in chapter_tags:
+        for n, (start, end, tag) in enumerate(shows):
+            transform = Transform(
+                anchor_point=(0, 0), position=(tag.meta["x"], tag.meta["y"])
+            )
+            name = f"Chapter {k:02d}" + (f".{n + 1}" if n else "")
+            place(CompLayer, tag.composition, name, start, end, transform)
+    if title_overlay is not None:
+        start = spec.title_overlay.start
+        place(CompLayer, title_overlay, "Title Overlay", start,
+              start + title_overlay.duration)  # fmt: skip
+    for seg in segments:
+        if seg["kind"] != "shot":
+            segment_layer(seg)
 
     if spec.scene_overlay is not None:
         overlay = spec.scene_overlay
@@ -1542,6 +1828,13 @@ def build_episode(spec):
             )
         except ValueError as error:
             raise EpisodeError(f"name_tags: {error}") from None
+    if end_card is not None:
+        try:
+            add_end_card(
+                comp, end_card, font=role_font("body"), title_font=role_font("title")
+            )
+        except ValueError as error:
+            raise EpisodeError(f"end_card: {error}") from None
     subtitle = None
     if cue_sets:
         subs = spec.subtitles
@@ -1564,6 +1857,7 @@ def build_episode(spec):
                 size=size,
                 overflow=subs.overflow,
                 words=words,
+                highlight=highlight,
                 **kwargs,
             )
         except ValueError as error:
@@ -1606,8 +1900,9 @@ def build_episode(spec):
                 "end": c.end,
                 "number": c.number,
                 "items": list(c.items),
+                "appearances": [[a, b] for a, b, _ in shows],
             }
-            for k, c, _ in chapter_tags
+            for k, c, shows in chapter_tags
         ],
         "quotes": [
             {
@@ -1639,6 +1934,21 @@ def build_episode(spec):
             {"name": tag.name, "start": tag.start, "end": tag.end}
             for tag in spec.name_tags
         ],
+        "title_overlay": (
+            None
+            if title_overlay is None
+            else {
+                "start": spec.title_overlay.start,
+                "end": spec.title_overlay.start + title_overlay.duration,
+            }
+        ),
+        "source_inserts": [
+            {"image": Path(i.image).name, "start": i.start, "end": i.end}
+            for i in spec.source_inserts
+        ],
+        "end_card": (
+            None if end_card is None else {"start": end_card.start, "end": end_card.end}
+        ),
         "sources": dict(sorted(sources.items())),
     }
     if audio_info is not None:

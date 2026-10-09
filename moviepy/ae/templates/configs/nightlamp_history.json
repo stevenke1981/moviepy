@@ -1,55 +1,113 @@
 {
   "name": "nightlamp_history_episode",
   "preset": "nightlamp_history",
-  "preset_overrides": {"fps": 24, "hold": 2.0, "fade": 0.5},
+  "preset_overrides": {
+    "fps": 24,
+    "hold": 1.15,
+    "fade": 0.5
+  },
   "fonts": {},
-  "background": {
-    "source": "media/PLACEHOLDER_background.jpg",
-    "frame_time": null,
-    "focal_point": [0.5, 0.5],
-    "overlay_opacity": 0.5
-  },
-  "intro": {
-    "title": "PLACEHOLDER 夜燈史話",
-    "brand": "夜燈史話",
-    "subtitle": "PLACEHOLDER 一段歷史",
-    "layout": "right_column",
-    "duration": 6.0
-  },
-  "outro": {
-    "title": "PLACEHOLDER 下回再會",
-    "brand": "夜燈史話",
-    "subtitle": "",
-    "layout": "right_column",
-    "duration": 6.0
-  },
+  "background": null,
+  "intro": null,
+  "outro": null,
   "shots": [
-    {"image": "media/PLACEHOLDER_shot_01.jpg", "duration": 10.0, "move": "push",
-     "zoom": [1.0, 1.08], "hold": 2.0},
-    {"image": "media/PLACEHOLDER_shot_02.jpg", "duration": 10.0, "move": "push",
-     "zoom": [1.0, 1.08], "hold": 2.0,
-     "transition": "crossfade", "transition_duration": 0.5},
-    {"image": "media/PLACEHOLDER_shot_03.jpg", "duration": 10.0, "move": "push",
-     "zoom": [1.0, 1.08], "hold": 2.0,
-     "transition": "crossfade", "transition_duration": 0.5},
-    {"image": "media/PLACEHOLDER_shot_04.jpg", "duration": 10.0, "move": "push",
-     "zoom": [1.0, 1.08], "hold": 2.0,
-     "transition": "crossfade", "transition_duration": 0.5}
+    {
+      "video": "media/PLACEHOLDER_opening.mp4",
+      "speed": 0.75,
+      "duration": 8.0
+    },
+    {
+      "image": "media/PLACEHOLDER_shot_01.jpg",
+      "duration": 10.0,
+      "move": "drift-right",
+      "hold": 1.15,
+      "focus": [
+        0.5,
+        0.45
+      ]
+    },
+    {
+      "image": "media/PLACEHOLDER_shot_02.jpg",
+      "duration": 8.0,
+      "move": "drift-left",
+      "hold": 1.15,
+      "segment": [
+        0,
+        0.5
+      ],
+      "transition": "crossfade",
+      "transition_duration": 0.5
+    },
+    {
+      "image": "media/PLACEHOLDER_shot_02.jpg",
+      "duration": 8.0,
+      "move": "drift-left",
+      "hold": 1.15,
+      "segment": [
+        0.5,
+        1
+      ]
+    },
+    {
+      "image": "media/PLACEHOLDER_shot_03.jpg",
+      "duration": 10.0,
+      "move": "drift-right",
+      "hold": 1.15,
+      "transition": "crossfade",
+      "transition_duration": 0.5
+    },
+    {
+      "image": "media/PLACEHOLDER_shot_04.jpg",
+      "duration": 12.0,
+      "move": "drift-left",
+      "hold": 1.15,
+      "transition": "crossfade",
+      "transition_duration": 0.5
+    }
   ],
   "chapters": [
-    {"start": 8.0, "end": 22.0, "items": ["PLACEHOLDER 起", "PLACEHOLDER 承"], "number": 1},
-    {"start": 24.0, "end": 36.0, "items": ["PLACEHOLDER 轉", "PLACEHOLDER 合"], "number": 2}
+    {
+      "start": 0.0,
+      "end": 26.0,
+      "items": [
+        "PLACEHOLDER 第一章"
+      ],
+      "number": 1,
+      "repeat_every": 38.0,
+      "visible": 7.4
+    },
+    {
+      "start": 26.0,
+      "end": 54.5,
+      "items": [
+        "PLACEHOLDER 第二章"
+      ],
+      "number": 2,
+      "repeat_every": 38.0,
+      "visible": 7.4
+    }
   ],
   "quotes": [
-    {"start": 36.5, "text": "PLACEHOLDER 天行健君子以自強不息", "source": "《周易》",
-     "dynasty": "周", "title": null, "seal": null}
+    {
+      "start": 40.0,
+      "text": "PLACEHOLDER 天行健君子以自強不息",
+      "source": "《周易》",
+      "dynasty": "周",
+      "title": null,
+      "seal": null
+    }
   ],
   "subtitles": {
     "primary": "subtitles/PLACEHOLDER_zh-TW.srt",
     "secondary": "subtitles/PLACEHOLDER_en.srt",
     "protected": [],
     "primary_lang": "zh-TW",
-    "secondary_lang": "en"
+    "secondary_lang": "en",
+    "overflow": "wrap",
+    "glossary": null,
+    "highlight": [
+      "PLACEHOLDER 專名"
+    ]
   },
   "audio": {
     "narration": "media/PLACEHOLDER_narration.wav",
@@ -64,6 +122,39 @@
     "trim_audio": false
   },
   "chapter_period": 5.5,
-  "dip_color": [0, 0, 0],
-  "seed": 7
+  "dip_color": [
+    0,
+    0,
+    0
+  ],
+  "seed": 7,
+  "title_overlay": {
+    "start": 1.0,
+    "title": "PLACEHOLDER 人物名",
+    "brand": "夜燈說書",
+    "subtitle": "PLACEHOLDER 從才人到皇帝・權力的代價",
+    "layout": "left_column",
+    "duration": 8.0
+  },
+  "source_inserts": [
+    {
+      "image": "media/PLACEHOLDER_source_01.jpg",
+      "start": 18.0,
+      "duration": 6.0,
+      "citation": "PLACEHOLDER 作者《書名》（年代）｜Wikimedia Commons／PD",
+      "title": "PLACEHOLDER 人物名",
+      "caption": "PLACEHOLDER 《出處》",
+      "note": "PLACEHOLDER 年代・說明",
+      "layout": "portrait",
+      "background": "dark",
+      "sha256": ""
+    }
+  ],
+  "end_card": {
+    "start": null,
+    "duration": 8.0,
+    "channel": "夜燈說書",
+    "line": "訂閱・下一回再走進歷史",
+    "question": "PLACEHOLDER 哪個選擇最讓你在意？"
+  }
 }
