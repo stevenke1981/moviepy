@@ -18,6 +18,7 @@ _LAZY = {
     "SubtitleStyle": "presets",
     "PRESETS": "presets",
     "get_preset": "presets",
+    "source_han_font": "presets",
     "MediaBackground": "background",
     "cover_crop": "background",
     "media_background": "background",

@@ -20,11 +20,20 @@ from moviepy.ae.templates.episode import (
     build_episode,
     episode_report,
 )
+from moviepy.ae.templates.presets import get_preset
 
 
 KAIU = Path("C:/Windows/Fonts/kaiu.ttf")
 CONFIGS = Path(ep.__file__).parent / "configs"
-needs_kaiu = pytest.mark.skipif(not KAIU.is_file(), reason="kaiu.ttf not installed")
+PRESET_FONTS = [
+    Path(path)
+    for name in ("nightlamp_story", "nightlamp_history")
+    for path in get_preset(name).fonts.values()
+]
+needs_kaiu = pytest.mark.skipif(
+    not KAIU.is_file() or not all(path.is_file() for path in PRESET_FONTS),
+    reason="kaiu.ttf or the preset Source Han fonts are not installed",
+)
 COLORS = {"a": (220, 40, 40), "b": (40, 220, 40), "c": (40, 40, 220)}
 SMALL = {"size": [320, 180], "fps": 12, "hold": 1.0}
 

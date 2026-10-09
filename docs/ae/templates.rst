@@ -55,9 +55,9 @@
      - paper ``#EFE4CC``，ink ``#1E1A16``，seal ``#B01E1C``，bamboo ``#C8A86A``，bamboo_dark ``#8A6A34``
      - 故事版取暖白與燈火色；史料版取宣紙、墨與朱印，與 NLH 的視覺一致。
    * - 字型（``fonts``）
-     - title、body 皆為 ``C:/Windows/Fonts/kaiu.ttf``
-     - title、body、quote 皆為 ``kaiu.ttf``
-     - 楷體可完整涵蓋繁體字與標點，兩套預設都用同一檔。
+     - title 思源宋體 Bold，body 思源黑體 Bold
+     - title 思源宋體 Bold，body 思源黑體 Bold，quote 思源宋體 SemiBold
+     - 思源體（TW 子集）完整涵蓋繁體字與標點；黑體用於字幕與內文，宋體用於標題與引文。
 
 .. code-block:: python
 
@@ -164,9 +164,10 @@
 
     from PIL import ImageFont
 
+    from moviepy.ae.templates.presets import source_han_font
     from moviepy.ae.templates.subtitles import load_words, parse_srt, reflow_cues
 
-    font = ImageFont.truetype("C:/Windows/Fonts/msjhbd.ttc", 74)
+    font = ImageFont.truetype(source_han_font("sans", "Bold"), 74)
 
     def measure(text):
         left, _, right, _ = font.getbbox(text, stroke_width=4)
@@ -256,6 +257,7 @@
 .. code-block:: python
 
     from moviepy.ae.templates.name_tag import NameTag, add_name_tags
+    from moviepy.ae.templates.presets import source_han_font
 
     tag = NameTag(
         "嬌娜",
@@ -269,8 +271,8 @@
     add_name_tags(
         comp,
         [tag],
-        font="C:/Windows/Fonts/kaiu.ttf",
-        role_font="C:/Windows/Fonts/msjhbd.ttc",
+        font=source_han_font("serif", "Bold"),  # 姓名：思源宋體
+        role_font=source_han_font("sans", "Medium"),  # 身分：思源黑體
     )
 
 ``scene_overlay``：章節疊圖套組
@@ -290,7 +292,7 @@ R5 的章節疊圖：左上頻道 logo（圖檔或文字）、右上半透明浮
         [(95.0, "第一章 菩提寺"), (420.0, "第三章 雷劫守候")],
         logo="夜燈說書",
         watermark="夜燈說書@NanDayDream",
-        font="C:/Windows/Fonts/msjhbd.ttc",
+        font=source_han_font("sans", "Bold"),
     )
 
 ``EpisodeSpec`` 也接受這三項：``subtitles.overflow`` / ``subtitles.words``、``scene_overlay``（``chapters``、``logo``、``watermark``、``cta_text``、``layout``），以及 ``name_tags``（``NameTag.to_dict`` 格式的清單）。``build_episode`` 會檢查它們不與片頭片尾字卡重疊，並寫入 ``episode_report``。
@@ -312,7 +314,7 @@ R5 的章節疊圖：左上頻道 logo（圖檔或文字）、右上半透明浮
 
 - **明確指定**：``preset.font(role)`` 只接受 preset 中登錄的路徑，或呼叫端傳入的 ``explicit`` 路徑。
 - **不靜默替換**：檔案不存在時丟出 ``FileNotFoundError``，錯誤訊息包含角色名與路徑。CJK 字形覆蓋各字型不同，不能悄悄換成別的字。
-- **Windows 預設**：兩套 preset 皆指向 ``C:/Windows/Fonts/kaiu.ttf``（楷體）。其他系統請用 ``get_preset(name, fonts={...})`` 或 ``with_overrides`` 指定字型檔。
+- **預設思源體**：兩套 preset 以 ``source_han_font(style, weight)`` 找出已安裝的 ``SourceHan{Sans,Serif}TW-{weight}.otf``（亦接受 TC 版），依序搜尋 ``C:/Windows/Fonts``、``%LOCALAPPDATA%/Microsoft/Windows/Fonts`` 與常見的使用者字型資料夾；找不到時回傳預期路徑，由 ``preset.font`` 報錯。要用其他字型請用 ``get_preset(name, fonts={...})`` 或 ``with_overrides``。
 - **拉丁字型例外**：要用 Pillow 內建字型時，必須明確傳入 ``None``（例如 ``fonts={"title": None}``、``fit_lines(text, None, ...)``）。這是刻意的選擇，不是後備機制。
 
 效能說明
@@ -331,7 +333,7 @@ R5 的章節疊圖：左上頻道 logo（圖檔或文字）、右上半透明浮
 - ``ken_burns`` 的來源必須是不透明影像；含透明像素會拋出 ``ValueError``。運鏡是二維裁切、平移與等比縮放，不會產生新的視角或視差。
 - ``fit_lines`` 不截斷文字：放不下時直接拋出錯誤，需由呼叫端縮短文案或增加 ``max_lines``。
 - ``vertical_quote`` 的引文應照原文輸入，模板不做繁簡轉換或校對。
-- ``to_ass`` 預設字型名稱為 ``Microsoft JhengHei``，與燒錄用的 ``kaiu.ttf`` 不同；若要 ASS 與燒錄外觀一致，請傳入 ``font_name``。
+- ``to_ass`` 預設字型名稱為 ``Microsoft JhengHei``，與燒錄用的思源黑體不同；若要 ASS 與燒錄外觀一致，請傳入 ``font_name="Source Han Sans TW"``。
 - 本模組不依賴 SVG 渲染（``resvg_py``）；若環境沒有 ``jieba``，斷詞退回確定性的字元規則。
 
 遷移對照
@@ -415,5 +417,5 @@ R5 的章節疊圖：左上頻道 logo（圖檔或文字）、右上半透明浮
 範例與測試
 ----------
 
-- 範例：``python -m examples.ae_templates_showcase OUTPUT_DIR [--size 960x540]``。輸出目錄必須不存在或為空；缺少 ``kaiu.ttf`` 時以結束碼 2 退出。
+- 範例：``python -m examples.ae_templates_showcase OUTPUT_DIR [--size 960x540]``。輸出目錄必須不存在或為空；缺少預設思源字型時以結束碼 2 退出。
 - 測試：``tests/ae/test_templates_docs.py`` 會檢查本文件的程式碼可以通過語法解析、所引用的 ``moviepy.ae.templates`` 名稱都存在，並以 320×180 執行範例。

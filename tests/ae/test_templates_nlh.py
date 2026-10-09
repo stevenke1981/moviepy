@@ -25,7 +25,15 @@ from moviepy.ae.templates.quote import (
 
 
 KAIU = Path("C:/Windows/Fonts/kaiu.ttf")
-needs_kaiu = pytest.mark.skipif(not KAIU.is_file(), reason="kaiu.ttf not installed")
+PRESET_FONTS = [
+    Path(path)
+    for name in ("nightlamp_story", "nightlamp_history")
+    for path in get_preset(name).fonts.values()
+]
+needs_kaiu = pytest.mark.skipif(
+    not KAIU.is_file() or not all(path.is_file() for path in PRESET_FONTS),
+    reason="kaiu.ttf or the preset Source Han fonts are not installed",
+)
 
 QUOTE = "「天下熙熙，皆為利來；天下攘攘，皆為利往。」夫千乘之王，萬家之侯。"
 

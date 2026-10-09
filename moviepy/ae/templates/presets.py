@@ -18,6 +18,7 @@ Examples
 
 import json
 import math
+import os
 from dataclasses import asdict, dataclass, field, fields, replace
 from pathlib import Path
 
@@ -239,6 +240,59 @@ class ChannelPreset:
 
 _WINDOWS_FONTS = Path("C:/Windows/Fonts")
 
+
+def _font_dirs():
+    """System and per-user font folders searched for preset fonts."""
+    dirs = [_WINDOWS_FONTS]
+    local = os.environ.get("LOCALAPPDATA")
+    if local:
+        dirs.append(Path(local) / "Microsoft" / "Windows" / "Fonts")
+    home = Path.home()
+    dirs += [
+        home / ".local" / "share" / "fonts",
+        home / ".fonts",
+        home / "Library" / "Fonts",
+    ]
+    return dirs
+
+
+def source_han_font(style="sans", weight="Bold"):
+    """Return the path of an installed Source Han (思源) Traditional Chinese font.
+
+    Looks for the Taiwan (``TW``) and then the Traditional (``TC``) static
+    OpenType files of Source Han Sans (思源黑體, ``style="sans"``) or Source
+    Han Serif (思源宋體, ``style="serif"``) in the Windows system and
+    per-user font folders and the usual user font folders elsewhere. When
+    none is installed the expected per-user path is returned anyway, so
+    ``ChannelPreset.font`` reports exactly which file to install; no other
+    typeface is substituted.
+
+    Parameters
+    ----------
+    style : {"sans", "serif"}, optional
+        Source Han Sans or Source Han Serif.
+    weight : str, optional
+        Weight in the file name, for example ``"Regular"``, ``"Medium"``,
+        ``"SemiBold"`` (serif only) or ``"Bold"``.
+
+    Examples
+    --------
+    >>> Path(source_han_font("serif", "Bold")).name in (
+    ...     "SourceHanSerifTW-Bold.otf", "SourceHanSerifTC-Bold.otf")
+    True
+    """
+    if style not in ("sans", "serif"):
+        raise ValueError("style must be 'sans' or 'serif'")
+    family = "Sans" if style == "sans" else "Serif"
+    names = [f"SourceHan{family}{region}-{weight}.otf" for region in ("TW", "TC")]
+    dirs = _font_dirs()
+    for folder in dirs:
+        for name in names:
+            if (folder / name).is_file():
+                return str(folder / name)
+    return str(dirs[1 if len(dirs) > 1 else 0] / names[0])
+
+
 PRESETS = {
     # night-lantern-workflow-r23 / night-lamp-story-title v5: episode media
     # under a 50 % black overlay, warm-white type, 24 fps template previews.
@@ -258,9 +312,10 @@ PRESETS = {
             "lamp": "#D9A45F",
             "panel": "#493C2D",
         },
+        # 思源宋體 for titles, 思源黑體 for body text and burned subtitles.
         fonts={
-            "title": str(_WINDOWS_FONTS / "kaiu.ttf"),
-            "body": str(_WINDOWS_FONTS / "kaiu.ttf"),
+            "title": source_han_font("serif", "Bold"),
+            "body": source_han_font("sans", "Bold"),
         },
         subtitles=SubtitleStyle(primary_size=72, secondary_size=42),
     ),
@@ -284,9 +339,9 @@ PRESETS = {
             "bamboo_dark": "#8A6A34",
         },
         fonts={
-            "title": str(_WINDOWS_FONTS / "kaiu.ttf"),
-            "body": str(_WINDOWS_FONTS / "kaiu.ttf"),
-            "quote": str(_WINDOWS_FONTS / "kaiu.ttf"),
+            "title": source_han_font("serif", "Bold"),
+            "body": source_han_font("sans", "Bold"),
+            "quote": source_han_font("serif", "SemiBold"),
         },
         subtitles=SubtitleStyle(primary_size=72, secondary_size=42),
     ),

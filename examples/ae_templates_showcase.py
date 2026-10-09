@@ -9,9 +9,9 @@ Outputs: ``title_card.png`` (over a media background), ``ken_burns_first.png``,
 ``ken_burns_last.png``, ``chapter_tag.png``, ``quote_bamboo.png``,
 ``quote_paper.png`` and ``subtitle.png``.
 
-The presets use ``kaiu.ttf`` (``C:/Windows/Fonts``). When it is missing the
-script prints the path it needs and exits with status 2; it never swaps in
-another typeface. ``OUTPUT_DIR`` must be absent or empty, so earlier results
+The presets use Source Han Serif / Sans TW (思源宋體／思源黑體, see
+``presets.source_han_font``). When one is missing the script prints the path
+it needs and exits with status 2; it never swaps in another typeface. ``OUTPUT_DIR`` must be absent or empty, so earlier results
 are never overwritten.
 """
 
@@ -227,8 +227,9 @@ def main(argv=None):
         report = run(out_dir, args.size)
     except FileNotFoundError as error:
         print(
-            f"missing font: {error}. Install kaiu.ttf (Windows: C:/Windows/Fonts) "
-            "or edit the preset fonts; no fallback font is used.",
+            f"missing font: {error}. Install Source Han Serif/Sans TW "
+            "(github.com/adobe-fonts) or edit the preset fonts; "
+            "no fallback font is used.",
             file=sys.stderr,
         )
         return EXIT_MISSING_FONT

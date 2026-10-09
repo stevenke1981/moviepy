@@ -436,7 +436,10 @@ def test_long_hook_extends_duration_and_missing_font_raises(tmp_path):
         build_title_card(TitleCardSpec(title="夜燈故事"), preset, fonts=LATIN)
 
 
-@pytest.mark.skipif(not os.path.isfile(KAIU), reason="kaiu.ttf not installed")
+@pytest.mark.skipif(
+    not all(os.path.isfile(p) for p in get_preset("nightlamp_story").fonts.values()),
+    reason="preset Source Han fonts not installed",
+)
 def test_cjk_card_with_preset_font():
     preset = get_preset("nightlamp_story")
     spec = TitleCardSpec(

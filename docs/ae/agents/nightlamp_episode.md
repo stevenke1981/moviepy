@@ -40,7 +40,7 @@ Ask the human for every missing item. Never invent, substitute or generate media
 | Chapter overlay (optional) | `scene_overlay.chapters` (`[start, title]`), `logo`, `watermark` | Ask for the chapter titles and the logo. |
 | ASR word timing (optional) | `subtitles.words` (Qwen3ASR JSON with `words`) | Use only with `subtitles.overflow: "split"`. |
 | Quotes (optional) | `quotes[].text`, `source`, `dynasty`, `year`, `title` as supplied | Only the text the human supplies. Never create a classical quote or source. |
-| Font | `fonts` role paths; default `C:/Windows/Fonts/kaiu.ttf` (both presets) | Check it exists. Missing font means stop. Never substitute a font silently. |
+| Font | `fonts` role paths; default Source Han Serif TW Bold (titles) and Source Han Sans TW Bold (body, subtitles), found by `source_han_font` in `C:/Windows/Fonts` or `%LOCALAPPDATA%/Microsoft/Windows/Fonts` | Check they exist. Missing font means stop and ask the human to install it. Never substitute a font silently. |
 | Tools | FFmpeg (imageio-ffmpeg default; `FFMPEG_BINARY=auto-detect` for PATH ffmpeg) | Run `python -m moviepy.ae.templates --help`. If it fails, stop. |
 
 Text rules for every title, subtitle, chapter item and quote: no medical or health claims (section 6). Historical claims are the human's responsibility; list them as open questions.
@@ -221,7 +221,7 @@ Match the message fragment. The full message may add values after the fragment.
 | `output path is not a directory` | Output path is an existing file. | Use a folder path. |
 | `directory exists and is not empty` | `init` target not empty. | Use a new folder. |
 | `not found:` | A referenced media or subtitle file does not exist (for example a `PLACEHOLDER_*` name was not replaced). The message starts with the label, e.g. `background source not found: <path>`. | Ask the human for the file. Do not substitute. |
-| `font not found` | A font path in `fonts` (or the default) is missing. | Ask for the font, or confirm the default `C:/Windows/Fonts/kaiu.ttf` exists. Never substitute silently. |
+| `font not found` | A font path in `fonts` (or the default) is missing. | Ask for the font, or ask the human to install the default Source Han Serif/Sans TW fonts. Never substitute silently. |
 | `has no glyph for` | The title text contains a character the font lacks. | Ask the human to change the text or supply a font that covers it. |
 | `text has more than` | Title or chapter text exceeds the line limit. | Ask the human to shorten it. |
 | `reading time insufficient` | A title card is on screen too briefly to read. | Lengthen `duration` for that card (ask if it changes pacing). |

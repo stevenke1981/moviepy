@@ -16,7 +16,6 @@ import pytest
 REPO = Path(__file__).resolve().parents[2]
 DOC = REPO / "docs" / "ae" / "templates.rst"
 EXAMPLE = REPO / "examples" / "ae_templates_showcase.py"
-KAIU = Path("C:/Windows/Fonts/kaiu.ttf")
 EXPECTED_PNGS = {
     "title_card.png",
     "ken_burns_first.png",
@@ -100,8 +99,12 @@ def test_showcase_refuses_non_empty_output_dir(tmp_path):
 
 
 def test_showcase_renders_stills_at_small_size(tmp_path):
-    if not KAIU.is_file():
-        pytest.skip(f"font not found: {KAIU}")
+    from moviepy.ae.templates.presets import PRESETS
+
+    for preset in PRESETS.values():
+        for path in preset.fonts.values():
+            if not Path(path).is_file():
+                pytest.skip(f"font not found: {path}")
     assert EXAMPLE.is_file()
     out = tmp_path / "stills"
     result = subprocess.run(
