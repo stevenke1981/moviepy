@@ -1504,6 +1504,17 @@ def build_episode(spec):
     for seg in segments:
         if seg["kind"] != "shot":
             segment_layer(seg)
+
+    def role_font(role):
+        # An explicit ``fonts`` entry wins (null = Pillow's default font);
+        # otherwise the preset's font for that role.
+        if role in spec.fonts:
+            return spec.fonts[role]
+        try:
+            return preset.font(role)
+        except FileNotFoundError as error:
+            raise EpisodeError(str(error)) from None
+
     if spec.scene_overlay is not None:
         overlay = spec.scene_overlay
         logo = overlay.logo
@@ -1517,7 +1528,7 @@ def build_episode(spec):
                 logo=logo,
                 watermark=overlay.watermark,
                 cta_text=overlay.cta_text,
-                font=spec.fonts.get("title"),
+                font=role_font("title"),
             )
         except ValueError as error:
             raise EpisodeError(f"scene_overlay: {error}") from None
@@ -1526,9 +1537,8 @@ def build_episode(spec):
             add_name_tags(
                 comp,
                 spec.name_tags,
-                preset=preset,
-                font=spec.fonts.get("title"),
-                role_font=spec.fonts.get("body"),
+                font=role_font("title"),
+                role_font=role_font("body"),
             )
         except ValueError as error:
             raise EpisodeError(f"name_tags: {error}") from None

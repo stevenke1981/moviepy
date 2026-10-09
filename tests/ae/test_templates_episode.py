@@ -878,3 +878,15 @@ def test_subtitle_overflow_split(media):
     report = episode_report(build_episode(EpisodeSpec.from_dict(data)))
     lane = report["subtitles"]["primary"]
     assert lane["cues"] == 1 and lane["rendered_cues"] > 1
+
+
+def test_null_fonts_never_fall_back_to_preset_fonts(media, monkeypatch):
+    # CI runners have no kaiu.ttf: null font roles must use Pillow's default.
+    from moviepy.ae.templates.presets import ChannelPreset
+
+    def missing(self, role, explicit=None):
+        raise FileNotFoundError(f"{role} font not found")
+
+    monkeypatch.setattr(ChannelPreset, "font", missing)
+    comp = build_episode(EpisodeSpec.from_dict(_overlay_data(media)))
+    assert episode_report(comp)["name_tags"][0]["name"] == "Kong"
