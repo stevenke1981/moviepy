@@ -61,6 +61,22 @@ class SubtitleStyle:
     ``margin_bottom`` is measured from the frame bottom to the last line.
     ``max_lines`` limits each language block and ``max_width`` is the line
     width as a fraction of the frame width.
+
+    ``plate_opacity > 0`` draws a ``plate_color`` rectangle behind each
+    rendered line (its ink box including the outline, grown by
+    ``plate_padding`` pixels at ``reference_height``). ``highlight_color``
+    colours glossary terms; ``None`` falls back to the preset palette role
+    ``"accent"`` when highlight terms are given.
+
+    Examples
+    --------
+    >>> SubtitleStyle(plate_opacity=0.05).plate_color
+    (0, 0, 0)
+    >>> style = SubtitleStyle(highlight_color="#C9A35D")
+    >>> style.highlight_color
+    (201, 163, 93)
+    >>> SubtitleStyle.from_dict(style.to_dict()) == style
+    True
     """
 
     primary_size: float = 72
@@ -74,8 +90,23 @@ class SubtitleStyle:
     max_lines: int = 2
     max_width: float = 0.86
     reference_height: int = 1080
+    plate_color: tuple = (0, 0, 0)
+    plate_opacity: float = 0.0
+    plate_padding: float = 0
+    highlight_color: tuple = None
 
     def __post_init__(self):
+        object.__setattr__(self, "plate_color", _color(self.plate_color, "plate_color"))
+        object.__setattr__(
+            self, "plate_opacity", _number(self.plate_opacity, "plate_opacity", 0, 1)
+        )
+        object.__setattr__(
+            self, "plate_padding", _number(self.plate_padding, "plate_padding", 0, 1000)
+        )
+        if self.highlight_color is not None:
+            object.__setattr__(
+                self, "highlight_color", _color(self.highlight_color, "highlight_color")
+            )
         for name in ("primary_size", "secondary_size", "outline_width"):
             object.__setattr__(self, name, _number(getattr(self, name), name, 0, 1000))
         for name in ("margin_bottom", "line_gap"):
@@ -93,6 +124,20 @@ class SubtitleStyle:
             or self.reference_height <= 0
         ):
             raise ValueError("reference_height must be a positive integer")
+
+    def to_dict(self):
+        """Return a JSON-compatible dictionary (colors as RGB lists)."""
+        return {
+            k: list(v) if isinstance(v, tuple) else v for k, v in asdict(self).items()
+        }
+
+    @classmethod
+    def from_dict(cls, value):
+        """Build a style from ``to_dict`` output, rejecting unknown keys."""
+        unknown = set(value) - {f.name for f in fields(cls)}
+        if unknown:
+            raise ValueError(f"unknown subtitle style keys: {sorted(unknown)}")
+        return cls(**value)
 
 
 @dataclass(frozen=True)
@@ -206,10 +251,7 @@ class ChannelPreset:
         value["safe_margin"] = list(self.safe_margin)
         value["overlay_color"] = list(self.overlay_color)
         value["palette"] = {k: list(v) for k, v in self.palette.items()}
-        value["subtitles"] = {
-            k: list(v) if isinstance(v, tuple) else v
-            for k, v in asdict(self.subtitles).items()
-        }
+        value["subtitles"] = self.subtitles.to_dict()
         return value
 
     @classmethod
@@ -317,7 +359,13 @@ PRESETS = {
             "title": source_han_font("serif", "Bold"),
             "body": source_han_font("sans", "Bold"),
         },
-        subtitles=SubtitleStyle(primary_size=72, secondary_size=42),
+        subtitles=SubtitleStyle(
+            primary_size=72,
+            secondary_size=42,
+            plate_opacity=0.05,
+            plate_padding=0,
+            highlight_color=(0xC9, 0xA3, 0x5D),
+        ),
     ),
     # nightlamp-history / nlh-motion: rice paper, dense ink and vermilion
     # seal; zh-TW 72 px plus English 42 px burned in at 1080p.
@@ -334,6 +382,9 @@ PRESETS = {
             "paper": "#EFE4CC",
             "paper_shadow": "#C9B48C",
             "ink": "#1E1A16",
+            # r2b title over footage: lamp gold over warm white.
+            "card_ink": "#EED6A4",
+            "card_secondary_ink": "#F8EED5",
             "seal": "#B01E1C",
             "bamboo": "#C8A86A",
             "bamboo_dark": "#8A6A34",
@@ -343,7 +394,13 @@ PRESETS = {
             "body": source_han_font("sans", "Bold"),
             "quote": source_han_font("serif", "SemiBold"),
         },
-        subtitles=SubtitleStyle(primary_size=72, secondary_size=42),
+        subtitles=SubtitleStyle(
+            primary_size=72,
+            secondary_size=42,
+            plate_opacity=0.05,
+            plate_padding=0,
+            highlight_color=(0xC9, 0xA3, 0x5D),
+        ),
     ),
 }
 
