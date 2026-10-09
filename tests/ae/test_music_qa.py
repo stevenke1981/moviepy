@@ -7,6 +7,7 @@ import numpy as np
 
 import pytest
 
+from moviepy.ae.templates import music_qa as qa
 from moviepy.ae.templates._audio_io import AudioWriter
 from moviepy.ae.templates.music_qa import (
     clipping_report,
@@ -205,3 +206,10 @@ def test_qa_report_fields_and_exclusive_create(tmp_path):
         qa_report(path, output_json=out)
     replaced = qa_report(path, output_json=out, overwrite=True)
     assert replaced["schema"] == "music_qa/1"
+
+
+def test_summary_lines_survive_interleaved_ffmpeg_logs():
+    spliced = "Peak:      -17.3 dBFSEncoder thread received EOF"
+    assert float(qa._PEAK_LINE.match(spliced).group(1)) == -17.3
+    assert float(qa._LUFS_LINE.match("I:   -18.0 LUFS[out#0] done").group(1)) == -18.0
+    assert float(qa._LRA_LINE.match("LRA:   4.2 LUTerminating").group(1)) == 4.2

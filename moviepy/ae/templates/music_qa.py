@@ -63,9 +63,11 @@ _FPS = re.compile(r"(\d+(?:\.\d+)?)\s*fps\b")
 _TBR = re.compile(r"(\d+(?:\.\d+)?)\s*tbr\b")
 _AUDIO = re.compile(r"Audio:\s*([^,\s]+).*?,\s*(\d+) Hz,\s*([^,\n]+)")
 _FRAME_LOG = re.compile(r"\bM:\s*(-?[\d.]+|-?inf)\s+S:\s*(-?[\d.]+|-?inf)")
-_LUFS_LINE = re.compile(r"I:\s*(-?[\d.]+|-?inf)\s*LUFS$")
-_LRA_LINE = re.compile(r"LRA:\s*(-?[\d.]+)\s*LU$")
-_PEAK_LINE = re.compile(r"Peak:\s*(-?[\d.]+|-?inf)\s*dBFS$")
+# No end anchors: at -loglevel verbose another FFmpeg thread can append its
+# message to a summary line ("Peak: -17.3 dBFSEncoder thread received EOF").
+_LUFS_LINE = re.compile(r"I:\s*(-?[\d.]+|-?inf)\s*LUFS")
+_LRA_LINE = re.compile(r"LRA:\s*(-?[\d.]+)\s*LU")
+_PEAK_LINE = re.compile(r"Peak:\s*(-?[\d.]+|-?inf)\s*dBFS")
 _SILENCE_START = re.compile(r"silence_start:\s*(-?[\d.]+)")
 _SILENCE_END = re.compile(r"silence_end:\s*(-?[\d.]+)")
 
