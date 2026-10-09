@@ -74,7 +74,7 @@ def test_requirements_table():
     assert req["loudness_min_version"] == (0, 3, 0)
     assert req["executable_env"] == "MOVIEPY_SOUNDX"
     assert req["path_names"] == ("soundx", "soundx.exe")
-    assert req["source_url"] == "https://github.com/urtiger101-tw/sox-rs"
+    assert req["source_url"] == "https://github.com/urtiger101-tw/soundx"
     assert req["windows_default"] == r"C:\Program Files\soundx\soundx.exe"
 
 
@@ -99,7 +99,7 @@ def test_missing_soundx_names_env_and_repo(no_soundx):
         sx.find_soundx()
     message = str(caught.value)
     assert "MOVIEPY_SOUNDX" in message
-    assert "https://github.com/urtiger101-tw/sox-rs" in message
+    assert "https://github.com/urtiger101-tw/soundx" in message
     check = sx.check_soundx()
     assert not check.ok and check.executable is None and not check.has_loudness
     assert "MOVIEPY_SOUNDX" in check.problems[0]
@@ -306,7 +306,7 @@ def test_missing_soundx_has_no_silent_fallback(no_soundx, source, tmp_path):
     with pytest.raises(sx.SoundxError) as caught:
         normalize_loudness(source, target)
     assert "MOVIEPY_SOUNDX" in str(caught.value)
-    assert "github.com/urtiger101-tw/sox-rs" in str(caught.value)
+    assert "github.com/urtiger101-tw/soundx" in str(caught.value)
     assert not target.exists()
     with pytest.raises(sx.SoundxError, match="MOVIEPY_SOUNDX"):
         measure_loudness(source)

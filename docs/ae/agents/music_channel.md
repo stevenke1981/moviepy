@@ -39,7 +39,7 @@ Ask the human for every missing item. Never invent, substitute, generate or "pla
 | Chime (optional, study mode) | `chime.path` (stereo 48 kHz) OR `chime.design`, not both | Use the default design only if the human approves it. |
 | Fonts | `C:/Windows/Fonts/msjh.ttc` (zh, en) and `C:/Windows/Fonts/YuGothM.ttc` (ja) for thumbnail | Check existence first. If missing, stop and ask. |
 | Tools | FFmpeg on PATH or imageio-ffmpeg; Python with repo importable | Run `python -m moviepy.ae.templates music --help`. If it fails, stop. |
-| soundx (sox-rs) | `MOVIEPY_SOUNDX`, PATH, or `C:\Program Files\soundx\soundx.exe`; >= 0.3.0 for LUFS | Run `python -m moviepy.ae.templates.soundx --json`. Stop if `ok` is false. If `has_loudness` is false (0.2.0), LUFS falls back to FFmpeg loudnorm: report it, do not hide it. |
+| soundx | `MOVIEPY_SOUNDX`, PATH, or `C:\Program Files\soundx\soundx.exe`; >= 0.3.0 for LUFS | Run `python -m moviepy.ae.templates.soundx --json`. Stop if `ok` is false. If `has_loudness` is false (0.2.0), LUFS falls back to FFmpeg loudnorm: report it, do not hide it. |
 
 Text rules for every title, subtitle, hint and label: no medical or health claims (see section 6).
 
@@ -202,7 +202,7 @@ Match the message fragment (it comes from the code; the full text may add values
 |---|---|---|
 | `MISSING <path>` (validate stderr) | Track, clip, cue, cycle or study file not found. | Ask the human for the file. Do not substitute. Re-run validate. |
 | `PROBLEM <text>` (validate stderr) | A spec problem was found. | Fix the named field. Re-run validate. |
-| `The music templates need soundx` | soundx not found or not runnable. | Ask the human to install soundx >= 0.3.0 from https://github.com/urtiger101-tw/sox-rs or set `MOVIEPY_SOUNDX`. Do not switch `loudness_backend` to `ffmpeg` without approval. |
+| `The music templates need soundx` | soundx not found or not runnable. | Ask the human to install soundx >= 0.3.0 from https://github.com/urtiger101-tw/soundx or set `MOVIEPY_SOUNDX`. Do not switch `loudness_backend` to `ffmpeg` without approval. |
 | `tracks: every track needs chapter_seconds` | Sleep mode, a track has no `chapter_seconds`. | Add `chapter_seconds` to every track. |
 | `tracks: give chapter_seconds on every track or on none` | Study mode, only some tracks have it. | Give it on all tracks or remove it from all. |
 | `chapter_seconds must sum to duration` | Study mode: total audio does not match `study.json` `duration_seconds`. | Set chapter lengths so the total equals `duration + (n - 1) * chapter_crossfade`. |

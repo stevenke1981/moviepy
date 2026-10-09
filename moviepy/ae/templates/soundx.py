@@ -1,7 +1,7 @@
-r"""Declare, find and drive the external ``soundx`` (sox-rs) audio tool.
+r"""Declare, find and drive the external ``soundx`` audio tool.
 
 All level and loudness processing of the music templates goes through
-``soundx`` (https://github.com/urtiger101-tw/sox-rs). Two generations exist and
+``soundx`` (https://github.com/urtiger101-tw/soundx). Two generations exist and
 both are supported through capability detection:
 
 ``0.2.0``
@@ -60,7 +60,7 @@ __all__ = [
 ]
 
 SOUNDX_REQUIREMENTS = {
-    "tool": "soundx (sox-rs)",
+    "tool": "soundx",
     "min_version": (0, 2, 0),
     "loudness_min_version": (0, 3, 0),
     "min_version_reason": "0.2.0: convert --normalize/--stat-json and info --json",
@@ -68,7 +68,7 @@ SOUNDX_REQUIREMENTS = {
     "executable_env": "MOVIEPY_SOUNDX",
     "path_names": ("soundx", "soundx.exe"),
     "windows_default": r"C:\Program Files\soundx\soundx.exe",
-    "source_url": "https://github.com/urtiger101-tw/sox-rs",
+    "source_url": "https://github.com/urtiger101-tw/soundx",
     "python_extras": (),
     "network_required": False,
 }
