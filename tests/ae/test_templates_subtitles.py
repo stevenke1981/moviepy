@@ -10,11 +10,14 @@ from moviepy.ae.templates.subtitles import (
     Cue,
     LayoutError,
     SubtitleTiming,
+    Word,
     break_lines,
     burn_subtitles,
     check_timing,
     find_bad_breaks,
+    load_words,
     parse_srt,
+    reflow_cues,
     subtitle_layer,
     to_ass,
     to_srt,
@@ -423,3 +426,128 @@ def test_ass_lift_follows_font_metrics():
     # Without a font the documented approximation is kept.
     approx = to_ass(cues + sec, preset.subtitles, size)
     assert approx != ass
+
+
+# -- reflow ----------------------------------------------------------------- #
+
+
+def test_reflow_keeps_fitting_cue_untouched():
+    cue = Cue(1, 2, "短句。")
+    report = []
+    assert reflow_cues([cue], m10, 200, report=report) == [cue]
+    assert report[0]["timing"] == "unchanged"
+
+
+def test_reflow_splits_at_punctuation_and_keeps_all_text():
+    text = "嬌娜伸手按住孔生的胸口，紅丸在掌心轉動，傷處漸漸癒合。"
+    out = reflow_cues([Cue(0, 9, text)], m10, 130, protected=["孔生"])
+    assert "".join(c.text for c in out) == text
+    assert all(m10(c.text) <= 130 for c in out)
+    assert [c.text[-1] for c in out] == ["，", "，", "。"]
+    assert out[0].start == 0 and out[-1].end == 9
+    assert all(a.end == b.start for a, b in zip(out, out[1:]))
+
+
+def test_reflow_never_cuts_protected_name():
+    text = "我們今天要介紹的人物是皇甫公子與嬌娜姑娘"
+    out = reflow_cues(
+        [Cue(0, 6, text)],
+        m10,
+        110,
+        protected=["皇甫公子", "嬌娜姑娘"],
+        allow_char_breaks=True,
+    )
+    joined = "|".join(c.text for c in out)
+    assert "皇甫公子" in joined and "嬌娜姑娘" in joined
+    assert all(m10(c.text) <= 110 for c in out)
+
+
+def test_reflow_uses_word_timings_and_refuses_cuts_inside_words():
+    # No punctuation: only ASR word edges make the cut legal.
+    text = "松娘輕聲說道她會一直守在門外"
+    tokens = [
+        ("松娘", 0.0, 0.5),
+        ("輕聲", 0.5, 1.0),
+        ("說道", 1.0, 1.5),
+        ("她會", 1.5, 2.0),
+        ("一直", 2.6, 3.0),
+        ("守在", 3.0, 3.5),
+        ("門外", 3.5, 4.0),
+    ]
+    words = [Word(*t) for t in tokens]
+    report = []
+    out = reflow_cues(
+        [Cue(0, 4, text)], m10, 80, words=words, use_jieba=False, report=report
+    )
+    assert "".join(c.text for c in out) == text
+    assert all(len(c.text) % 2 == 0 for c in out)
+    assert report[0]["timing"] == "words"
+    assert len(out) == 2
+    ends = {2: 0.5, 4: 1.0, 6: 1.5, 8: 2.0, 10: 3.0, 12: 3.5}
+    starts = {2: 0.5, 4: 1.0, 6: 1.5, 8: 2.6, 10: 3.0, 12: 3.5}
+    cut = len(out[0].text)
+    if starts[cut] - ends[cut] > 0.3:  # a real pause stays a gap
+        assert (out[0].end, out[1].start) == (ends[cut], starts[cut])
+    else:  # a short one is closed so the caption does not flicker
+        assert out[0].end == out[1].start == starts[cut]
+
+
+def test_reflow_word_pause_is_kept_as_gap():
+    text = "她會一直守在門外。我知道"
+    words = [Word("她會一直守在門外", 0.0, 2.0), Word("我知道", 2.8, 3.6)]
+    out = reflow_cues([Cue(0, 3.6, text)], m10, 90, words=words)
+    assert [c.text for c in out] == ["她會一直守在門外。", "我知道"]
+    assert (out[0].end, out[1].start) == (2.0, 2.8)
+
+
+def test_reflow_without_words_or_breaks_raises():
+    with pytest.raises(LayoutError):
+        reflow_cues(
+            [Cue(0, 4, "松娘輕聲說道她會一直守在門外")], m10, 80, use_jieba=False
+        )
+
+
+def test_reflow_english_two_lines_per_cue():
+    text = "Kong Xueli woke in the garden and found the fox girl watching over him"
+    out = reflow_cues(
+        [Cue(0, 8, text, "en")], m10, 200, max_lines=2, protected=["Kong Xueli"]
+    )
+    assert " ".join(c.text.replace("\n", " ") for c in out) == text
+    assert all(len(c.text.split("\n")) <= 2 for c in out)
+    assert "Kong Xueli" in out[0].text
+
+
+def test_load_words_shapes(tmp_path):
+    path = tmp_path / "asr.json"
+    path.write_text(
+        '{"segments": [{"words": [{"word": "a", "start": 0, "end": 1}]}]}',
+        encoding="utf-8",
+    )
+    assert load_words(path) == [Word("a", 0, 1)]
+    assert load_words([{"text": "b", "start": 1, "end": 2}])[0].start == 1.0
+    with pytest.raises(ValueError):
+        load_words({"x": []})
+
+
+def test_layer_split_overflow_makes_more_cues(preset):
+    text = " ".join(["slowly"] * 30)
+    cues = [Cue(0, 6, text, "en")]
+    with pytest.raises(LayoutError):
+        subtitle_layer(cues, preset, font="default", size=(640, 360))
+    layer = subtitle_layer(
+        cues, preset, font="default", size=(640, 360), overflow="split"
+    )
+    lane = layer._lanes["primary"]["cues"]
+    assert len(lane) > 1 and lane[0].start == 0 and lane[-1].end == 6
+    assert layer.reflow_report[0]["timing"] == "proportional"
+    with pytest.raises(ValueError):
+        subtitle_layer(cues, preset, font="default", overflow="cut")
+
+
+def test_reflow_line_breaks_prefer_punctuation_over_asr_edges():
+    text = "替你尋一位合適的妻子。若真能娶到像香奴這樣的女子"
+    words = [Word(ch, i * 0.2, i * 0.2 + 0.2) for i, ch in enumerate(text)]
+    out = reflow_cues(
+        [Cue(0, 6, text)], m10, 160, max_lines=2, words=words, use_jieba=False
+    )
+    assert out[0].text.split("\n")[0].endswith("。")

@@ -59,6 +59,9 @@ __all__ = [
     "NO_LINE_START",
     "NO_LINE_END",
     "break_lines",
+    "Word",
+    "load_words",
+    "reflow_cues",
     "find_bad_breaks",
     "check_timing",
     "grapheme_count",
@@ -71,11 +74,13 @@ __all__ = [
 ]
 
 # Kinsoku: characters that may not start / end a line (NLH + common ASCII).
-NO_LINE_START = frozenset("，。、．；：！？」』）》〉】〕｝﹂﹄︶︾﹀︼︺…‥)]},.;:!?")
-NO_LINE_END = frozenset("「『（《〈【〔｛([{")
+NO_LINE_START = frozenset("，。、．；：！？」』）》”’〉】〕｝﹂﹄︶︾﹀︼︺…‥)]},.;:!?")
+NO_LINE_END = frozenset("「『（《〈【〔｛([{“‘")
 _BREAK_AFTER = frozenset("，、；：。！？…—")
-_CLOSERS = frozenset("」』）》〉】〕｝")
+_CLOSERS = frozenset("」』）》〉】〕｝”’")
 _PREFER_AFTER = _BREAK_AFTER | frozenset(",;:.!?")
+# Ends of a spoken pause: a cue may end here without splitting a phrase.
+_PAUSE_END = _PREFER_AFTER | frozenset("」』”’")
 _REPEATED = frozenset("…—‥")
 _NUM_TOKEN = re.compile(
     r"[〇零一二兩三四五六七八九十百千萬0-9０-９]+(?:年|月|日|歲|次|人|萬|里|天)?"
@@ -246,6 +251,7 @@ class _CJKAnalysis:
             m.span() for m in _LATIN_RUN.finditer(text) if m.end() - m.start() > 1
         ]
         bounds = _jieba_bounds(text, self.protected) if use_jieba else None
+        self.jieba = bounds is not None
         self.bounds = bounds if bounds is not None else set()
         self.bounds |= _fallback_bounds(text) if bounds is None else set()
 
@@ -432,6 +438,445 @@ def break_lines(
             segment[edges[i] : edges[i + 1]].strip() for i in range(len(edges) - 1)
         ]
     return result
+
+
+# --------------------------------------------------------------------------- #
+# Reflow: split cues that cannot fit into several timed cues
+
+
+@dataclass(frozen=True)
+class Word:
+    """One ASR word (or CJK token) with its time span in seconds.
+
+    Examples
+    --------
+    >>> Word("嬌娜", 1.0, 1.4).text
+    '嬌娜'
+    """
+
+    text: str
+    start: float
+    end: float
+
+    def __post_init__(self):
+        start = _finite(self.start, "start")
+        end = _finite(self.end, "end")
+        if start < 0 or end < start:
+            raise ValueError("word times need 0 <= start <= end")
+        if not isinstance(self.text, str):
+            raise ValueError("word text must be a string")
+        object.__setattr__(self, "start", start)
+        object.__setattr__(self, "end", end)
+
+
+def load_words(source):
+    """Read word timings from ASR JSON (Qwen3ASR and similar shapes).
+
+    ``source`` is a path, a JSON string, a dict or a list. Accepted shapes are
+    ``{"words": [...]}``, ``{"segments": [{"words": [...]}]}`` or a bare list;
+    each item has ``text`` (or ``word``), ``start`` and ``end`` in seconds.
+
+    Examples
+    --------
+    >>> load_words({"words": [{"text": "hi", "start": 0, "end": 0.4}]})
+    [Word(text='hi', start=0.0, end=0.4)]
+    """
+    data = source
+    if isinstance(source, Path) or (
+        isinstance(source, str) and not source.lstrip().startswith(("{", "["))
+    ):
+        data = Path(source).read_text(encoding="utf-8-sig")
+    if isinstance(data, str):
+        data = json.loads(data)
+    if isinstance(data, dict):
+        if "words" in data:
+            data = data["words"]
+        elif "segments" in data:
+            data = [w for seg in data["segments"] for w in seg.get("words", ())]
+        else:
+            raise ValueError("expected a 'words' or 'segments' list")
+    words = []
+    for item in data:
+        text = item.get("text", item.get("word"))
+        words.append(Word(text, item["start"], item["end"]))
+    return words
+
+
+def _is_key(ch):
+    return unicodedata.category(ch)[0] in "LN"
+
+
+def _word_owners(texts, words):
+    """Map each character of each text to the index of its ASR word.
+
+    Letters and digits of all texts are aligned against those of all words
+    with ``difflib`` (equal runs and equal-length replacements map one to
+    one); punctuation, spaces and unmatched characters map to ``None``.
+    """
+    from difflib import SequenceMatcher
+
+    word_keys, word_owner = [], []
+    for index, word in enumerate(words):
+        for ch in unicodedata.normalize("NFC", word.text):
+            if _is_key(ch):
+                word_keys.append(ch.casefold())
+                word_owner.append(index)
+    text_keys, text_pos = [], []
+    for t, text in enumerate(texts):
+        for i, ch in enumerate(text):
+            if _is_key(ch):
+                text_keys.append(ch.casefold())
+                text_pos.append((t, i))
+    owners = [[None] * len(text) for text in texts]
+    matcher = SequenceMatcher(None, text_keys, word_keys, autojunk=False)
+    for tag, a0, a1, b0, b1 in matcher.get_opcodes():
+        if tag == "equal" or (tag == "replace" and a1 - a0 == b1 - b0):
+            for k in range(a1 - a0):
+                t, i = text_pos[a0 + k]
+                owners[t][i] = word_owner[b0 + k]
+    return owners
+
+
+def _neighbours(owner, cut):
+    """Return the word owners left and right of ``cut`` (skipping punctuation)."""
+    left = next((o for o in reversed(owner[:cut]) if o is not None), None)
+    right = next((o for o in owner[cut:] if o is not None), None)
+    return left, right
+
+
+def _piece_lines(text, a, b, cuts, measure, max_width, max_lines, weak=()):
+    """Line cuts (relative to ``a``) for ``text[a:b]``, or None if it can't fit.
+
+    Line breaks first use only strong cuts (punctuation, spaces, dictionary
+    words); ``weak`` cuts (an ASR token edge and nothing else) are a fallback.
+    """
+    piece = text[a:b]
+    if not piece.strip():
+        return None
+    inner = [c - a for c in cuts if a < c < b]
+    if max_lines > 1 and weak:
+        strong = [c for c in inner if c + a not in weak]
+        if len(strong) < len(inner):
+            found = _balanced_cuts(piece, strong, measure, max_width, max_lines)
+            if found is not None:
+                return found
+    return _balanced_cuts(piece, inner, measure, max_width, max_lines)
+
+
+def _split_cost(piece, width, max_width, max_lines, lines, last, weak):
+    """Cost of one output cue; lower is better.
+
+    Every cue costs about 1, so fewer cues win among cuts of the same kind.
+    A cut inside a phrase (a word edge) costs more than one extra cue, so an
+    extra cue that ends at punctuation is preferred; a cut that only an ASR
+    token edge allows (no dictionary or punctuation evidence) costs most.
+    """
+    fill = min(1.0, width / (max_width * max_lines))
+    cost = 1.0 + 0.35 * (1.0 - fill) ** 2 + 0.25 * len(lines)
+    if not last:
+        if grapheme_count(piece) < 5:
+            cost += 0.2
+        if piece[-1:] in _PAUSE_END:
+            cost -= 0.25
+        elif weak:
+            cost += 2.5
+        else:
+            cost += 1.2
+    return cost
+
+
+def _flat_text(cue):
+    if _is_cjk_lang(cue.lang):
+        return cue.text.replace("\n", "")
+    return re.sub(r"\s+", " ", cue.text.replace("\n", " ")).strip()
+
+
+def _bad_join(left, right, left_owner, right_owner, lang, protected, use_jieba):
+    """Return True when the boundary between two consecutive cues is a bad cut.
+
+    A cue that does not end at punctuation stops mid-phrase, so it is always
+    re-laid out together with its neighbour (the layout still keeps the old
+    cut when nothing better fits). Otherwise the boundary is bad when it
+    falls inside one ASR word, a protected name, a number or a Latin word, or
+    breaks kinsoku. Only a window around the boundary is analysed.
+    """
+    if left[-1:] not in _PREFER_AFTER and left[-1:] not in _CLOSERS:
+        return True
+    if left_owner and right_owner:
+        a, b = left_owner[-1], right_owner[0]
+        if a is not None and a == b:
+            return True
+    if _is_cjk_lang(lang):
+        window = 24
+        joined = left[-window:] + right[:window]
+        analysis = _CJKAnalysis(joined, protected, use_jieba)
+        return analysis.reason(min(window, len(left))) is not None
+    joined = f"{left} {right}"
+    cut = len(left) + 1
+    spans = _protected_spans(joined, protected, True)
+    return any(s < cut < e for s, e in spans)
+
+
+def _source_time(text, parts, cut):
+    """Interpolate a time for ``cut`` inside the source cue that contains it."""
+    k = max(i for i, (off, _) in enumerate(parts) if off <= cut)
+    offset, cue = parts[k]
+    stop = parts[k + 1][0] if k + 1 < len(parts) else len(text)
+    keys = [i for i in range(offset, stop) if _is_key(text[i])]
+    before = sum(1 for i in keys if i < cut)
+    return cue.start + cue.duration * before / max(1, len(keys))
+
+
+def reflow_cues(
+    cues,
+    measure,
+    max_width,
+    *,
+    max_lines=1,
+    protected=(),
+    words=None,
+    use_jieba=True,
+    allow_char_breaks=False,
+    max_gap=0.3,
+    rejoin=True,
+    rejoin_gap=0.6,
+    report=None,
+):
+    r"""Split cues that overflow ``max_lines`` into consecutive, re-timed cues.
+
+    Port of the R26 "semantic pixel width" subtitle layout: a cue that fits is
+    only re-wrapped; one that does not is cut into the fewest pieces that each
+    fit, never inside a word, a number or a ``protected`` name, preferring
+    cuts after punctuation and pieces of balanced width. Text is never
+    dropped, truncated or changed (``"".join`` of the pieces equals the
+    original text without its line breaks).
+
+    Parameters
+    ----------
+    cues : iterable of Cue
+        Source cues; each may hold one or several sentences.
+    measure : callable
+        ``measure(str) -> float`` pixel width of one line (include the
+        outline; ``SubtitleLayer`` measures with its own font).
+    max_width : float
+        Usable line width in the units of ``measure``.
+    max_lines : int, optional
+        Lines per output cue; the default ``1`` gives one-line captions.
+    protected : iterable of str, optional
+        Names and glossary terms that must stay whole.
+    words : sequence of Word, optional
+        ASR word timings for the same text (see ``load_words``). Their edges
+        become extra cut points, cuts inside one ASR word are refused, and
+        each new boundary is timed from the words around it. Without words the
+        boundary time is proportional to the letters and digits before it.
+    use_jieba, allow_char_breaks : bool, optional
+        As in ``break_lines``.
+    max_gap : float, optional
+        When the pause between the words around a cut is at most this many
+        seconds the next cue starts as the previous one ends (no flicker);
+        longer pauses are kept as gaps.
+    rejoin : bool, optional
+        First merge consecutive cues whose shared boundary is itself a bad
+        cut (inside a name, number, word or ASR word, or against kinsoku),
+        then lay the merged text out again. The original boundary time is
+        reused wherever a new cut lands on an old one.
+    rejoin_gap : float, optional
+        Largest gap in seconds between two cues that may still be merged.
+    report : list, optional
+        When given, one dict per output group is appended: ``index`` (first
+        source cue), ``sources``, ``text``, ``pieces`` and ``timing``
+        (``"unchanged"``, ``"rejoined"``, ``"source"``, ``"words"``,
+        ``"proportional"`` or ``"mixed"``).
+
+    Returns
+    -------
+    list of Cue
+        Ordered output cues; lines inside a cue are joined with ``"\n"``.
+
+    Raises
+    ------
+    LayoutError
+        If some text cannot be cut into fitting pieces at an allowed point.
+
+    Examples
+    --------
+    >>> cue = Cue(0.0, 4.0, "今天天氣很好，我們去公園玩。")
+    >>> out = reflow_cues([cue], lambda s: 10 * len(s), 80)
+    >>> [(c.text, c.start, c.end) for c in out]
+    [('今天天氣很好，', 0.0, 2.0), ('我們去公園玩。', 2.0, 4.0)]
+    """
+    if not callable(measure):
+        raise TypeError("measure must be callable")
+    max_width = _finite(max_width, "max_width")
+    if max_width <= 0:
+        raise ValueError("max_width must be positive")
+    if isinstance(max_lines, bool) or not isinstance(max_lines, int) or max_lines < 1:
+        raise ValueError("max_lines must be a positive integer")
+    max_gap = _finite(max_gap, "max_gap")
+    protected = tuple(protected)
+    cues = sorted(cues, key=lambda c: (c.start, c.end))
+    for cue in cues:
+        if not isinstance(cue, Cue):
+            raise TypeError("cues must be Cue instances")
+    widths = {}
+
+    def measured(line):
+        width = widths.get(line)
+        if width is None:
+            width = widths[line] = float(measure(line))
+        return width
+
+    flats = [_flat_text(cue) for cue in cues]
+    words = list(words or ())
+    owners = _word_owners(flats, words) if words else [[None] * len(t) for t in flats]
+    groups = []
+    for i, cue in enumerate(cues):
+        prev = cues[i - 1] if i else None
+        if (
+            rejoin
+            and prev is not None
+            and prev.lang == cue.lang
+            and cue.start - prev.end <= rejoin_gap
+            and _bad_join(
+                flats[i - 1],
+                flats[i],
+                owners[i - 1],
+                owners[i],
+                cue.lang,
+                protected,
+                use_jieba,
+            )
+        ):
+            groups[-1].append(i)
+        else:
+            groups.append([i])
+    out = []
+    for group in groups:
+        first, last = cues[group[0]], cues[group[-1]]
+        cjk = _is_cjk_lang(first.lang)
+        entry = {"index": group[0], "sources": list(group)}
+        if len(group) == 1:
+            lines = first.text.split("\n")
+            if len(lines) <= max_lines and all(
+                float(measure(line)) <= max_width for line in lines
+            ):
+                out.append(first)
+                if report is not None:
+                    entry.update(text=first.text, pieces=1, timing="unchanged")
+                    report.append(entry)
+                continue
+        joiner = "" if cjk else " "
+        text, owner, parts = "", [], []
+        for i in group:
+            if text and joiner:
+                text += joiner
+                owner.append(None)
+            parts.append((len(text), cues[i]))
+            text += flats[i]
+            owner += owners[i]
+        weak = set()
+        if cjk:
+            analysis = _CJKAnalysis(text, protected, use_jieba, allow_char_breaks)
+            weak = set(range(len(text) + 1)) - analysis.bounds
+            cuts = []
+            for i in range(1, len(text)):
+                reason = analysis.reason(i)
+                left, right = _neighbours(owner, i)
+                edge = left is not None and right is not None and left != right
+                if reason is None or (reason == "not_word_boundary" and edge):
+                    cuts.append(i)
+        else:
+            cuts = _en_cuts(text, protected)
+        # A cut between two characters of one ASR word would split the word.
+        cuts = [
+            c
+            for c in cuts
+            if not (
+                owner[c - 1] is not None
+                and owner[c] is not None
+                and owner[c - 1] == owner[c]
+            )
+        ]
+        n = len(text)
+        edges = [0, *cuts, n]
+        best = {n: (0.0, None, None)}
+        for a in reversed(edges[:-1]):
+            choice = None
+            for b in edges:
+                if b <= a or b not in best:
+                    continue
+                piece = text[a:b].strip()
+                width = measured(piece)
+                if width > max_width * max_lines:
+                    break
+                found = _piece_lines(
+                    text, a, b, cuts, measured, max_width, max_lines, weak
+                )
+                if found is None:
+                    continue
+                cost = best[b][0] + _split_cost(
+                    piece, width, max_width, max_lines, found, b == n, b in weak
+                )
+                if choice is None or cost < choice[0] - 1e-12:
+                    choice = (cost, b, found)
+            if choice is not None:
+                best[a] = choice
+        if 0 not in best:
+            raise LayoutError(
+                f"cannot split {text!r} into cues of {max_lines} line(s) "
+                f"of width {max_width:g}"
+            )
+        spans, a = [], 0
+        while a < n:
+            _, b, found = best[a]
+            piece = text[a:b]
+            marks = (0, *found, len(piece))
+            body = "\n".join(
+                piece[marks[i] : marks[i + 1]].strip() for i in range(len(marks) - 1)
+            )
+            spans.append((a, body))
+            a = b
+        times, methods = [first.start], set()
+        for a, _ in spans[1:]:
+            left, right = _neighbours(owner, a)
+            source = next(
+                (k for k, (off, _) in enumerate(parts) if k and off == a), None
+            )
+            if source is not None:
+                end, start = parts[source - 1][1].end, parts[source][1].start
+                methods.add("source")
+            elif left is not None and right is not None and left != right:
+                start = words[right].start
+                end = min(words[left].end, start)
+                if start - end <= max_gap:
+                    end = start
+                methods.add("words")
+            else:
+                end = start = _source_time(text, parts, a)
+                methods.add("proportional")
+            end = min(max(end, times[-1]), last.end)
+            start = min(max(start, end), last.end)
+            times += [end, start]
+        times.append(last.end)
+        pieces = []
+        for k, (_, body) in enumerate(spans):
+            start, end = times[2 * k], times[2 * k + 1]
+            if end <= start:
+                raise LayoutError(
+                    f"split of {text!r} leaves an empty time span at {body!r}"
+                )
+            pieces.append(Cue(start, end, body, first.lang))
+        out += pieces
+        if report is not None:
+            if not methods:
+                timing = "rejoined"
+            elif len(methods) == 1:
+                timing = methods.pop()
+            else:
+                timing = "mixed"
+            entry.update(text=text, pieces=len(pieces), timing=timing)
+            report.append(entry)
+    return out
 
 
 @dataclass(frozen=True)
@@ -945,6 +1390,13 @@ class SubtitleLayer(Layer):
         Canvas size; defaults to ``preset.size``.
     protected : iterable of str, optional
         Glossary terms that line breaking must keep whole.
+    overflow : {"wrap", "split"}, optional
+        ``"wrap"`` (default) re-wraps a cue within ``max_lines`` and raises
+        ``LayoutError`` when it cannot fit. ``"split"`` runs ``reflow_cues``
+        first, so a long cue becomes several consecutive cues that each fit;
+        ``reflow_report`` then lists what was split and how it was timed.
+    words : sequence of Word, optional
+        ASR word timings for the primary cues, used by ``overflow="split"``.
     cache_size : int, optional
         LRU capacity for composed frames and rendered blocks. A composed
         1080p frame is about 2-7 MB (float32 RGBA of the text box only), so the
@@ -968,6 +1420,8 @@ class SubtitleLayer(Layer):
         secondary_font=None,
         size=None,
         protected=(),
+        overflow="wrap",
+        words=None,
         cache_size=16,
         name="Subtitles",
         **kwargs,
@@ -995,6 +1449,22 @@ class SubtitleLayer(Layer):
         self._protected = tuple(protected)
         self._widths = {}
         self._max_width = style.max_width * self._size[0]
+        if overflow not in ("wrap", "split"):
+            raise ValueError("overflow must be 'wrap' or 'split'")
+        self.reflow_report = []
+        if overflow == "split":
+            split = lambda items, role, timing: reflow_cues(  # noqa: E731
+                items,
+                self._measure(role),
+                self._max_width,
+                max_lines=style.max_lines,
+                protected=self._protected,
+                words=timing,
+                report=self.reflow_report,
+            )
+            cues = split(cues, "primary", words)
+            if secondary:
+                secondary = split(secondary, "secondary", None)
         self._lanes = {
             "primary": self._prepare(cues, "primary"),
             "secondary": self._prepare(secondary or (), "secondary"),
