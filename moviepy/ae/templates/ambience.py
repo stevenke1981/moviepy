@@ -5,8 +5,8 @@ frame through After Effects (see ``music_render`` for the PERFORMANCE RULE):
 
 ``particle_loop``
     A short, *exactly periodic*, transparent particle composition (fireflies,
-    dust, petals, leaves, snow, rain). ``export_overlay_loop`` writes it once as
-    a MOV with alpha; FFmpeg repeats it with ``-stream_loop -1`` and overlays it
+    dust, petals, leaves, snow, snowflakes, rain). ``export_overlay_loop``
+    writes it once as a MOV with alpha; FFmpeg repeats it with ``-stream_loop -1`` and overlays it
     on the looped background (``render_music_video(overlay_loops=...)``).
 ``LightArc``
     A slow brightness / saturation / warmth / contrast curve over hours,
@@ -96,6 +96,12 @@ _KINDS = {
         color=(246, 249, 255), opacity=0.7, fall=True, wraps=1,
         sway=(10, 35), sway_cycles=(1, 3), twinkle=0.0, rotate=0, slope=0.0,
     ),
+    "snowflakes": dict(
+        count=26, sizes=(4.5, 6.5, 9.0), shape=(1.0, 1.0), power=1.0,
+        color=(246, 249, 255), opacity=0.75, fall=True, wraps=1,
+        sway=(12, 40), sway_cycles=(1, 2), twinkle=0.0, rotate=1, slope=0.0,
+        glyph="crystal",
+    ),
     "rain": dict(
         count=110, sizes=(16.0, 22.0, 30.0), shape=(1.0, 0.07), power=1.0,
         color=(200, 215, 235), opacity=0.22, fall=True, wraps=6,
@@ -121,6 +127,57 @@ def _sprite(sigma_major, sigma_minor, power, angle, frac_x, frac_y):
             minor = -dx * sin + dy * cos
             rho2 = (major / sigma_major) ** 2 + (minor / sigma_minor) ** 2
             total += np.exp(-0.5 * rho2**power)
+    return (total / _SUPERSAMPLE**2).astype(np.float32), half
+
+
+def _segment_distance(px, py, ax, ay, bx, by):
+    """Return the distance from points ``(px, py)`` to segment ``a``-``b``."""
+    vx, vy = bx - ax, by - ay
+    t = np.clip(((px - ax) * vx + (py - ay) * vy) / (vx * vx + vy * vy), 0.0, 1.0)
+    return np.hypot(px - ax - t * vx, py - ay - t * vy)
+
+
+def _crystal_segments(radius):
+    """Return the line segments of a six-armed snowflake of ``radius`` px."""
+    segments = []
+    for arm in range(6):
+        a = math.pi / 3 * arm
+        ca, sa = math.cos(a), math.sin(a)
+        segments.append((0.0, 0.0, radius * ca, radius * sa))
+        for at, length in ((0.5, 0.32), (0.75, 0.2)):
+            bx, by = at * radius * ca, at * radius * sa
+            for side in (-1, 1):
+                b = a + side * math.pi / 3
+                tip = length * radius
+                segments.append(
+                    (bx, by, bx + tip * math.cos(b), by + tip * math.sin(b))
+                )
+    return segments
+
+
+def _crystal_sprite(radius, angle, frac_x, frac_y):
+    """Return an antialiased six-armed snowflake sprite (peak 1.0)."""
+    width = max(0.45, 0.09 * radius)  # arm half-thickness (gaussian sigma)
+    half = int(math.ceil(radius + 3.0 * width)) + 1
+    steps = (np.arange(_SUPERSAMPLE) + 0.5) / _SUPERSAMPLE - 0.5
+    axis = np.arange(-half, half + 1, dtype=np.float64)
+    gy, gx = np.meshgrid(axis, axis, indexing="ij")
+    cos, sin = math.cos(angle), math.sin(angle)
+    segments = _crystal_segments(radius)
+    total = np.zeros_like(gx)
+    for oy in steps:
+        for ox in steps:
+            dx = gx + ox - frac_x
+            dy = gy + oy - frac_y
+            u = dx * cos + dy * sin
+            v = -dx * sin + dy * cos
+            near = np.full_like(gx, np.inf)
+            for ax, ay, bx, by in segments:
+                np.minimum(near, _segment_distance(u, v, ax, ay, bx, by), out=near)
+            core = np.hypot(u, v) / max(1.0, 0.18 * radius)
+            total += np.maximum(
+                np.exp(-0.5 * (near / width) ** 2), np.exp(-0.5 * core**2)
+            )
     return (total / _SUPERSAMPLE**2).astype(np.float32), half
 
 
@@ -323,6 +380,15 @@ class ParticleLayer(Layer):
         found = self._cache.get(key)
         if found is None:
             index, angle, qx, qy = key
+            if self._spec.get("glyph") == "crystal":
+                found = _crystal_sprite(
+                    float(self._sigma_major[self._rep[index]]),
+                    math.pi * angle / _ANGLES,
+                    qx / _SUBPIXEL,
+                    qy / _SUBPIXEL,
+                )
+                self._cache[key] = found
+                return found
             found = _sprite(
                 float(self._sigma_major[self._rep[index]]),
                 float(self._sigma_minor[self._rep[index]]),
@@ -433,12 +499,14 @@ def particle_loop(
     is identical to frame ``n``, so FFmpeg's ``-stream_loop -1`` repeats it with
     no seam. Defaults are gentle (low density, slow, no flashing): fireflies
     wander and twinkle at up to 0.25 Hz (hard limit 0.5 Hz), dust drifts, petals
-    and leaves sway and turn, snow falls, and rain is thin and translucent.
+    and leaves sway and turn, snow falls, snowflakes (six-armed crystals) fall
+    while turning slowly, and rain is thin and translucent.
 
     Parameters
     ----------
     kind : str
-        ``"fireflies"``, ``"dust"``, ``"petals"``, ``"leaves"``, ``"snow"``
+        ``"fireflies"``, ``"dust"``, ``"petals"``, ``"leaves"``, ``"snow"``,
+        ``"snowflakes"`` (six-armed crystals turning slowly)
         or ``"rain"``.
     size : tuple of int
         Composition size ``(width, height)``.

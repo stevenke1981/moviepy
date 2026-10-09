@@ -487,7 +487,7 @@ README 內的製作清單依序為：放入母帶並填寫 ``tracks``；放入�
 5.8 ``ambience.particles`` 環境粒子
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-粒子層共六種：``fireflies``（螢火蟲，緩慢飄移並輕微明滅）、``dust``（塵埃，幾乎不動）、``petals``（花瓣）、``leaves``（葉片）、``snow``（雪）與 ``rain``（細雨，半透明）。各種的預設數量與透明度都已調低，讓畫面保持安靜。
+粒子層共七種：``fireflies``（螢火蟲，緩慢飄移並輕微明滅）、``dust``（塵埃，幾乎不動）、``petals``（花瓣）、``leaves``（葉片）、``snow``（雪點）、``snowflakes``（六角雪花，緩慢旋轉飄落）與 ``rain``（細雨，半透明）。各種的預設數量與透明度都已調低，讓畫面保持安靜。
 
 粒子層是**無縫循環**：``particle_loop`` 產生的組合恰好為 ``period`` 秒，第 ``n + period × fps`` 幀與第 ``n`` 幀完全相同。``prepare_particles`` 把它寫成帶透明通道的 ``visual/particles.mov``（無損 qtrle）。渲染時 FFmpeg 以 ``-stream_loop -1`` 重複播放並疊在背景上，接縫不會被看見。
 
@@ -512,7 +512,7 @@ README 內的製作清單依序為：放入母帶並填寫 ``tracks``；放入�
    * - ``kind``
      - 字串
      - ``"fireflies"``
-     - ``fireflies``、``dust``、``petals``、``leaves``、``snow`` 或 ``rain``。
+     - ``fireflies``、``dust``、``petals``、``leaves``、``snow``、``snowflakes`` 或 ``rain``。
    * - ``period``
      - 數字
      - ``20.0``

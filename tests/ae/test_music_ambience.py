@@ -1,6 +1,7 @@
 """Tests for the ambience components: particles, light arc, sleep fade."""
 
 import json
+import math
 import subprocess
 
 import numpy as np
@@ -12,6 +13,7 @@ from moviepy.ae.templates.ambience import (
     LightArc,
     ParticleLayer,
     SleepFade,
+    _crystal_sprite,
     _particle_factory,
     export_overlay_loop,
     particle_loop,
@@ -307,3 +309,13 @@ def test_sleep_fade_audio_filter_attenuates(tmp_path):
     assert rms[0] > 10000 and rms[0] == pytest.approx(rms[1], rel=0.05)
     assert rms[1] > rms[2] > rms[3] > rms[4]
     assert rms[5] < 50 and rms[6] < 50
+
+
+def test_snowflakes_are_six_armed_crystals():
+    sprite, half = _crystal_sprite(8.0, 0.0, 0.0, 0.0)
+    turned, _ = _crystal_sprite(8.0, math.pi / 3, 0.0, 0.0)
+    assert np.abs(sprite - turned).max() < 1e-3  # six-fold symmetry
+    assert sprite[half, half + 7] > 0.5  # on an arm
+    assert sprite[half + 7, half] < 0.4 * sprite[half, half + 7]  # between arms
+    layer = layer_for("snowflakes", count=6)
+    assert layer.rgba_uint8(0)[..., 3].max() > 0

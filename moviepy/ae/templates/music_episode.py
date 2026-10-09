@@ -532,7 +532,8 @@ class ParticlesSpec:
     Parameters
     ----------
     kind : str
-        ``fireflies``, ``dust``, ``petals``, ``leaves``, ``snow`` or ``rain``.
+        ``fireflies``, ``dust``, ``petals``, ``leaves``, ``snow``,
+        ``snowflakes`` or ``rain``.
     period : float
         Loop length in seconds; a whole number of frames at ``fps``.
     count : int, optional
