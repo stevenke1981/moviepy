@@ -33,6 +33,7 @@ This mean you need to specifically set `bg_color=None` if you want to generate a
 - Optional Godot 4.7+ Windows GPU backend with hidden Vulkan rendering, extruded text, seeded particle bursts, real 3D shadows, RGBA/WAV output and a MoviePy showcase. See [Godot usage and limits](docs/ae/godot_backend.rst).
 - AE motion tools preview: text entrance presets, deterministic particles, Glow and DropShadow, optional Blender Cycles/PBR image-sequence rendering, and explicit local U2Net ONNX background removal. See [usage and capability limits](docs/ae/motion_tools.rst).
 - Classical matte refinement and image inpainting, plus an AE regression/style workflow. Generative AI inpainting and native SBSAR are not included.
+- Seamless 夜燈說書 logo title loop (`moviepy.ae.templates.logo_loop`): lamp, breathing halo and glow, flickering flame, title light sweep, rising embers and rotating taglines, all on integer harmonics of the loop period; MP4 or alpha MOV export and `python -m moviepy.ae.templates logo`.
 - Possibility to select audio track when reading a file (#2429)
 
 ### Changed 

@@ -468,6 +468,29 @@ R5 的章節疊圖：左上頻道 logo（圖檔或文字）、右上半透明浮
     card = EndCard(start=100.0, duration=6.0, channel="夜燈說書")
     add_end_card(comp, card)
 
+``logo_loop``：夜燈說書輪播 logo 標題
+--------------------------------------
+
+``build_logo_loop(spec, preset)`` 產生一段可無限循環的頻道 logo 標題：油燈、``夜燈說書`` 標題與其下的副標。所有動態都是 ``period``（預設 6 秒）的整數倍頻：光暈與標題光芒每圈呼吸一次，火苗以 3、5、7 倍頻閃動，掃光每圈劃過標題一次，餘燼每圈恰好上升整數個區段高，``taglines`` 則依序輪播（舊句上升淡出，新句升入定位，最後一句接回第一句）。因此第 ``period`` 秒的畫面等於第 0 秒，播放器循環或 ``-stream_loop -1`` 都看不出接縫。``period * fps`` 必須是整數格。
+
+``LogoLoopSpec`` 欄位：``title``、``taglines``、``period``、``crossfade``、``layout``（``stacked`` 燈在上；``inline`` 燈在左）、``lamp``、``shine``、``embers``（餘燼數，0 為不要）、``breath``（呼吸深度）與 ``seed``。每個元素都是一般 AE 圖層（``Background``、``Halo``、``Embers``、``Glow``、``Lamp``、``Flame glow``、``Flame``、``Title``、``Shine``、``Tagline 1`` …），可再改關鍵影格。``transparent=True`` 不畫夜色背景並保留 alpha，用於疊在影片上。
+
+``export_logo_loop(comp, path)`` 不透明時輸出 MP4（固定幀率、一秒封閉 GOP、無 B 幀），透明時輸出帶 alpha 的 MOV（預設 qtrle）。命令列：
+
+.. code-block:: text
+
+    python -m moviepy.ae.templates logo logo.mp4 --tagline 一盞夜燈・說一段故事 --tagline 聊齋・史話・人物誌
+    python -m moviepy.ae.templates logo logo.mov --transparent --layout inline
+
+.. code-block:: python
+
+    from moviepy.ae.templates.logo_loop import (
+        LogoLoopSpec, build_logo_loop, export_logo_loop)
+
+    spec = LogoLoopSpec(taglines=("一盞夜燈・說一段故事", "聊齋・史話・人物誌"))
+    comp = build_logo_loop(spec)
+    export_logo_loop(comp, "logo.mp4")
+
 ``delivery``：成片封裝
 -----------------------
 

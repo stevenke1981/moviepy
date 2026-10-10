@@ -6,12 +6,16 @@ from moviepy.ae.templates.episode import main
 
 
 def run(argv=None):
-    """Dispatch ``music``/``library`` to their CLIs, the rest to episodes."""
+    """Dispatch ``music``/``library``/``logo`` to their CLIs, the rest to episodes."""
     argv = sys.argv[1:] if argv is None else list(argv)
     if argv and argv[0] == "library":
         from moviepy.ae.templates.library import main as library_main
 
         return library_main(argv[1:])
+    if argv and argv[0] == "logo":
+        from moviepy.ae.templates.logo_loop import main as logo_main
+
+        return logo_main(argv[1:])
     if argv and argv[0] == "music":
         from moviepy.ae.templates.music_episode import main as music_main
 

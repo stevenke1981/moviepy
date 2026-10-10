@@ -304,6 +304,17 @@ TEMPLATES = (
         "無聲成片加混音、繁中／英文／簡中三條軟字幕與章節點封裝成 MP4，回讀串流核對。",
         ("delivery", "subtitle", "wuzetian"),
     ),
+    TemplateInfo(
+        "logo_loop",
+        "夜燈說書輪播 logo 標題",
+        "logo_loop",
+        "build_logo_loop",
+        "",
+        "夜燈說書頻道識別",
+        "油燈加「夜燈說書」標題的無縫循環：光暈呼吸、火苗閃動、標題掃光、餘燼上升，"
+        "副標依序輪播；可輸出 MP4 或帶 alpha 的 MOV。",
+        ("logo", "loop", "brand"),
+    ),
 )
 
 RECIPES = (
