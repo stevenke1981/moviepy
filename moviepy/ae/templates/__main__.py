@@ -8,6 +8,10 @@ from moviepy.ae.templates.episode import main
 def run(argv=None):
     """Dispatch ``music``/``library``/``logo`` to their CLIs, the rest to episodes."""
     argv = sys.argv[1:] if argv is None else list(argv)
+    if argv and argv[0] == "documentary":
+        from moviepy.ae.templates.documentary.__main__ import main as documentary_main
+
+        return documentary_main(argv[1:])
     if argv and argv[0] == "library":
         from moviepy.ae.templates.library import main as library_main
 

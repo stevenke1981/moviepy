@@ -14,6 +14,11 @@ from importlib import import_module
 
 
 _LAZY = {
+    "CollageCard": "documentary",
+    "build_news_page": "documentary",
+    "build_news_collage": "documentary",
+    "build_film_frame": "documentary",
+    "add_documentary_subtitles": "documentary",
     "ChannelPreset": "presets",
     "SubtitleStyle": "presets",
     "PRESETS": "presets",
