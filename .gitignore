@@ -62,3 +62,9 @@ docs/build/
 
 # Publishing
 .pypirc
+
+# Agent and tool runtime artifacts
+.ag-artifacts/
+.opencode/
+.pi-loop.json.lock
+.sites-runtime/

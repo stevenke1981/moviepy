@@ -54,6 +54,32 @@ This makes MoviePy very flexible and approachable, albeit slower than using ffmp
 
 Intall moviepy with `pip install moviepy`. For additional installation options, such as a custom FFMPEG or for previewing, see [this section](https://zulko.github.io/moviepy/getting_started/install.html). For development, clone that repo locally and install with `pip install -e .`
 
+# AE-style compositing (moviepy.ae)
+
+This fork adds `moviepy.ae`, an After Effects-style compositor: layers, keyframed properties,
+blend modes, masks, effects and time controls. A first composition (runs as is, needs no media files):
+
+``` python
+import moviepy.ae as ae
+
+comp = ae.Composition(size=(2, 1), fps=24, duration=1)
+layer = comp.add_solid("bg", color=(0, 128, 0))
+layer.blend_mode = ae.BlendMode.SCREEN
+print(comp.get_frame(0).tolist())  # [[[0, 128, 0], [0, 128, 0]]]
+```
+
+Template pipelines for finished videos have a command line:
+
+``` console
+python -m moviepy.ae.templates --help
+python -m moviepy.ae.templates init <folder>
+python -m moviepy.ae.templates validate <folder>
+python -m moviepy.ae.templates render <folder>
+```
+
+See [docs/ae/README.md](docs/ae/README.md) for the full index and [AGENTS.md](AGENTS.md) for
+setup, tests and conventions.
+
 # Documentation
 
 The online documentation ([here](https://zulko.github.io/moviepy/)) is automatically built at every push to the master branch. To build the documentation locally, install the extra dependencies via `pip install "moviepy[doc]"`, then go to the `docs` folder and run `make html`.

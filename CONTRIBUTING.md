@@ -27,6 +27,10 @@ You can get the appropriate URL (SSH- or HTTPS-based) by using the green "Code" 
 - MoviePy's team adopted [pre-commit](https://pre-commit.com/) to run code checks using black, flake8 and isort, so make sure that you've configured the pre-commit hooks with `pre-commit install`. 
 
 
+## Working on moviepy.ae
+
+Changes under `moviepy/ae` follow [AGENTS.md](AGENTS.md) and `docs/AE_PARITY_SPEC.md` section 9. Test with `pytest tests/ae -q -p no:cacheprovider` (set `PYTHONUTF8=1` on Windows), then run `pytest tests -q`. Lint the files you touched with `black --check`, `isort --check-only` and `flake8`.
+
 ## Standard contribution workflow
 
 ### Local development
