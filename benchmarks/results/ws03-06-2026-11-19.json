@@ -1,0 +1,2248 @@
+{
+  "benchmark": "ws03-06-compositing",
+  "cases": {
+    "adjustment_gaussian_blur_40": {
+      "deterministic": true,
+      "frame_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "layers": 3,
+      "median_fps": 2.269546194252559,
+      "median_ms": 440.61671999998,
+      "meets_target": false,
+      "output_sha256": "cad0d576189c448381de43edc9de7ad71c7bc19d8054c88d04187b089c99e095",
+      "samples": [
+        {
+          "fps": 2.0961538469600103,
+          "frames": 5,
+          "ms_per_frame": 477.0642200000111,
+          "repeat": 1,
+          "seconds": 2.3853211000000556
+        },
+        {
+          "fps": 2.0738516834367866,
+          "frames": 5,
+          "ms_per_frame": 482.1945599999708,
+          "repeat": 2,
+          "seconds": 2.410972799999854
+        },
+        {
+          "fps": 2.269546194252559,
+          "frames": 5,
+          "ms_per_frame": 440.61671999998,
+          "repeat": 3,
+          "seconds": 2.2030835999999
+        },
+        {
+          "fps": 2.2889919128540583,
+          "frames": 5,
+          "ms_per_frame": 436.87354000003324,
+          "repeat": 4,
+          "seconds": 2.1843677000001662
+        },
+        {
+          "fps": 2.4793926519428493,
+          "frames": 5,
+          "ms_per_frame": 403.3245800000259,
+          "repeat": 5,
+          "seconds": 2.0166229000001294
+        }
+      ],
+      "scene": "one moving 600x400 solid under a full-frame GaussianBlur(40) adjustment",
+      "target_ms": 150.0,
+      "timed_boundary": "Composition.get_frame(t) including uint8 export; t advances one frame per call so no frame is reused"
+    },
+    "blend_modes": {
+      "modes": {
+        "add": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "unclamped",
+          "median_fps": 11.138683064590785,
+          "median_ms": 89.7772199999963,
+          "meets_target": null,
+          "output_sha256": "b3f3a3432c411491273d595a9918856162e28cf61c3c455f94b7c090a079de22",
+          "ratio_vs_normal": 3.3876278701210785,
+          "samples": [
+            {
+              "fps": 10.718465150091665,
+              "frames": 5,
+              "ms_per_frame": 93.29693999998199,
+              "repeat": 1,
+              "seconds": 0.46648469999990994
+            },
+            {
+              "fps": 11.02101310442459,
+              "frames": 5,
+              "ms_per_frame": 90.73576000000685,
+              "repeat": 2,
+              "seconds": 0.45367880000003424
+            },
+            {
+              "fps": 11.138683064590785,
+              "frames": 5,
+              "ms_per_frame": 89.7772199999963,
+              "repeat": 3,
+              "seconds": 0.4488860999999815
+            },
+            {
+              "fps": 11.509238696088234,
+              "frames": 5,
+              "ms_per_frame": 86.88671999998405,
+              "repeat": 4,
+              "seconds": 0.43443359999992026
+            },
+            {
+              "fps": 11.454165925956447,
+              "frames": 5,
+              "ms_per_frame": 87.30448000005708,
+              "repeat": 5,
+              "seconds": 0.4365224000002854
+            }
+          ],
+          "target": null
+        },
+        "alpha_add": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "alpha_add",
+          "median_fps": 15.07527082725439,
+          "median_ms": 66.33379999993849,
+          "meets_target": null,
+          "output_sha256": "5fc6083c313bcfca867e06451c69d395e22fa3c687a3d258bcbebdbb4e42e80b",
+          "ratio_vs_normal": 2.5030205837387087,
+          "samples": [
+            {
+              "fps": 13.89279044754982,
+              "frames": 5,
+              "ms_per_frame": 71.97977999994691,
+              "repeat": 1,
+              "seconds": 0.35989889999973457
+            },
+            {
+              "fps": 15.260628646329787,
+              "frames": 5,
+              "ms_per_frame": 65.52810000002864,
+              "repeat": 2,
+              "seconds": 0.3276405000001432
+            },
+            {
+              "fps": 15.07527082725439,
+              "frames": 5,
+              "ms_per_frame": 66.33379999993849,
+              "repeat": 3,
+              "seconds": 0.33166899999969246
+            },
+            {
+              "fps": 14.342251440903924,
+              "frames": 5,
+              "ms_per_frame": 69.72405999995317,
+              "repeat": 4,
+              "seconds": 0.34862029999976585
+            },
+            {
+              "fps": 15.21462819555871,
+              "frames": 5,
+              "ms_per_frame": 65.72622000003321,
+              "repeat": 5,
+              "seconds": 0.32863110000016604
+            }
+          ],
+          "target": null
+        },
+        "classic_color_burn": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "classic",
+          "median_fps": 12.022389536478954,
+          "median_ms": 83.17814000001817,
+          "meets_target": null,
+          "output_sha256": "6f9e3a985594cae5df11de1e3031590adf70c1cf293b4a321e8cb72102025905",
+          "ratio_vs_normal": 3.1386200781100824,
+          "samples": [
+            {
+              "fps": 11.263209492093036,
+              "frames": 5,
+              "ms_per_frame": 88.7846399999944,
+              "repeat": 1,
+              "seconds": 0.443923199999972
+            },
+            {
+              "fps": 11.179129905957733,
+              "frames": 5,
+              "ms_per_frame": 89.45240000002741,
+              "repeat": 2,
+              "seconds": 0.44726200000013705
+            },
+            {
+              "fps": 12.12060388727948,
+              "frames": 5,
+              "ms_per_frame": 82.50413999994635,
+              "repeat": 3,
+              "seconds": 0.41252069999973173
+            },
+            {
+              "fps": 12.022389536478954,
+              "frames": 5,
+              "ms_per_frame": 83.17814000001817,
+              "repeat": 4,
+              "seconds": 0.4158907000000909
+            },
+            {
+              "fps": 12.409922576974601,
+              "frames": 5,
+              "ms_per_frame": 80.58068000000276,
+              "repeat": 5,
+              "seconds": 0.4029034000000138
+            }
+          ],
+          "target": null
+        },
+        "classic_color_dodge": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "classic",
+          "median_fps": 11.702758363547014,
+          "median_ms": 85.44994000003499,
+          "meets_target": null,
+          "output_sha256": "5bb130e85e137f01f5385f3e5f5671cd7f5687479760dc1a36a338ae563fb3b9",
+          "ratio_vs_normal": 3.2243435277267927,
+          "samples": [
+            {
+              "fps": 11.25952922106159,
+              "frames": 5,
+              "ms_per_frame": 88.81366000005073,
+              "repeat": 1,
+              "seconds": 0.44406830000025366
+            },
+            {
+              "fps": 11.447295278852671,
+              "frames": 5,
+              "ms_per_frame": 87.35688000006121,
+              "repeat": 2,
+              "seconds": 0.43678440000030605
+            },
+            {
+              "fps": 12.590811225960548,
+              "frames": 5,
+              "ms_per_frame": 79.42300000004252,
+              "repeat": 3,
+              "seconds": 0.3971150000002126
+            },
+            {
+              "fps": 11.782232299427525,
+              "frames": 5,
+              "ms_per_frame": 84.87356000005093,
+              "repeat": 4,
+              "seconds": 0.42436780000025465
+            },
+            {
+              "fps": 11.702758363547014,
+              "frames": 5,
+              "ms_per_frame": 85.44994000003499,
+              "repeat": 5,
+              "seconds": 0.4272497000001749
+            }
+          ],
+          "target": null
+        },
+        "classic_difference": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "classic",
+          "median_fps": 13.625693479672645,
+          "median_ms": 73.39075999998386,
+          "meets_target": null,
+          "output_sha256": "216db7005ae191d4652996b904246cbe081670baf922d72de693235111a03aa9",
+          "ratio_vs_normal": 2.7693058883458717,
+          "samples": [
+            {
+              "fps": 13.528317880838822,
+              "frames": 5,
+              "ms_per_frame": 73.9190199999939,
+              "repeat": 1,
+              "seconds": 0.36959509999996953
+            },
+            {
+              "fps": 13.966734032870814,
+              "frames": 5,
+              "ms_per_frame": 71.59870000004958,
+              "repeat": 2,
+              "seconds": 0.3579935000002479
+            },
+            {
+              "fps": 12.616118757042107,
+              "frames": 5,
+              "ms_per_frame": 79.26367999998547,
+              "repeat": 3,
+              "seconds": 0.39631839999992735
+            },
+            {
+              "fps": 14.20748785757003,
+              "frames": 5,
+              "ms_per_frame": 70.38542000000234,
+              "repeat": 4,
+              "seconds": 0.3519271000000117
+            },
+            {
+              "fps": 13.625693479672645,
+              "frames": 5,
+              "ms_per_frame": 73.39075999998386,
+              "repeat": 5,
+              "seconds": 0.3669537999999193
+            }
+          ],
+          "target": null
+        },
+        "color": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "separable",
+          "median_fps": 7.093074903299315,
+          "median_ms": 140.9825799999453,
+          "meets_target": false,
+          "output_sha256": "2292b56819ec031eb319f388201ac24f6e97346bb5b072e632c5f48c2f7d5621",
+          "ratio_vs_normal": 5.319796237947766,
+          "samples": [
+            {
+              "fps": 7.137305338914103,
+              "frames": 5,
+              "ms_per_frame": 140.10890000008658,
+              "repeat": 1,
+              "seconds": 0.7005445000004329
+            },
+            {
+              "fps": 7.301417862335299,
+              "frames": 5,
+              "ms_per_frame": 136.95969999998852,
+              "repeat": 2,
+              "seconds": 0.6847984999999426
+            },
+            {
+              "fps": 7.047727918232744,
+              "frames": 5,
+              "ms_per_frame": 141.88970000004701,
+              "repeat": 3,
+              "seconds": 0.7094485000002351
+            },
+            {
+              "fps": 6.892886609948331,
+              "frames": 5,
+              "ms_per_frame": 145.07709999998042,
+              "repeat": 4,
+              "seconds": 0.7253854999999021
+            },
+            {
+              "fps": 7.093074903299315,
+              "frames": 5,
+              "ms_per_frame": 140.9825799999453,
+              "repeat": 5,
+              "seconds": 0.7049128999997265
+            }
+          ],
+          "target": "<= 2.0x normal"
+        },
+        "color_burn": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "separable",
+          "median_fps": 10.18187890284181,
+          "median_ms": 98.2136999999966,
+          "meets_target": false,
+          "output_sha256": "d755aad3271dc444e8447ec672766a6adefa3831a372bb454f06eead9fdbbfed",
+          "ratio_vs_normal": 3.7059675867409654,
+          "samples": [
+            {
+              "fps": 10.18187890284181,
+              "frames": 5,
+              "ms_per_frame": 98.2136999999966,
+              "repeat": 1,
+              "seconds": 0.49106849999998303
+            },
+            {
+              "fps": 10.091377422565815,
+              "frames": 5,
+              "ms_per_frame": 99.09449999995559,
+              "repeat": 2,
+              "seconds": 0.49547249999977794
+            },
+            {
+              "fps": 10.00350923103803,
+              "frames": 5,
+              "ms_per_frame": 99.96492000000217,
+              "repeat": 3,
+              "seconds": 0.49982460000001083
+            },
+            {
+              "fps": 10.502204937920492,
+              "frames": 5,
+              "ms_per_frame": 95.21810000005644,
+              "repeat": 4,
+              "seconds": 0.4760905000002822
+            },
+            {
+              "fps": 10.523096829540583,
+              "frames": 5,
+              "ms_per_frame": 95.02905999997893,
+              "repeat": 5,
+              "seconds": 0.47514529999989463
+            }
+          ],
+          "target": "<= 2.0x normal"
+        },
+        "color_dodge": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "separable",
+          "median_fps": 10.165878675517247,
+          "median_ms": 98.3682800000679,
+          "meets_target": false,
+          "output_sha256": "7109f54c5f3056e7b601b1444c0483e389988d808fb190d846c09ad8bc04937a",
+          "ratio_vs_normal": 3.711800464127956,
+          "samples": [
+            {
+              "fps": 10.165878675517247,
+              "frames": 5,
+              "ms_per_frame": 98.3682800000679,
+              "repeat": 1,
+              "seconds": 0.4918414000003395
+            },
+            {
+              "fps": 10.573858081486648,
+              "frames": 5,
+              "ms_per_frame": 94.57285999997112,
+              "repeat": 2,
+              "seconds": 0.4728642999998556
+            },
+            {
+              "fps": 9.774402871960415,
+              "frames": 5,
+              "ms_per_frame": 102.30803999993441,
+              "repeat": 3,
+              "seconds": 0.511540199999672
+            },
+            {
+              "fps": 10.597807483201088,
+              "frames": 5,
+              "ms_per_frame": 94.35913999996046,
+              "repeat": 4,
+              "seconds": 0.4717956999998023
+            },
+            {
+              "fps": 9.775847634417374,
+              "frames": 5,
+              "ms_per_frame": 102.29292000003625,
+              "repeat": 5,
+              "seconds": 0.5114646000001812
+            }
+          ],
+          "target": "<= 2.0x normal"
+        },
+        "dancing_dissolve": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "dissolve",
+          "median_fps": 7.2228585560568765,
+          "median_ms": 138.44934000007925,
+          "meets_target": null,
+          "output_sha256": "ffb4e2787565bcfb5f1a2a3dfe0a359c48d7aae049b8944ec541ea4431bb9c71",
+          "ratio_vs_normal": 5.224207686361382,
+          "samples": [
+            {
+              "fps": 6.807308380737058,
+              "frames": 5,
+              "ms_per_frame": 146.9009399999777,
+              "repeat": 1,
+              "seconds": 0.7345046999998885
+            },
+            {
+              "fps": 7.230381949265434,
+              "frames": 5,
+              "ms_per_frame": 138.30527999998594,
+              "repeat": 2,
+              "seconds": 0.6915263999999297
+            },
+            {
+              "fps": 7.2228585560568765,
+              "frames": 5,
+              "ms_per_frame": 138.44934000007925,
+              "repeat": 3,
+              "seconds": 0.6922467000003962
+            },
+            {
+              "fps": 7.109066733090443,
+              "frames": 5,
+              "ms_per_frame": 140.66544000006616,
+              "repeat": 4,
+              "seconds": 0.7033272000003308
+            },
+            {
+              "fps": 7.3471229034040615,
+              "frames": 5,
+              "ms_per_frame": 136.10770000004777,
+              "repeat": 5,
+              "seconds": 0.6805385000002389
+            }
+          ],
+          "target": null
+        },
+        "darken": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "separable",
+          "median_fps": 11.841469251614955,
+          "median_ms": 84.4489799999792,
+          "meets_target": false,
+          "output_sha256": "c0bf3b5f677992ae951cbd16a5be011275cb2470b0003bc0e005d935c97f9a1b",
+          "ratio_vs_normal": 3.1865735901739756,
+          "samples": [
+            {
+              "fps": 11.841469251614955,
+              "frames": 5,
+              "ms_per_frame": 84.4489799999792,
+              "repeat": 1,
+              "seconds": 0.422244899999896
+            },
+            {
+              "fps": 11.97118774533161,
+              "frames": 5,
+              "ms_per_frame": 83.53390000002037,
+              "repeat": 2,
+              "seconds": 0.41766950000010183
+            },
+            {
+              "fps": 12.004796156161085,
+              "frames": 5,
+              "ms_per_frame": 83.30003999999462,
+              "repeat": 3,
+              "seconds": 0.4165001999999731
+            },
+            {
+              "fps": 10.949671586500225,
+              "frames": 5,
+              "ms_per_frame": 91.32693999999901,
+              "repeat": 4,
+              "seconds": 0.45663469999999506
+            },
+            {
+              "fps": 11.227263388232945,
+              "frames": 5,
+              "ms_per_frame": 89.06889999998384,
+              "repeat": 5,
+              "seconds": 0.4453444999999192
+            }
+          ],
+          "target": "<= 2.0x normal"
+        },
+        "darker_color": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "separable",
+          "median_fps": 9.746567794881772,
+          "median_ms": 102.60022000002209,
+          "meets_target": false,
+          "output_sha256": "b28655797147f3a49240be56e66d9e9392ff2343077d104a708b18e12a9ff019",
+          "ratio_vs_normal": 3.8714872743068143,
+          "samples": [
+            {
+              "fps": 9.823346755302046,
+              "frames": 5,
+              "ms_per_frame": 101.7982999999731,
+              "repeat": 1,
+              "seconds": 0.5089914999998655
+            },
+            {
+              "fps": 9.746567794881772,
+              "frames": 5,
+              "ms_per_frame": 102.60022000002209,
+              "repeat": 2,
+              "seconds": 0.5130011000001105
+            },
+            {
+              "fps": 9.893962446867679,
+              "frames": 5,
+              "ms_per_frame": 101.07174000004306,
+              "repeat": 3,
+              "seconds": 0.5053587000002153
+            },
+            {
+              "fps": 7.288269573850675,
+              "frames": 5,
+              "ms_per_frame": 137.2067799999968,
+              "repeat": 4,
+              "seconds": 0.686033899999984
+            },
+            {
+              "fps": 8.707036434767247,
+              "frames": 5,
+              "ms_per_frame": 114.84964000001128,
+              "repeat": 5,
+              "seconds": 0.5742482000000564
+            }
+          ],
+          "target": "<= 2.0x normal"
+        },
+        "difference": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "separable",
+          "median_fps": 11.853672575960033,
+          "median_ms": 84.36203999999634,
+          "meets_target": false,
+          "output_sha256": "e31580451d1e76effbde1d0bdd4345f7af5100abb0883ee283a73741254e9a7e",
+          "ratio_vs_normal": 3.183293021150227,
+          "samples": [
+            {
+              "fps": 11.229903526137004,
+              "frames": 5,
+              "ms_per_frame": 89.04796000006172,
+              "repeat": 1,
+              "seconds": 0.4452398000003086
+            },
+            {
+              "fps": 11.853672575960033,
+              "frames": 5,
+              "ms_per_frame": 84.36203999999634,
+              "repeat": 2,
+              "seconds": 0.4218101999999817
+            },
+            {
+              "fps": 11.871890900181128,
+              "frames": 5,
+              "ms_per_frame": 84.23257999993439,
+              "repeat": 3,
+              "seconds": 0.42116289999967194
+            },
+            {
+              "fps": 11.681192229198652,
+              "frames": 5,
+              "ms_per_frame": 85.60770000003686,
+              "repeat": 4,
+              "seconds": 0.4280385000001843
+            },
+            {
+              "fps": 12.344072758929187,
+              "frames": 5,
+              "ms_per_frame": 81.0105399999884,
+              "repeat": 5,
+              "seconds": 0.405052699999942
+            }
+          ],
+          "target": "<= 2.0x normal"
+        },
+        "dissolve": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "dissolve",
+          "median_fps": 7.123260036886823,
+          "median_ms": 140.38516000000527,
+          "meets_target": null,
+          "output_sha256": "ffb4e2787565bcfb5f1a2a3dfe0a359c48d7aae049b8944ec541ea4431bb9c71",
+          "ratio_vs_normal": 5.297253363018417,
+          "samples": [
+            {
+              "fps": 7.11369809436628,
+              "frames": 5,
+              "ms_per_frame": 140.57386000004044,
+              "repeat": 1,
+              "seconds": 0.7028693000002022
+            },
+            {
+              "fps": 7.970225786932636,
+              "frames": 5,
+              "ms_per_frame": 125.46695999999429,
+              "repeat": 2,
+              "seconds": 0.6273347999999714
+            },
+            {
+              "fps": 7.790550125026565,
+              "frames": 5,
+              "ms_per_frame": 128.36063999993712,
+              "repeat": 3,
+              "seconds": 0.6418031999996856
+            },
+            {
+              "fps": 6.912259237373385,
+              "frames": 5,
+              "ms_per_frame": 144.67049999993833,
+              "repeat": 4,
+              "seconds": 0.7233524999996916
+            },
+            {
+              "fps": 7.123260036886823,
+              "frames": 5,
+              "ms_per_frame": 140.38516000000527,
+              "repeat": 5,
+              "seconds": 0.7019258000000264
+            }
+          ],
+          "target": null
+        },
+        "divide": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "separable",
+          "median_fps": 10.403986807749236,
+          "median_ms": 96.11699999995835,
+          "meets_target": false,
+          "output_sha256": "d7b3e75bec472edd49e79d75dfb4eb7f7855deb269a7a8add17dfa068760198d",
+          "ratio_vs_normal": 3.6268513103023237,
+          "samples": [
+            {
+              "fps": 10.107051872017317,
+              "frames": 5,
+              "ms_per_frame": 98.94082000000708,
+              "repeat": 1,
+              "seconds": 0.4947041000000354
+            },
+            {
+              "fps": 10.51563633059491,
+              "frames": 5,
+              "ms_per_frame": 95.09648000002926,
+              "repeat": 2,
+              "seconds": 0.4754824000001463
+            },
+            {
+              "fps": 10.403986807749236,
+              "frames": 5,
+              "ms_per_frame": 96.11699999995835,
+              "repeat": 3,
+              "seconds": 0.48058499999979176
+            },
+            {
+              "fps": 9.804254144300245,
+              "frames": 5,
+              "ms_per_frame": 101.99654000007286,
+              "repeat": 4,
+              "seconds": 0.5099827000003643
+            },
+            {
+              "fps": 10.740785533786783,
+              "frames": 5,
+              "ms_per_frame": 93.10306000006676,
+              "repeat": 5,
+              "seconds": 0.4655153000003338
+            }
+          ],
+          "target": "<= 2.0x normal"
+        },
+        "exclusion": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "separable",
+          "median_fps": 11.509122130206418,
+          "median_ms": 86.88759999995455,
+          "meets_target": false,
+          "output_sha256": "14c63d6b687c7b3425e1b714b02da88fafdf5a76656bc09e8b9f6814aea1e120",
+          "ratio_vs_normal": 3.278591777822819,
+          "samples": [
+            {
+              "fps": 11.509122130206418,
+              "frames": 5,
+              "ms_per_frame": 86.88759999995455,
+              "repeat": 1,
+              "seconds": 0.43443799999977273
+            },
+            {
+              "fps": 11.200744446276957,
+              "frames": 5,
+              "ms_per_frame": 89.27978000001531,
+              "repeat": 2,
+              "seconds": 0.44639890000007654
+            },
+            {
+              "fps": 11.754022167618409,
+              "frames": 5,
+              "ms_per_frame": 85.07725999998001,
+              "repeat": 3,
+              "seconds": 0.4253862999999001
+            },
+            {
+              "fps": 10.766116876959122,
+              "frames": 5,
+              "ms_per_frame": 92.88400000004913,
+              "repeat": 4,
+              "seconds": 0.46442000000024564
+            },
+            {
+              "fps": 11.612117197858293,
+              "frames": 5,
+              "ms_per_frame": 86.11693999991985,
+              "repeat": 5,
+              "seconds": 0.43058469999959925
+            }
+          ],
+          "target": "<= 2.0x normal"
+        },
+        "hard_light": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "separable",
+          "median_fps": 9.810398355152659,
+          "median_ms": 101.93265999996584,
+          "meets_target": false,
+          "output_sha256": "93d5a2eabeaee5e06f7793cde7efb0c2a60022815ed8e8d9f77bf0ca6a995ccd",
+          "ratio_vs_normal": 3.8462977567302095,
+          "samples": [
+            {
+              "fps": 9.523377797343455,
+              "frames": 5,
+              "ms_per_frame": 105.00476000006529,
+              "repeat": 1,
+              "seconds": 0.5250238000003264
+            },
+            {
+              "fps": 9.754763299698372,
+              "frames": 5,
+              "ms_per_frame": 102.51401999994414,
+              "repeat": 2,
+              "seconds": 0.5125700999997207
+            },
+            {
+              "fps": 9.810398355152659,
+              "frames": 5,
+              "ms_per_frame": 101.93265999996584,
+              "repeat": 3,
+              "seconds": 0.5096632999998292
+            },
+            {
+              "fps": 9.871664413950535,
+              "frames": 5,
+              "ms_per_frame": 101.30004000002373,
+              "repeat": 4,
+              "seconds": 0.5065002000001186
+            },
+            {
+              "fps": 10.482083603427967,
+              "frames": 5,
+              "ms_per_frame": 95.40087999994284,
+              "repeat": 5,
+              "seconds": 0.4770043999997142
+            }
+          ],
+          "target": "<= 2.0x normal"
+        },
+        "hard_mix": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "separable",
+          "median_fps": 11.428704654618972,
+          "median_ms": 87.49897999996392,
+          "meets_target": false,
+          "output_sha256": "73f3cd4bf5aed1587016dbaf2e29446dab35b0e16f60d59966e955330fe865fd",
+          "ratio_vs_normal": 3.301661415390862,
+          "samples": [
+            {
+              "fps": 11.428704654618972,
+              "frames": 5,
+              "ms_per_frame": 87.49897999996392,
+              "repeat": 1,
+              "seconds": 0.4374948999998196
+            },
+            {
+              "fps": 11.682461354420466,
+              "frames": 5,
+              "ms_per_frame": 85.59839999998076,
+              "repeat": 2,
+              "seconds": 0.4279919999999038
+            },
+            {
+              "fps": 11.081916417968394,
+              "frames": 5,
+              "ms_per_frame": 90.23710000001302,
+              "repeat": 3,
+              "seconds": 0.4511855000000651
+            },
+            {
+              "fps": 11.788860564182343,
+              "frames": 5,
+              "ms_per_frame": 84.82584000003044,
+              "repeat": 4,
+              "seconds": 0.4241292000001522
+            },
+            {
+              "fps": 10.845212998894281,
+              "frames": 5,
+              "ms_per_frame": 92.20658000003823,
+              "repeat": 5,
+              "seconds": 0.46103290000019115
+            }
+          ],
+          "target": "<= 2.0x normal"
+        },
+        "hue": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "separable",
+          "median_fps": 5.873229397536132,
+          "median_ms": 170.26407999992443,
+          "meets_target": false,
+          "output_sha256": "0b0507772ede3973cde065da9fa88c2030cf1d31cd2cbfb87bec67312acc599e",
+          "ratio_vs_normal": 6.424695960604401,
+          "samples": [
+            {
+              "fps": 5.873229397536132,
+              "frames": 5,
+              "ms_per_frame": 170.26407999992443,
+              "repeat": 1,
+              "seconds": 0.8513203999996222
+            },
+            {
+              "fps": 5.90672408474905,
+              "frames": 5,
+              "ms_per_frame": 169.2985800000315,
+              "repeat": 2,
+              "seconds": 0.8464929000001575
+            },
+            {
+              "fps": 5.865158366899705,
+              "frames": 5,
+              "ms_per_frame": 170.49838000002637,
+              "repeat": 3,
+              "seconds": 0.8524919000001319
+            },
+            {
+              "fps": 5.883249963760063,
+              "frames": 5,
+              "ms_per_frame": 169.9740799999745,
+              "repeat": 4,
+              "seconds": 0.8498703999998725
+            },
+            {
+              "fps": 5.834117146972781,
+              "frames": 5,
+              "ms_per_frame": 171.40553999997792,
+              "repeat": 5,
+              "seconds": 0.8570276999998896
+            }
+          ],
+          "target": "<= 2.0x normal"
+        },
+        "lighten": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "separable",
+          "median_fps": 10.240217059826346,
+          "median_ms": 97.6541800000632,
+          "meets_target": false,
+          "output_sha256": "5f58c8a43023af24295a633bef908ca2c5a1df263ea4de5e11499cfd34fc9561",
+          "ratio_vs_normal": 3.6848548195416178,
+          "samples": [
+            {
+              "fps": 11.01249543806602,
+              "frames": 5,
+              "ms_per_frame": 90.80594000006386,
+              "repeat": 1,
+              "seconds": 0.4540297000003193
+            },
+            {
+              "fps": 10.240217059826346,
+              "frames": 5,
+              "ms_per_frame": 97.6541800000632,
+              "repeat": 2,
+              "seconds": 0.48827090000031603
+            },
+            {
+              "fps": 10.214293841941306,
+              "frames": 5,
+              "ms_per_frame": 97.90202000003774,
+              "repeat": 3,
+              "seconds": 0.4895101000001887
+            },
+            {
+              "fps": 9.950571530975354,
+              "frames": 5,
+              "ms_per_frame": 100.49674000001687,
+              "repeat": 4,
+              "seconds": 0.5024837000000844
+            },
+            {
+              "fps": 11.037578761405078,
+              "frames": 5,
+              "ms_per_frame": 90.59957999998005,
+              "repeat": 5,
+              "seconds": 0.45299789999990026
+            }
+          ],
+          "target": "<= 2.0x normal"
+        },
+        "lighter_color": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "separable",
+          "median_fps": 9.855316075755532,
+          "median_ms": 101.4680799999951,
+          "meets_target": false,
+          "output_sha256": "fe5189087ffd7672d24c35bc93548b10a2583c9501e09c1d9e863cce850d987b",
+          "ratio_vs_normal": 3.828767428259337,
+          "samples": [
+            {
+              "fps": 9.832851359732018,
+              "frames": 5,
+              "ms_per_frame": 101.69990000003963,
+              "repeat": 1,
+              "seconds": 0.5084995000001982
+            },
+            {
+              "fps": 10.34069059682016,
+              "frames": 5,
+              "ms_per_frame": 96.70533999997133,
+              "repeat": 2,
+              "seconds": 0.48352669999985665
+            },
+            {
+              "fps": 9.931155245607025,
+              "frames": 5,
+              "ms_per_frame": 100.69321999999374,
+              "repeat": 3,
+              "seconds": 0.5034660999999687
+            },
+            {
+              "fps": 9.855316075755532,
+              "frames": 5,
+              "ms_per_frame": 101.4680799999951,
+              "repeat": 4,
+              "seconds": 0.5073403999999755
+            },
+            {
+              "fps": 9.620091059932486,
+              "frames": 5,
+              "ms_per_frame": 103.94912000001568,
+              "repeat": 5,
+              "seconds": 0.5197456000000784
+            }
+          ],
+          "target": "<= 2.0x normal"
+        },
+        "linear_burn": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "separable",
+          "median_fps": 10.94318669536076,
+          "median_ms": 91.38106000000334,
+          "meets_target": false,
+          "output_sha256": "4cedf84f657cc57770a83707d28731bdabe5b38c66c34f7e40b7c3ff07290d19",
+          "ratio_vs_normal": 3.4481467086776636,
+          "samples": [
+            {
+              "fps": 10.94318669536076,
+              "frames": 5,
+              "ms_per_frame": 91.38106000000334,
+              "repeat": 1,
+              "seconds": 0.4569053000000167
+            },
+            {
+              "fps": 11.365927631321545,
+              "frames": 5,
+              "ms_per_frame": 87.98225999998976,
+              "repeat": 2,
+              "seconds": 0.4399112999999488
+            },
+            {
+              "fps": 9.650922280739454,
+              "frames": 5,
+              "ms_per_frame": 103.6170399999719,
+              "repeat": 3,
+              "seconds": 0.5180851999998595
+            },
+            {
+              "fps": 11.49038840500799,
+              "frames": 5,
+              "ms_per_frame": 87.02925999996296,
+              "repeat": 4,
+              "seconds": 0.4351462999998148
+            },
+            {
+              "fps": 10.790273129874642,
+              "frames": 5,
+              "ms_per_frame": 92.67605999993975,
+              "repeat": 5,
+              "seconds": 0.46338029999969876
+            }
+          ],
+          "target": "<= 2.0x normal"
+        },
+        "linear_dodge": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "separable",
+          "median_fps": 11.64276097365599,
+          "median_ms": 85.89027999996688,
+          "meets_target": false,
+          "output_sha256": "238e525180b1c5d4ab2fadafe2d3fbcc67a7fbb1a314426c9911a4ccb3edb0a4",
+          "ratio_vs_normal": 3.2409591909885695,
+          "samples": [
+            {
+              "fps": 10.800139105787304,
+              "frames": 5,
+              "ms_per_frame": 92.59140000003754,
+              "repeat": 1,
+              "seconds": 0.4629570000001877
+            },
+            {
+              "fps": 10.309690738150426,
+              "frames": 5,
+              "ms_per_frame": 96.99611999994886,
+              "repeat": 2,
+              "seconds": 0.4849805999997443
+            },
+            {
+              "fps": 11.656256075819819,
+              "frames": 5,
+              "ms_per_frame": 85.79084000002695,
+              "repeat": 3,
+              "seconds": 0.42895420000013473
+            },
+            {
+              "fps": 11.64276097365599,
+              "frames": 5,
+              "ms_per_frame": 85.89027999996688,
+              "repeat": 4,
+              "seconds": 0.4294513999998344
+            },
+            {
+              "fps": 11.674758052308912,
+              "frames": 5,
+              "ms_per_frame": 85.65488000003825,
+              "repeat": 5,
+              "seconds": 0.42827440000019124
+            }
+          ],
+          "target": "<= 2.0x normal"
+        },
+        "linear_light": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "separable",
+          "median_fps": 12.111842693325617,
+          "median_ms": 82.56381999999576,
+          "meets_target": false,
+          "output_sha256": "f6f3de3cd7e374ae567fdfa0784f42518afed0625debb5b55177a3be51db7aac",
+          "ratio_vs_normal": 3.11543950342478,
+          "samples": [
+            {
+              "fps": 11.992389150161213,
+              "frames": 5,
+              "ms_per_frame": 83.38621999992029,
+              "repeat": 1,
+              "seconds": 0.41693109999960143
+            },
+            {
+              "fps": 12.513787064899866,
+              "frames": 5,
+              "ms_per_frame": 79.91185999999288,
+              "repeat": 2,
+              "seconds": 0.3995592999999644
+            },
+            {
+              "fps": 12.111842693325617,
+              "frames": 5,
+              "ms_per_frame": 82.56381999999576,
+              "repeat": 3,
+              "seconds": 0.4128190999999788
+            },
+            {
+              "fps": 12.556062820499012,
+              "frames": 5,
+              "ms_per_frame": 79.64279999996506,
+              "repeat": 4,
+              "seconds": 0.3982139999998253
+            },
+            {
+              "fps": 12.045972248490846,
+              "frames": 5,
+              "ms_per_frame": 83.0152999999882,
+              "repeat": 5,
+              "seconds": 0.415076499999941
+            }
+          ],
+          "target": "<= 2.0x normal"
+        },
+        "luminescent_premul": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "normal",
+          "median_fps": 34.54854381344658,
+          "median_ms": 28.94477999998344,
+          "meets_target": null,
+          "output_sha256": "50f8d445a8f384dcc01d6ee808b0a53f1ac642c741a2ff916550d70cdf30e91d",
+          "ratio_vs_normal": 1.09219402675279,
+          "samples": [
+            {
+              "fps": 34.54854381344658,
+              "frames": 5,
+              "ms_per_frame": 28.94477999998344,
+              "repeat": 1,
+              "seconds": 0.1447238999999172
+            },
+            {
+              "fps": 31.193228324479303,
+              "frames": 5,
+              "ms_per_frame": 32.05823999996937,
+              "repeat": 2,
+              "seconds": 0.16029119999984687
+            },
+            {
+              "fps": 34.25068073223899,
+              "frames": 5,
+              "ms_per_frame": 29.196500000034575,
+              "repeat": 3,
+              "seconds": 0.14598250000017288
+            },
+            {
+              "fps": 34.99827108538967,
+              "frames": 5,
+              "ms_per_frame": 28.572840000015276,
+              "repeat": 4,
+              "seconds": 0.14286420000007638
+            },
+            {
+              "fps": 35.0154768406847,
+              "frames": 5,
+              "ms_per_frame": 28.558800000064366,
+              "repeat": 5,
+              "seconds": 0.14279400000032183
+            }
+          ],
+          "target": null
+        },
+        "luminosity": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "separable",
+          "median_fps": 6.746038759770591,
+          "median_ms": 148.23513999999705,
+          "meets_target": false,
+          "output_sha256": "0849a485fdb27c55e7dd337063db71b907520d22a5abf56470316d4419be377b",
+          "ratio_vs_normal": 5.5934622568543615,
+          "samples": [
+            {
+              "fps": 6.979023567606852,
+              "frames": 5,
+              "ms_per_frame": 143.2865199999469,
+              "repeat": 1,
+              "seconds": 0.7164325999997345
+            },
+            {
+              "fps": 7.088539688520399,
+              "frames": 5,
+              "ms_per_frame": 141.07278000001315,
+              "repeat": 2,
+              "seconds": 0.7053639000000658
+            },
+            {
+              "fps": 6.746038759770591,
+              "frames": 5,
+              "ms_per_frame": 148.23513999999705,
+              "repeat": 3,
+              "seconds": 0.7411756999999852
+            },
+            {
+              "fps": 6.523162314280971,
+              "frames": 5,
+              "ms_per_frame": 153.2998800000314,
+              "repeat": 4,
+              "seconds": 0.766499400000157
+            },
+            {
+              "fps": 6.145137076499401,
+              "frames": 5,
+              "ms_per_frame": 162.7303000000211,
+              "repeat": 5,
+              "seconds": 0.8136515000001054
+            }
+          ],
+          "target": "<= 2.0x normal"
+        },
+        "multiply": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "separable",
+          "median_fps": 11.833638917333476,
+          "median_ms": 84.50486000001547,
+          "meets_target": false,
+          "output_sha256": "b9972140f15f1150832e4477d28025ea0e86afa5a6c9d5042da38246c88fc3c7",
+          "ratio_vs_normal": 3.188682150068181,
+          "samples": [
+            {
+              "fps": 11.833638917333476,
+              "frames": 5,
+              "ms_per_frame": 84.50486000001547,
+              "repeat": 1,
+              "seconds": 0.42252430000007735
+            },
+            {
+              "fps": 12.241115704251685,
+              "frames": 5,
+              "ms_per_frame": 81.69189999998707,
+              "repeat": 2,
+              "seconds": 0.40845949999993536
+            },
+            {
+              "fps": 11.500788494063334,
+              "frames": 5,
+              "ms_per_frame": 86.95055999996839,
+              "repeat": 3,
+              "seconds": 0.43475279999984195
+            },
+            {
+              "fps": 12.186116114198942,
+              "frames": 5,
+              "ms_per_frame": 82.06059999993158,
+              "repeat": 4,
+              "seconds": 0.4103029999996579
+            },
+            {
+              "fps": 11.81211833569084,
+              "frames": 5,
+              "ms_per_frame": 84.6588200000042,
+              "repeat": 5,
+              "seconds": 0.423294100000021
+            }
+          ],
+          "target": "<= 2.0x normal"
+        },
+        "normal": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "normal",
+          "median_fps": 37.73371318605341,
+          "median_ms": 26.50149999999485,
+          "meets_target": null,
+          "output_sha256": "50f8d445a8f384dcc01d6ee808b0a53f1ac642c741a2ff916550d70cdf30e91d",
+          "ratio_vs_normal": 1.0,
+          "samples": [
+            {
+              "fps": 37.826947766254015,
+              "frames": 5,
+              "ms_per_frame": 26.436180000018794,
+              "repeat": 1,
+              "seconds": 0.13218090000009397
+            },
+            {
+              "fps": 37.89698991794515,
+              "frames": 5,
+              "ms_per_frame": 26.38731999995798,
+              "repeat": 2,
+              "seconds": 0.1319365999997899
+            },
+            {
+              "fps": 37.73371318605341,
+              "frames": 5,
+              "ms_per_frame": 26.50149999999485,
+              "repeat": 3,
+              "seconds": 0.13250749999997424
+            },
+            {
+              "fps": 37.40392801084267,
+              "frames": 5,
+              "ms_per_frame": 26.735160000043834,
+              "repeat": 4,
+              "seconds": 0.13367580000021917
+            },
+            {
+              "fps": 36.4313058582915,
+              "frames": 5,
+              "ms_per_frame": 27.448920000006183,
+              "repeat": 5,
+              "seconds": 0.13724460000003091
+            }
+          ],
+          "target": null
+        },
+        "overlay": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "separable",
+          "median_fps": 9.62630677114641,
+          "median_ms": 103.88199999997596,
+          "meets_target": false,
+          "output_sha256": "dedd7d559f698391cdd525cd58428929d900e840b696df0a2bb40069de933184",
+          "ratio_vs_normal": 3.919853593192693,
+          "samples": [
+            {
+              "fps": 9.62630677114641,
+              "frames": 5,
+              "ms_per_frame": 103.88199999997596,
+              "repeat": 1,
+              "seconds": 0.5194099999998798
+            },
+            {
+              "fps": 9.868178892716724,
+              "frames": 5,
+              "ms_per_frame": 101.33581999998569,
+              "repeat": 2,
+              "seconds": 0.5066790999999284
+            },
+            {
+              "fps": 9.624976274433592,
+              "frames": 5,
+              "ms_per_frame": 103.89635999999882,
+              "repeat": 3,
+              "seconds": 0.5194817999999941
+            },
+            {
+              "fps": 10.09341251413822,
+              "frames": 5,
+              "ms_per_frame": 99.07451999997647,
+              "repeat": 4,
+              "seconds": 0.49537259999988237
+            },
+            {
+              "fps": 9.426149231398988,
+              "frames": 5,
+              "ms_per_frame": 106.0878600000251,
+              "repeat": 5,
+              "seconds": 0.5304393000001255
+            }
+          ],
+          "target": "<= 2.0x normal"
+        },
+        "pin_light": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "separable",
+          "median_fps": 11.129836442597279,
+          "median_ms": 89.84858000003442,
+          "meets_target": false,
+          "output_sha256": "0726e95706256ada5841c2b767c9c68279277fef5e62c3eb1d2644eda605672e",
+          "ratio_vs_normal": 3.390320547895473,
+          "samples": [
+            {
+              "fps": 11.129836442597279,
+              "frames": 5,
+              "ms_per_frame": 89.84858000003442,
+              "repeat": 1,
+              "seconds": 0.4492429000001721
+            },
+            {
+              "fps": 10.599710415908264,
+              "frames": 5,
+              "ms_per_frame": 94.34220000002824,
+              "repeat": 2,
+              "seconds": 0.4717110000001412
+            },
+            {
+              "fps": 11.289454385189194,
+              "frames": 5,
+              "ms_per_frame": 88.57823999996981,
+              "repeat": 3,
+              "seconds": 0.44289119999984905
+            },
+            {
+              "fps": 10.886854014905648,
+              "frames": 5,
+              "ms_per_frame": 91.85390000002371,
+              "repeat": 4,
+              "seconds": 0.45926950000011857
+            },
+            {
+              "fps": 11.308747814012497,
+              "frames": 5,
+              "ms_per_frame": 88.42712000005122,
+              "repeat": 5,
+              "seconds": 0.4421356000002561
+            }
+          ],
+          "target": "<= 2.0x normal"
+        },
+        "saturation": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "separable",
+          "median_fps": 6.025771985754754,
+          "median_ms": 165.9538399999292,
+          "meets_target": false,
+          "output_sha256": "56bf7fb349a365543c29e4c60c21f5c2328d155359d83d8f74b6ebc6c082688a",
+          "ratio_vs_normal": 6.262054600681525,
+          "samples": [
+            {
+              "fps": 5.916965098662849,
+              "frames": 5,
+              "ms_per_frame": 169.00556000000506,
+              "repeat": 1,
+              "seconds": 0.8450278000000253
+            },
+            {
+              "fps": 5.854051015012251,
+              "frames": 5,
+              "ms_per_frame": 170.82187999994858,
+              "repeat": 2,
+              "seconds": 0.8541093999997429
+            },
+            {
+              "fps": 6.200442959647133,
+              "frames": 5,
+              "ms_per_frame": 161.27879999994548,
+              "repeat": 3,
+              "seconds": 0.8063939999997274
+            },
+            {
+              "fps": 6.177281810684015,
+              "frames": 5,
+              "ms_per_frame": 161.88350000002174,
+              "repeat": 4,
+              "seconds": 0.8094175000001087
+            },
+            {
+              "fps": 6.025771985754754,
+              "frames": 5,
+              "ms_per_frame": 165.9538399999292,
+              "repeat": 5,
+              "seconds": 0.8297691999996459
+            }
+          ],
+          "target": "<= 2.0x normal"
+        },
+        "screen": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "separable",
+          "median_fps": 11.750113623597239,
+          "median_ms": 85.10556000001088,
+          "meets_target": false,
+          "output_sha256": "e9eb4c5d2c5caf4917a63244850f765be364b3f9dec96e48485a3e33fd6ad9d7",
+          "ratio_vs_normal": 3.21134879157887,
+          "samples": [
+            {
+              "fps": 11.77385347391773,
+              "frames": 5,
+              "ms_per_frame": 84.93396000003486,
+              "repeat": 1,
+              "seconds": 0.4246698000001743
+            },
+            {
+              "fps": 11.395328325619037,
+              "frames": 5,
+              "ms_per_frame": 87.75525999999445,
+              "repeat": 2,
+              "seconds": 0.43877629999997225
+            },
+            {
+              "fps": 11.63361285802444,
+              "frames": 5,
+              "ms_per_frame": 85.95782000002146,
+              "repeat": 3,
+              "seconds": 0.4297891000001073
+            },
+            {
+              "fps": 11.750113623597239,
+              "frames": 5,
+              "ms_per_frame": 85.10556000001088,
+              "repeat": 4,
+              "seconds": 0.4255278000000544
+            },
+            {
+              "fps": 11.754679831904781,
+              "frames": 5,
+              "ms_per_frame": 85.07250000002387,
+              "repeat": 5,
+              "seconds": 0.4253625000001193
+            }
+          ],
+          "target": "<= 2.0x normal"
+        },
+        "silhouette_alpha": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "silhouette",
+          "median_fps": 14.371202409765864,
+          "median_ms": 69.5835999999872,
+          "meets_target": null,
+          "output_sha256": "d212629d6c53d695a73e5b599e131b3284d36fac94c774ecb0dc6b90bd22fd67",
+          "ratio_vs_normal": 2.625647604852583,
+          "samples": [
+            {
+              "fps": 14.371202409765864,
+              "frames": 5,
+              "ms_per_frame": 69.5835999999872,
+              "repeat": 1,
+              "seconds": 0.347917999999936
+            },
+            {
+              "fps": 14.98678764800335,
+              "frames": 5,
+              "ms_per_frame": 66.72544000002745,
+              "repeat": 2,
+              "seconds": 0.33362720000013724
+            },
+            {
+              "fps": 14.575117825260532,
+              "frames": 5,
+              "ms_per_frame": 68.61007999996218,
+              "repeat": 3,
+              "seconds": 0.3430503999998109
+            },
+            {
+              "fps": 13.809228818102065,
+              "frames": 5,
+              "ms_per_frame": 72.41533999995227,
+              "repeat": 4,
+              "seconds": 0.36207669999976133
+            },
+            {
+              "fps": 14.368216585338285,
+              "frames": 5,
+              "ms_per_frame": 69.59806000004392,
+              "repeat": 5,
+              "seconds": 0.3479903000002196
+            }
+          ],
+          "target": null
+        },
+        "silhouette_luma": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "silhouette",
+          "median_fps": 13.644761366763891,
+          "median_ms": 73.28820000002452,
+          "meets_target": null,
+          "output_sha256": "214fca23ed98f5bff9018c7632ce8776d4d51ed4a639440dd5ca3fbde729676b",
+          "ratio_vs_normal": 2.7654359187230444,
+          "samples": [
+            {
+              "fps": 12.343228652884019,
+              "frames": 5,
+              "ms_per_frame": 81.01607999997213,
+              "repeat": 1,
+              "seconds": 0.4050803999998607
+            },
+            {
+              "fps": 15.231215950626718,
+              "frames": 5,
+              "ms_per_frame": 65.654639999957,
+              "repeat": 2,
+              "seconds": 0.328273199999785
+            },
+            {
+              "fps": 13.644761366763891,
+              "frames": 5,
+              "ms_per_frame": 73.28820000002452,
+              "repeat": 3,
+              "seconds": 0.3664410000001226
+            },
+            {
+              "fps": 12.62185772540286,
+              "frames": 5,
+              "ms_per_frame": 79.22764000004463,
+              "repeat": 4,
+              "seconds": 0.39613820000022315
+            },
+            {
+              "fps": 13.777755978292145,
+              "frames": 5,
+              "ms_per_frame": 72.5807600000735,
+              "repeat": 5,
+              "seconds": 0.3629038000003675
+            }
+          ],
+          "target": null
+        },
+        "soft_light": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "separable",
+          "median_fps": 7.95457492262632,
+          "median_ms": 125.71382000005542,
+          "meets_target": false,
+          "output_sha256": "e931cf9142046a97e5da4d2c9ce5c34480ab70250cf6dc269ac37de8bad4f4a8",
+          "ratio_vs_normal": 4.7436492274052355,
+          "samples": [
+            {
+              "fps": 7.9241224074025975,
+              "frames": 5,
+              "ms_per_frame": 126.19694000004529,
+              "repeat": 1,
+              "seconds": 0.6309847000002264
+            },
+            {
+              "fps": 7.95457492262632,
+              "frames": 5,
+              "ms_per_frame": 125.71382000005542,
+              "repeat": 2,
+              "seconds": 0.6285691000002771
+            },
+            {
+              "fps": 8.152765874737058,
+              "frames": 5,
+              "ms_per_frame": 122.65776000003825,
+              "repeat": 3,
+              "seconds": 0.6132888000001913
+            },
+            {
+              "fps": 7.92067162225815,
+              "frames": 5,
+              "ms_per_frame": 126.25192000004972,
+              "repeat": 4,
+              "seconds": 0.6312596000002486
+            },
+            {
+              "fps": 8.101264510176808,
+              "frames": 5,
+              "ms_per_frame": 123.43751999997039,
+              "repeat": 5,
+              "seconds": 0.617187599999852
+            }
+          ],
+          "target": "<= 2.0x normal"
+        },
+        "stencil_alpha": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "stencil",
+          "median_fps": 14.253611081109534,
+          "median_ms": 70.15765999994983,
+          "meets_target": null,
+          "output_sha256": "ef134642818fcd95e3fac6e76e16e2126d537283be74259fe5dacdd56b78b0d0",
+          "ratio_vs_normal": 2.6473090202427585,
+          "samples": [
+            {
+              "fps": 17.11656414416884,
+              "frames": 5,
+              "ms_per_frame": 58.42293999994581,
+              "repeat": 1,
+              "seconds": 0.29211469999972905
+            },
+            {
+              "fps": 13.389221730065563,
+              "frames": 5,
+              "ms_per_frame": 74.68693999999232,
+              "repeat": 2,
+              "seconds": 0.3734346999999616
+            },
+            {
+              "fps": 14.905750936838944,
+              "frames": 5,
+              "ms_per_frame": 67.08819999994375,
+              "repeat": 3,
+              "seconds": 0.33544099999971877
+            },
+            {
+              "fps": 14.253611081109534,
+              "frames": 5,
+              "ms_per_frame": 70.15765999994983,
+              "repeat": 4,
+              "seconds": 0.35078829999974914
+            },
+            {
+              "fps": 13.807592850542143,
+              "frames": 5,
+              "ms_per_frame": 72.4239199999829,
+              "repeat": 5,
+              "seconds": 0.3621195999999145
+            }
+          ],
+          "target": null
+        },
+        "stencil_luma": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "stencil",
+          "median_fps": 13.804508828683366,
+          "median_ms": 72.44009999994887,
+          "meets_target": null,
+          "output_sha256": "cae41eed13b925cb964c9460c5797fd8813c82826bb35590d5a43d66d176a606",
+          "ratio_vs_normal": 2.733433956567098,
+          "samples": [
+            {
+              "fps": 14.569868346685105,
+              "frames": 5,
+              "ms_per_frame": 68.63479999992705,
+              "repeat": 1,
+              "seconds": 0.34317399999963527
+            },
+            {
+              "fps": 12.294016821659865,
+              "frames": 5,
+              "ms_per_frame": 81.34037999998327,
+              "repeat": 2,
+              "seconds": 0.40670189999991635
+            },
+            {
+              "fps": 14.261660975787667,
+              "frames": 5,
+              "ms_per_frame": 70.11806000000433,
+              "repeat": 3,
+              "seconds": 0.35059030000002167
+            },
+            {
+              "fps": 13.301678884690116,
+              "frames": 5,
+              "ms_per_frame": 75.1784800000678,
+              "repeat": 4,
+              "seconds": 0.37589240000033897
+            },
+            {
+              "fps": 13.804508828683366,
+              "frames": 5,
+              "ms_per_frame": 72.44009999994887,
+              "repeat": 5,
+              "seconds": 0.36220049999974435
+            }
+          ],
+          "target": null
+        },
+        "subtract": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "separable",
+          "median_fps": 11.21366631941881,
+          "median_ms": 89.17689999998402,
+          "meets_target": false,
+          "output_sha256": "2d731a930bd5351332f856c65e404f5c5c09e5820176449e80810bf7813a425a",
+          "ratio_vs_normal": 3.364975567420763,
+          "samples": [
+            {
+              "fps": 11.006544050836766,
+              "frames": 5,
+              "ms_per_frame": 90.85503999995126,
+              "repeat": 1,
+              "seconds": 0.4542751999997563
+            },
+            {
+              "fps": 11.667843563152072,
+              "frames": 5,
+              "ms_per_frame": 85.70564000001468,
+              "repeat": 2,
+              "seconds": 0.4285282000000734
+            },
+            {
+              "fps": 11.21366631941881,
+              "frames": 5,
+              "ms_per_frame": 89.17689999998402,
+              "repeat": 3,
+              "seconds": 0.4458844999999201
+            },
+            {
+              "fps": 11.729770485932834,
+              "frames": 5,
+              "ms_per_frame": 85.25315999995655,
+              "repeat": 4,
+              "seconds": 0.42626579999978276
+            },
+            {
+              "fps": 11.058328480570186,
+              "frames": 5,
+              "ms_per_frame": 90.42957999999999,
+              "repeat": 5,
+              "seconds": 0.45214789999999994
+            }
+          ],
+          "target": "<= 2.0x normal"
+        },
+        "vivid_light": {
+          "deterministic": true,
+          "finite": true,
+          "kind": "separable",
+          "median_fps": 8.11826559425775,
+          "median_ms": 123.17901999995229,
+          "meets_target": false,
+          "output_sha256": "cff7fb50011427050d265b643ee6018c3947606d55b286c5efb0d2cfbb4cf59d",
+          "ratio_vs_normal": 4.648001811217336,
+          "samples": [
+            {
+              "fps": 8.11826559425775,
+              "frames": 5,
+              "ms_per_frame": 123.17901999995229,
+              "repeat": 1,
+              "seconds": 0.6158950999997614
+            },
+            {
+              "fps": 8.166646631160216,
+              "frames": 5,
+              "ms_per_frame": 122.44928000000073,
+              "repeat": 2,
+              "seconds": 0.6122464000000036
+            },
+            {
+              "fps": 7.82910872017211,
+              "frames": 5,
+              "ms_per_frame": 127.72845999998026,
+              "repeat": 3,
+              "seconds": 0.6386422999999013
+            },
+            {
+              "fps": 8.160053242718508,
+              "frames": 5,
+              "ms_per_frame": 122.54821999995329,
+              "repeat": 4,
+              "seconds": 0.6127410999997664
+            },
+            {
+              "fps": 8.064439386783214,
+              "frames": 5,
+              "ms_per_frame": 124.00118000005023,
+              "repeat": 5,
+              "seconds": 0.6200059000002511
+            }
+          ],
+          "target": "<= 2.0x normal"
+        }
+      },
+      "timed_boundary": "blend(base, layer, mode) on prebuilt full-canvas Buffers: opaque textured backdrop, textured source with alpha ramp 0.2..0.9 across x"
+    },
+    "comp_20_layers": {
+      "deterministic": true,
+      "frame_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "layers": 21,
+      "median_fps": 2.8766802833372465,
+      "median_ms": 347.62291999995796,
+      "meets_target": false,
+      "output_sha256": "b66a327d86c171dd2a13d9f53cbbf877fc87de01792fd4bab7fb3fc5336cc236",
+      "samples": [
+        {
+          "fps": 2.9975839473386836,
+          "frames": 5,
+          "ms_per_frame": 333.6019999999735,
+          "repeat": 1,
+          "seconds": 1.6680099999998674
+        },
+        {
+          "fps": 2.9555957792435774,
+          "frames": 5,
+          "ms_per_frame": 338.3412600000156,
+          "repeat": 2,
+          "seconds": 1.691706300000078
+        },
+        {
+          "fps": 2.8766802833372465,
+          "frames": 5,
+          "ms_per_frame": 347.62291999995796,
+          "repeat": 3,
+          "seconds": 1.7381145999997898
+        },
+        {
+          "fps": 2.8289463447891268,
+          "frames": 5,
+          "ms_per_frame": 353.4885000000031,
+          "repeat": 4,
+          "seconds": 1.7674425000000156
+        },
+        {
+          "fps": 2.8113975631589647,
+          "frames": 5,
+          "ms_per_frame": 355.69498000004387,
+          "repeat": 5,
+          "seconds": 1.7784749000002193
+        }
+      ],
+      "scene": "20 moving 600x400 solids, opacity 60",
+      "target_ms": 150.0,
+      "timed_boundary": "Composition.get_frame(t) including uint8 export; t advances one frame per call so no frame is reused"
+    },
+    "comp_backdrop_only": {
+      "deterministic": true,
+      "frame_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "layers": 1,
+      "median_fps": 26.07449064786968,
+      "median_ms": 38.35165999998935,
+      "meets_target": null,
+      "output_sha256": "4f926b14d2c7df9ddcf5267583c9aa4288306bcf2ca9101bf9a9dc3ea2863856",
+      "samples": [
+        {
+          "fps": 24.439396894333544,
+          "frames": 5,
+          "ms_per_frame": 40.91754000000947,
+          "repeat": 1,
+          "seconds": 0.20458770000004733
+        },
+        {
+          "fps": 26.062978581435697,
+          "frames": 5,
+          "ms_per_frame": 38.36860000001252,
+          "repeat": 2,
+          "seconds": 0.1918430000000626
+        },
+        {
+          "fps": 26.159917669537634,
+          "frames": 5,
+          "ms_per_frame": 38.2264199999554,
+          "repeat": 3,
+          "seconds": 0.19113209999977698
+        },
+        {
+          "fps": 26.105066627956603,
+          "frames": 5,
+          "ms_per_frame": 38.30674000000727,
+          "repeat": 4,
+          "seconds": 0.19153370000003633
+        },
+        {
+          "fps": 26.07449064786968,
+          "frames": 5,
+          "ms_per_frame": 38.35165999998935,
+          "repeat": 5,
+          "seconds": 0.19175829999994676
+        }
+      ],
+      "scene": "only the 1080p textured ImageClip backdrop shared by every comp case",
+      "target_ms": null,
+      "timed_boundary": "Composition.get_frame(t) including uint8 export; t advances one frame per call so no frame is reused"
+    },
+    "echo_single": {
+      "deterministic": true,
+      "frame_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "layers": 3,
+      "median_fps": 1.4934164230405156,
+      "median_ms": 669.6056000000681,
+      "meets_target": null,
+      "output_sha256": "b887c30afcb8744999e6e09cc8a705865c94d828215553ec35d1602bd4508c3e",
+      "samples": [
+        {
+          "fps": 1.8157681670781722,
+          "frames": 5,
+          "ms_per_frame": 550.73110000003,
+          "repeat": 1,
+          "seconds": 2.75365550000015
+        },
+        {
+          "fps": 1.5308695090810742,
+          "frames": 5,
+          "ms_per_frame": 653.223539999999,
+          "repeat": 2,
+          "seconds": 3.2661176999999952
+        },
+        {
+          "fps": 1.4005218176230485,
+          "frames": 5,
+          "ms_per_frame": 714.0195799999674,
+          "repeat": 3,
+          "seconds": 3.570097899999837
+        },
+        {
+          "fps": 1.4934164230405156,
+          "frames": 5,
+          "ms_per_frame": 669.6056000000681,
+          "repeat": 4,
+          "seconds": 3.3480280000003404
+        },
+        {
+          "fps": 1.4892153851317913,
+          "frames": 5,
+          "ms_per_frame": 671.4945400000033,
+          "repeat": 5,
+          "seconds": 3.3574727000000166
+        }
+      ],
+      "scene": "one adjustment Echo(echo_time=-0.05, number_of_echoes=6)",
+      "target_ms": null,
+      "timed_boundary": "Composition.get_frame(t) including uint8 export; t advances one frame per call so no frame is reused"
+    },
+    "echo_stacked": {
+      "deterministic": true,
+      "frame_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "layers": 4,
+      "median_fps": 0.39009742066726943,
+      "median_ms": 2563.4622200000194,
+      "meets_target": null,
+      "output_sha256": "8256f2dac8938e4e5cd029cf387a642dd983a8cbd8aad1e8872590685f87af83",
+      "samples": [
+        {
+          "fps": 0.7319321809207293,
+          "frames": 5,
+          "ms_per_frame": 1366.2468000000445,
+          "repeat": 1,
+          "seconds": 6.831234000000222
+        },
+        {
+          "fps": 0.4445944091026003,
+          "frames": 5,
+          "ms_per_frame": 2249.2410599999857,
+          "repeat": 2,
+          "seconds": 11.246205299999929
+        },
+        {
+          "fps": 0.39009742066726943,
+          "frames": 5,
+          "ms_per_frame": 2563.4622200000194,
+          "repeat": 3,
+          "seconds": 12.817311100000097
+        },
+        {
+          "fps": 0.3750873831699322,
+          "frames": 5,
+          "ms_per_frame": 2666.045420000046,
+          "repeat": 4,
+          "seconds": 13.33022710000023
+        },
+        {
+          "fps": 0.3742332447318667,
+          "frames": 5,
+          "ms_per_frame": 2672.1303199999966,
+          "repeat": 5,
+          "seconds": 13.360651599999983
+        }
+      ],
+      "scene": "two stacked adjustment Echo(echo_time=-0.05, number_of_echoes=6)",
+      "target_ms": null,
+      "timed_boundary": "Composition.get_frame(t) including uint8 export; t advances one frame per call so no frame is reused"
+    },
+    "feathered_mask": {
+      "deterministic": true,
+      "frame_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "layers": 2,
+      "median_fps": 4.033962739093816,
+      "median_ms": 247.8951999999481,
+      "meets_target": null,
+      "output_sha256": "59382c7fea708d979a7490e3ca85a4df04861941dd670f4257318b102be68379",
+      "samples": [
+        {
+          "fps": 3.9488697189698256,
+          "frames": 5,
+          "ms_per_frame": 253.23701999996047,
+          "repeat": 1,
+          "seconds": 1.2661850999998023
+        },
+        {
+          "fps": 3.872415375719556,
+          "frames": 5,
+          "ms_per_frame": 258.2367599999998,
+          "repeat": 2,
+          "seconds": 1.2911837999999989
+        },
+        {
+          "fps": 4.033962739093816,
+          "frames": 5,
+          "ms_per_frame": 247.8951999999481,
+          "repeat": 3,
+          "seconds": 1.2394759999997405
+        },
+        {
+          "fps": 4.726838820658302,
+          "frames": 5,
+          "ms_per_frame": 211.55787999996392,
+          "repeat": 4,
+          "seconds": 1.0577893999998196
+        },
+        {
+          "fps": 4.562071267948373,
+          "frames": 5,
+          "ms_per_frame": 219.19867999995404,
+          "repeat": 5,
+          "seconds": 1.0959933999997702
+        }
+      ],
+      "scene": "full-frame moving solid, ellipse mask, feather animating 40..80 px",
+      "target_ms": null,
+      "timed_boundary": "Composition.get_frame(t) including uint8 export; t advances one frame per call so no frame is reused"
+    }
+  },
+  "config": {
+    "cases": [
+      "blend_modes",
+      "comp_backdrop_only",
+      "comp_20_layers",
+      "feathered_mask",
+      "adjustment_gaussian_blur_40",
+      "echo_single",
+      "echo_stacked"
+    ],
+    "frames": 5,
+    "height": 1080,
+    "modes": null,
+    "repeats": 5,
+    "warmup": 2,
+    "width": 1920
+  },
+  "machine": {
+    "architecture": "AMD64",
+    "commit": "09ddd6470e4d31c23c0b1468bae39a183a10798f",
+    "cpu": "AMD Ryzen 9 3900X 12-Core Processor",
+    "git_dirty": true,
+    "git_status_porcelain": "?? benchmarks/ae_comp_bench.py\n?? tests/ae/test_comp_bench.py\n?? tests/ae/test_memory_slow.py",
+    "logical_cpus": 24,
+    "os": "Windows-11-10.0.22631-SP0",
+    "source_sha256": {
+      "benchmarks/ae_bench.py": "530ce7a8ea9cdb9ce2dfc90e14b0095566c7006a0ae55209e735e52efcb774e6",
+      "benchmarks/ae_comp_bench.py": "e6332060dcd81ac197857517de39cd2e5333e6512de9037998561e22326e1b5f",
+      "moviepy/ae/_accumulator.py": "96c9348fcac87fa102bc06dd424ad630b8a36649fa21fa4916ffa5f693cc00ed",
+      "moviepy/ae/blend/modes.py": "c2ad43c0ff0c64d423cdff8b2e037a715c678785ef2b540f1d135fcee371e3d7",
+      "moviepy/ae/composition.py": "2df6c27af378b40cc77773cbaad7421d95b40c35ebd21390ae336087b88d80c3",
+      "moviepy/ae/effects/blur/gaussian_blur.py": "67d9b9b88d5e2f8d1e325194ed92ce5b74b17040d62b3476ad01eca21fae0543",
+      "moviepy/ae/effects/time/echo.py": "39661262bde9306cab67afe28141b2ad623ee91a08295d523174e18be032f5a4",
+      "moviepy/ae/masks/mask.py": "227e2a1236fb79618643fc39318ef0fc0f452545e94bb17355cda347b118f5fc",
+      "moviepy/ae/renderer.py": "1b7549851146d240a5ec4bdcaf39788b228d85936a2dbdc0d59b5cb4f787c1c3"
+    },
+    "versions": {
+      "imageio": "2.38.2",
+      "moviepy": "unavailable: not installed (imported from checkout)",
+      "numpy": "2.5.5",
+      "opencv": "5.1.0",
+      "pillow": "13.0.0",
+      "python": "3.12.10"
+    }
+  },
+  "schema": 1,
+  "summary": {
+    "gated": false,
+    "source": "docs/ae/AE_REVIEW_PLAN.md section 3 (P1, P2, P3)",
+    "targets_checked": 27,
+    "targets_met": 0,
+    "targets_missed": [
+      "blend:darken",
+      "blend:multiply",
+      "blend:color_burn",
+      "blend:linear_burn",
+      "blend:darker_color",
+      "blend:lighten",
+      "blend:screen",
+      "blend:color_dodge",
+      "blend:linear_dodge",
+      "blend:lighter_color",
+      "blend:overlay",
+      "blend:soft_light",
+      "blend:hard_light",
+      "blend:vivid_light",
+      "blend:linear_light",
+      "blend:pin_light",
+      "blend:hard_mix",
+      "blend:difference",
+      "blend:exclusion",
+      "blend:subtract",
+      "blend:divide",
+      "blend:hue",
+      "blend:saturation",
+      "blend:color",
+      "blend:luminosity",
+      "comp_20_layers",
+      "adjustment_gaussian_blur_40"
+    ]
+  },
+  "threads": {
+    "environment": {
+      "BLIS_NUM_THREADS": "1",
+      "GOTO_NUM_THREADS": "1",
+      "MKL_NUM_THREADS": "1",
+      "NUMEXPR_NUM_THREADS": "1",
+      "OMP_NUM_THREADS": "1",
+      "OPENBLAS_NUM_THREADS": "1",
+      "OPENCV_FOR_THREADS_NUM": "1",
+      "VECLIB_MAXIMUM_THREADS": "1"
+    },
+    "opencl": false,
+    "opencv_threads": 1
+  },
+  "timestamp_utc": "2026-11-18T23:51:12.634271+00:00"
+}
