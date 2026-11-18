@@ -61,9 +61,15 @@ _LAZY = {
     "Keyframe": "moviepy.ae.properties.keyframe",
     "Ease": "moviepy.ae.properties.easing",
     "Expression": "moviepy.ae.properties.expression",
+    "wiggle": "moviepy.ae.properties.expression",
+    "MaskPath": "moviepy.ae.masks",
 }
 
-_MODULES = {"fx": "moviepy.ae.fx", "effects": "moviepy.ae.effects"}
+_MODULES = {
+    "fx": "moviepy.ae.fx",
+    "effects": "moviepy.ae.effects",
+    "masks": "moviepy.ae.masks",
+}
 
 __all__ = [
     "Buffer",

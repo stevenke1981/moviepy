@@ -17,7 +17,7 @@ from moviepy.ae.properties._sandbox import (
 )
 
 
-__all__ = ["Expression", "ExpressionError", "ExpressionSnapshot"]
+__all__ = ["Expression", "ExpressionError", "ExpressionSnapshot", "wiggle"]
 _OPERATION_ERRORS = (
     ArithmeticError,
     TypeError,
@@ -183,3 +183,78 @@ class Expression:
         if type(data["type"]) is not str or data["type"] != "expression":
             raise ExpressionError("invalid expression type")
         return cls(data["source"])
+
+
+def _literal(number, name):
+    value = float(number)
+    if isinstance(number, bool) or not math.isfinite(value):
+        raise ValueError(name + " must be a finite real number")
+    return value
+
+
+def _wiggle_source(freq, amp, octaves, amp_mult):
+    freq, amp_mult = _literal(freq, "freq"), _literal(amp_mult, "amp_mult")
+    if freq < 0 or not 0 <= amp_mult <= 1:
+        raise ValueError("freq must be nonnegative and amp_mult within [0, 1]")
+    if isinstance(octaves, bool) or octaves != int(octaves) or not 1 <= octaves <= 8:
+        raise ValueError("octaves must be an integer in 1..8")
+    if isinstance(amp, (tuple, list)):
+        if not 1 <= len(amp) <= 3:
+            raise ValueError("amp vectors need one to three components")
+        amp_text = "[" + ", ".join(repr(_literal(a, "amp")) for a in amp) + "]"
+    else:
+        amp_text = repr(_literal(amp, "amp"))
+    return f"wiggle({freq!r}, {amp_text}, {int(octaves)}, {amp_mult!r})"
+
+
+def wiggle(freq, amp, octaves=1, amp_mult=0.5, *, value=None):
+    """Build an AE-style ``wiggle`` animation usable directly as a property value.
+
+    This is the Python factory form of the expression helper
+    ``wiggle(freq, amp, octaves, amp_mult)``. The noise is seeded per layer
+    (from the layer's stable ``id``) and per ``RenderContext.rng_seed``, so the
+    same seed and time always give the same value, while two layers, even with
+    the same name, wiggle independently.
+
+    Parameters
+    ----------
+    freq : float
+        Wiggles per second, nonnegative. ``0`` returns the base value.
+    amp : float or sequence of float
+        Peak deviation in the property's units; a sequence gives one amplitude
+        per vector component.
+    octaves : int, optional
+        Number of noise octaves, 1..8. Default 1.
+    amp_mult : float, optional
+        Amplitude multiplier per extra octave, within [0, 1]. Default 0.5.
+    value : scalar or sequence, optional
+        Base value to wiggle around. When omitted, an ``Expression`` is
+        returned and the base is the property's typed default (0 for floats);
+        effect parameters clamp the result into their declared range.
+
+    Returns
+    -------
+    Expression or Property
+        An ``Expression`` when ``value`` is omitted, else a ``Property`` holding
+        ``value`` with the wiggle expression applied on top. Both serialize to
+        JSON because the wiggle is stored as expression source.
+
+    Examples
+    --------
+    >>> import moviepy.ae as ae
+    >>> ae.wiggle(freq=2, amp=8).source
+    'wiggle(2.0, 8.0, 1, 0.5)'
+    >>> blur = ae.fx.GaussianBlur(blurriness=ae.wiggle(freq=2, amp=8, value=10))
+    >>> ctx = ae.RenderContext(rng_seed=1)
+    >>> a = blur.blurriness.value_at(0.5, context=ctx, layer_id="clip")
+    >>> a == blur.blurriness.value_at(0.5, context=ctx, layer_id="clip")
+    True
+    >>> 2.0 <= a <= 18.0
+    True
+    """
+    expression = Expression(_wiggle_source(freq, amp, octaves, amp_mult))
+    if value is None:
+        return expression
+    from moviepy.ae.properties.property import Property
+
+    return Property(value, expression=expression)

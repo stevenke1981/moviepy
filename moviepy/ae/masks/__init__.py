@@ -19,14 +19,19 @@ _EXPORTS = {
     "TrackMatte": "matte",
     "matte_values": "matte",
 }
-__all__ = list(_EXPORTS)
+_ALIASES = {"MaskPath": ("moviepy.ae.properties.values", "PathValue")}
+__all__ = [*_EXPORTS, *_ALIASES]
 
 
 def __getattr__(name):
     """Load the requested public symbol without eagerly importing all modules."""
-    if name not in _EXPORTS:
+    if name in _ALIASES:
+        module, attribute = _ALIASES[name]
+        value = getattr(import_module(module), attribute)
+    elif name in _EXPORTS:
+        value = getattr(import_module(f"{__name__}.{_EXPORTS[name]}"), name)
+    else:
         raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
-    value = getattr(import_module(f"{__name__}.{_EXPORTS[name]}"), name)
     globals()[name] = value
     return value
 
