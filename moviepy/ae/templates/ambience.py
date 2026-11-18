@@ -6,8 +6,9 @@ frame through After Effects (see ``music_render`` for the PERFORMANCE RULE):
 ``particle_loop``
     A short, *exactly periodic*, transparent particle composition (fireflies,
     dust, petals, leaves, snow, snowflakes, rain). ``export_overlay_loop``
-    writes it once as a MOV with alpha; FFmpeg repeats it with ``-stream_loop -1`` and overlays it
-    on the looped background (``render_music_video(overlay_loops=...)``).
+    writes it once as a MOV with alpha; FFmpeg repeats it with
+    ``-stream_loop -1`` and overlays it on the looped background
+    (``render_music_video(overlay_loops=...)``).
 ``LightArc``
     A slow brightness / saturation / warmth / contrast curve over hours,
     compiled to one FFmpeg ``eq=...:eval=frame`` expression of the time ``t``.

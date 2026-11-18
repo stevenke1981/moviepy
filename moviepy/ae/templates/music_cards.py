@@ -777,7 +777,8 @@ def session_timeline(
         to the position of the next one, so 10 s is already smooth.
     next_seconds : int, optional
         The "next: ..." label is shown during the last ``next_seconds`` of
-        every phase except the last (``0`` disables it), fading 1.5 s in and out (no countdown).
+        every phase except the last (``0`` disables it), fading 1.5 s in and
+        out (no countdown).
     label_prefix : tuple of str, optional
         Prefixes of the zh / en / ja parts of the label.
     bar_alpha : int, optional

@@ -42,7 +42,8 @@ def decode_linear_exr(path, size):
     )
     if result.returncode or len(result.stdout) != width * height * 16:
         raise RuntimeError(
-            f"invalid linear EXR {path}: {result.stderr.decode('utf-8', errors='replace')}"
+            f"invalid linear EXR {path}: "
+            f"{result.stderr.decode('utf-8', errors='replace')}"
         )
     planes = np.frombuffer(result.stdout, dtype="<f4").reshape(4, height, width)
     pixels = np.stack((planes[2], planes[0], planes[1], planes[3]), axis=2)

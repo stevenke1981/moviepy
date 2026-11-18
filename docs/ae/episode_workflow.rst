@@ -17,14 +17,13 @@ Python 套件
 
 .. code-block:: console
 
-    pip install -e E:\moviepy_ae
+    pip install -e .
 
 .. code-block:: console
 
-    $env:PYTHONPATH = "E:\moviepy_ae"
-    cd E:\moviepy_ae
+    $env:PYTHONPATH = (Get-Location)
 
-``pip install -e`` 為永久設定；``PYTHONPATH`` 只對目前的 PowerShell 視窗有效。
+``pip install -e`` 為永久設定；``PYTHONPATH`` 只對目前的 PowerShell 視窗有效。兩者都在 repo 根目錄（含 ``pyproject.toml`` 的資料夾）執行。
 
 字型
 ~~~~
@@ -44,7 +43,7 @@ FFmpeg（影片編碼）
 
 .. code-block:: console
 
-    python -m moviepy.ae.templates init E:\episodes\ep012 --channel history
+    python -m moviepy.ae.templates init episodes\ep012 --channel history
 
 ``--channel`` 只接受 ``history`` 或 ``story``（必填）。目標資料夾若不存在或為空，會產生：
 
@@ -1078,7 +1077,7 @@ FFmpeg（影片編碼）
 
 .. code-block:: console
 
-    python -m moviepy.ae.templates validate E:\episodes\ep012\episode.json
+    python -m moviepy.ae.templates validate episodes\ep012\episode.json
 
 ``validate`` 只讀取 JSON、檢查素材並建置時間軸，不會渲染。成功時輸出一行摘要，包含尺寸、幀率、總長、段落數、章節數、引文數與是否有音訊。其中的**總長**是之後撰寫章節與字幕時間的對照基準。
 
@@ -1092,7 +1091,7 @@ FFmpeg（影片編碼）
 
 .. code-block:: console
 
-    python -m moviepy.ae.templates render E:\episodes\ep012\episode.json E:\episodes\ep012\out_preview --preview
+    python -m moviepy.ae.templates render episodes\ep012\episode.json episodes\ep012\out_preview --preview
 
 ``--preview`` 強制以 480×270、12 fps 渲染，字型、時間與音訊皆不變，適合檢查版面與時間，耗時短。預覽只用來檢查排版與時序；畫面細節、字型清晰度與運鏡平滑度要在正式輸出中確認。
 
@@ -1101,7 +1100,7 @@ FFmpeg（影片編碼）
 
 .. code-block:: console
 
-    python -m moviepy.ae.templates render E:\episodes\ep012\episode.json E:\episodes\ep012\out_still --preview --still 0.5 12.0 --still 40.0
+    python -m moviepy.ae.templates render episodes\ep012\episode.json episodes\ep012\out_still --preview --still 0.5 12.0 --still 40.0
 
 ``--still`` 可以重複使用或接多個數字（單位：秒），指定要輸出靜圖的時間點，寫入 ``stills/*.png``。影片仍會完整渲染，``episode.mp4`` 照常產生。不指定時，程式會自動選擇：片頭與片尾中點、每個章節開始後 1 秒、每則引文中點。檔名格式為 ``<標籤>_<毫秒>ms.png``（自訂時間的標籤為 ``t``）。
 
@@ -1110,7 +1109,7 @@ FFmpeg（影片編碼）
 
 .. code-block:: console
 
-    python -m moviepy.ae.templates render E:\episodes\ep012\episode.json E:\episodes\ep012\final
+    python -m moviepy.ae.templates render episodes\ep012\episode.json episodes\ep012\final
 
 正式輸出使用 preset 的尺寸與幀率（1920×1080，24 fps）。
 
@@ -1123,7 +1122,7 @@ FFmpeg（影片編碼）
 
 .. code-block:: console
 
-    python -m moviepy.ae.templates render E:\episodes\ep012\episode.json E:\episodes\ep012\final --workers 8 --encoder h264_nvenc
+    python -m moviepy.ae.templates render episodes\ep012\episode.json episodes\ep012\final --workers 8 --encoder h264_nvenc
 
 1080p 實測（16 核心、RTX 3070 Ti、51.6 秒成片）：單程序 libx264 約 75 秒，並行＋NVENC 約 38 秒，約快 2 倍。單幀合成已大量使用記憶體頻寬，工作程序超過約 8 個後幾乎不再加速；每個工作程序啟動時會各自組裝一次 episode（約 2 秒）。``libx264`` 的品質預設為 CRF 18（較舊版的 23 檔案大、畫質高）。
 
@@ -1132,7 +1131,7 @@ FFmpeg（影片編碼）
 
 .. code-block:: console
 
-    python -m moviepy.ae.templates render E:\episodes\ep012\episode.json E:\episodes\ep012\final --master
+    python -m moviepy.ae.templates render episodes\ep012\episode.json episodes\ep012\final --master
 
 ``--master`` 另外寫入 ``master/``（FFV1 無損 RGBA16，內含 ``master.mkv`` 與 ``manifest.json``）。母帶需要長度精確的 PCM WAV，因此混音會先輸出為 ``master_audio.wav``（48 kHz 立體聲）。
 
@@ -1175,8 +1174,8 @@ CLI 與下列 Python 寫法相同：
     from moviepy.ae.templates.episode import render_episode
 
     result = render_episode(
-        r"E:\episodes\ep012\episode.json",
-        r"E:\episodes\ep012\final",
+        r"episodes\ep012\episode.json",
+        r"episodes\ep012\final",
         preview=False,
         master=True,
         overwrite=False,
@@ -1197,7 +1196,7 @@ CLI 與下列 Python 寫法相同：
 
        from moviepy.ae.templates.subtitles import find_bad_breaks, parse_srt
 
-       text = open(r"E:\episodes\ep012\subtitles\zh-TW.srt", encoding="utf-8-sig").read()
+       text = open(r"episodes\ep012\subtitles\zh-TW.srt", encoding="utf-8-sig").read()
        cues = parse_srt(text, "zh-TW")
        print(find_bad_breaks(cues, protected=["夜燈"]))  # [] 為通過
 
@@ -1216,7 +1215,7 @@ CLI 與下列 Python 寫法相同：
        from moviepy.ae.templates.episode import EpisodeSpec, build_episode
        from moviepy.ae.templates.ken_burns import check_motion
 
-       spec = EpisodeSpec.from_json(r"E:\episodes\ep012\episode.json")
+       spec = EpisodeSpec.from_json(r"episodes\ep012\episode.json")
        comp = build_episode(spec)
        try:
            for seg in comp.episode["timeline"]:

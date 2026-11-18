@@ -14,8 +14,8 @@ reference, verification gates, hard rules, failure handling and a reporting temp
 
 ## What the guides assume
 
-- The repository is `E:\moviepy_ae`. Run commands from the repo root, or set
-  `PYTHONPATH=E:\moviepy_ae` first.
+- The repository root is the folder that contains `pyproject.toml`. Run commands
+  from there, or set `$env:PYTHONPATH = (Get-Location)` first.
 - Media (music, clips, images, narration, subtitles, titles, fonts) is supplied by a human. The
   guides forbid an agent from inventing or substituting it.
 - Nothing is uploaded or published. Human gates (listening, visual watch, rights, private upload,
@@ -36,7 +36,6 @@ The test module `tests/ae/test_agent_guides.py` checks that the guides stay true
 Run it from the repo root:
 
 ```console
-cd E:\moviepy_ae
 $env:PYTHONUTF8 = "1"
 python -m pytest tests/ae/test_agent_guides.py -q -p no:cacheprovider
 ```

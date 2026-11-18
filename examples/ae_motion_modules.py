@@ -330,8 +330,14 @@ def main(argv=None):
             "expected_onset_frames": expected,
             "timings": timings,
             "effects": {name: value.metadata for name, value in results.items()},
-            "assets": "original synthesized rhythm and geometry; explicit local CJK font, not copied or uploaded",
-            "composition": "sRGB SDR with straight-alpha caches and premultiplied mask transitions; no transparent glow assumption",
+            "assets": (
+                "original synthesized rhythm and geometry; "
+                "explicit local CJK font, not copied or uploaded"
+            ),
+            "composition": (
+                "sRGB SDR with straight-alpha caches and premultiplied mask "
+                "transitions; no transparent glow assumption"
+            ),
         }
         (args.output / "validation.json").write_text(
             json.dumps(report, indent=2, ensure_ascii=False), encoding="utf-8"

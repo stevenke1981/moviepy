@@ -365,13 +365,19 @@ def main():
         evidence = {
             "size": SIZE,
             "fps": FPS,
-            "source": "Original ECLIPSE procedural geometry/gradient; examples/ae_cinema_quality.py",
+            "source": (
+                "Original ECLIPSE procedural geometry/gradient; "
+                "examples/ae_cinema_quality.py"
+            ),
             "source_sha256": [
                 hashlib.sha256(p.read_bytes()).hexdigest() for p in frames[:COUNT]
             ],
             "source_unchanged": True,
             "manual_subject_box": SUBJECT,
-            "display": "SDR peak-channel Reinhard after native linear compositing; silent MP4",
+            "display": (
+                "SDR peak-channel Reinhard after native linear compositing; "
+                "silent MP4"
+            ),
             "camera": camera_demo(source, args.output, args.font),
             "magic": magic_demo(source, args.output, args.godot, args.font),
         }

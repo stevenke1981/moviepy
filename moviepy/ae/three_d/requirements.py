@@ -127,7 +127,8 @@ def check_godot(executable=None, *, timeout=15):
     platform_ok = platform in platforms
     if not platform_ok:
         problems.append(
-            f"Godot rendering requires {', '.join(platforms)}; current platform is {platform}"
+            f"Godot rendering requires {', '.join(platforms)}; "
+            f"current platform is {platform}"
         )
 
     path = None

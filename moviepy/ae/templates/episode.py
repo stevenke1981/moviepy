@@ -2285,10 +2285,10 @@ def init_episode(directory, channel):
 
     Examples
     --------
-    >>> init_episode("x", "tv")
+    >>> init_episode("x", "tv")  # doctest: +IGNORE_EXCEPTION_DETAIL
     Traceback (most recent call last):
     ...
-    moviepy.ae.templates.episode.EpisodeError: channel must be one of ['story', 'history'], got 'tv'
+    moviepy.ae.templates.episode.EpisodeError: channel must be one of ...
     """
     _choice(channel, "channel", CHANNELS)
     target = Path(directory)

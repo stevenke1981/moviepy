@@ -64,7 +64,8 @@ class TextLayer(Layer):
             or size != int(size)
         ):
             raise ValueError(
-                "rate/duration/font_size must be positive; font_size integral; stagger nonnegative"
+                "rate/duration/font_size must be positive; "
+                "font_size integral; stagger nonnegative"
             )
         if font is None:
             if any(ord(c) > 255 for c in text):

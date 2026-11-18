@@ -1,4 +1,7 @@
-"""Private helpers shared by the Transition effects (coverage masks on premultiplied RGBA)."""
+"""Private helpers shared by the Transition effects.
+
+Coverage masks on premultiplied RGBA.
+"""
 
 from functools import lru_cache
 
@@ -8,7 +11,10 @@ from moviepy.ae.buffer import Buffer
 
 
 def pixel_centers(size):
-    """Return broadcastable pixel-center coordinates ``(x (1,W), y (H,1))`` in layer pixels."""
+    """Return broadcastable pixel-center coordinates in layer pixels.
+
+    ``x`` has shape (1, W) and ``y`` has shape (H, 1).
+    """
     width, height = size
     x = np.arange(width, dtype=np.float64)[None, :] + 0.5
     y = np.arange(height, dtype=np.float64)[:, None] + 0.5

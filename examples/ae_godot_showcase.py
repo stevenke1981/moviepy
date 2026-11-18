@@ -231,9 +231,15 @@ def main(argv=None):
             frames=len(result.frames),
         )
         report["capabilities"] = {
-            "godot": "extruded TextMesh, GPU particles, geometry occlusion, spot/directional shadows, emission, procedural grid",
+            "godot": (
+                "extruded TextMesh, GPU particles, geometry occlusion, "
+                "spot/directional shadows, emission, procedural grid"
+            ),
             "moviepy": "2D background, glow after compositing, H.264/AAC encoding",
-            "assets": "original geometry/shader/audio; Godot bundled Open Sans font (OFL-1.1)",
+            "assets": (
+                "original geometry/shader/audio; "
+                "Godot bundled Open Sans font (OFL-1.1)"
+            ),
         }
         (args.output / "validation.json").write_text(
             json.dumps(report, indent=2), encoding="utf-8"

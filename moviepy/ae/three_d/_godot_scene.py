@@ -54,7 +54,8 @@ def _material(item):
 def _object(item, scene):
     keys(
         item,
-        "type location rotation scale material animation text font font_size pixel_size depth centered",
+        "type location rotation scale material animation text font "
+        "font_size pixel_size depth centered",
         "object",
     )
     if item.get("type") not in ("cube", "sphere", "plane", "cylinder", "torus", "text"):
@@ -124,7 +125,8 @@ def _light(item):
 def _particles(item, scene, index):
     keys(
         item,
-        "location count start lifetime speed direction spread gravity size color emission_energy seed",
+        "location count start lifetime speed direction spread gravity "
+        "size color emission_energy seed",
         "particles",
     )
     item["location"] = vector(item.get("location", (0, 1, 0)), "location")
@@ -153,7 +155,8 @@ def validate_godot_scene(value):
     """Normalize an independent Y-up scene without executing supplied code."""
     keys(
         value,
-        "size fps duration transparent camera materials objects lights particles ambient glow audio",
+        "size fps duration transparent camera materials objects lights "
+        "particles ambient glow audio",
         "Godot scene",
     )
     scene = copy.deepcopy(value)

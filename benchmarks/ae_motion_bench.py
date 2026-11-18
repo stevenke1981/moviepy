@@ -83,7 +83,10 @@ def run(threads, repeats):
         "threads": cv2.getNumThreads(),
         "gaussian": filtering,
         "particles": particles,
-        "particle_scope": "complete source_buffer, 1080p, including allocations; excludes composition/encoding",
+        "particle_scope": (
+            "complete source_buffer, 1080p, including allocations; "
+            "excludes composition/encoding"
+        ),
     }
 
 

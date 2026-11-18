@@ -11,8 +11,9 @@ Outputs: ``title_card.png`` (over a media background), ``ken_burns_first.png``,
 
 The presets use Source Han Serif / Sans TW (思源宋體／思源黑體, see
 ``presets.source_han_font``). When one is missing the script prints the path
-it needs and exits with status 2; it never swaps in another typeface. ``OUTPUT_DIR`` must be absent or empty, so earlier results
-are never overwritten.
+it needs and exits with status 2; it never swaps in another typeface.
+``OUTPUT_DIR`` must be absent or empty, so earlier results are never
+overwritten.
 """
 
 import argparse

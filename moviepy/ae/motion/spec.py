@@ -75,7 +75,8 @@ def _cues(request):
 def _caption_params(params, request):
     keys(
         params,
-        "style font_size min_font_size safe_margin position max_lines line_spacing color accent stroke_color stroke_width pop_frames",
+        "style font_size min_font_size safe_margin position max_lines "
+        "line_spacing color accent stroke_color stroke_width pop_frames",
         "caption params",
     )
     params.setdefault("style", "highlight")

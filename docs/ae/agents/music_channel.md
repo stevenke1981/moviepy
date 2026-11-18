@@ -29,7 +29,7 @@ Ask the human for every missing item. Never invent, substitute, generate or "pla
 | Input | Exact location / field | If missing |
 |---|---|---|
 | Mode | `music init --mode sleep_longform` or `study_pomodoro` | Ask. |
-| Project folder | new empty folder, e.g. `E:\music_projects\ep01` | Ask. Do not reuse a non-empty folder. |
+| Project folder | new empty folder, e.g. `music_projects\ep01` | Ask. Do not reuse a non-empty folder. |
 | Music masters (one per track) | `tracks/<file>` referenced by `tracks[].source`; rights confirmed by human | Stop. Ask for the files and written rights confirmation. |
 | Track ids and chapter lengths | `tracks[].id`, `tracks[].chapter_seconds` (sleep mode: required on every track) | Ask. |
 | Visual clips (approved Flow clips, at least `clip_length` = 8.0 s each) | `visual/<file>` listed in `visual.clips`, or a prepared loop at `visual.cycle_path` | Stop. Ask for approved clips. |
@@ -39,7 +39,7 @@ Ask the human for every missing item. Never invent, substitute, generate or "pla
 | Chime (optional, study mode) | `chime.path` (stereo 48 kHz) OR `chime.design`, not both | Use the default design only if the human approves it. |
 | Fonts | `C:/Windows/Fonts/msjh.ttc` (zh, en) and `C:/Windows/Fonts/YuGothM.ttc` (ja) for thumbnail | Check existence first. If missing, stop and ask. |
 | Tools | FFmpeg on PATH or imageio-ffmpeg; Python with repo importable | Run `python -m moviepy.ae.templates music --help`. If it fails, stop. |
-| soundx | `MOVIEPY_SOUNDX`, PATH, or `C:\Program Files\soundx\soundx.exe`; >= 0.3.0 for LUFS | Run `python -m moviepy.ae.templates.soundx --json`. Stop if `ok` is false. If `has_loudness` is false (0.2.0), LUFS falls back to FFmpeg loudnorm: report it, do not hide it. |
+| soundx | `MOVIEPY_SOUNDX`, PATH, or `Program Files\soundx\soundx.exe`; >= 0.3.0 for LUFS | Run `python -m moviepy.ae.templates.soundx --json`. Stop if `ok` is false. If `has_loudness` is false (0.2.0), LUFS falls back to FFmpeg loudnorm: report it, do not hide it. |
 
 Text rules for every title, subtitle, hint and label: no medical or health claims (see section 6).
 
@@ -47,27 +47,23 @@ Text rules for every title, subtitle, hint and label: no medical or health claim
 
 Run from the repo root. Use PowerShell.
 
-```console
-cd E:\moviepy_ae
-```
-
 Step 1. Create the project (once; refuses a non-empty folder):
 
 ```console
-python -m moviepy.ae.templates music init E:\music_projects\ep01 --mode sleep_longform
+python -m moviepy.ae.templates music init music_projects\ep01 --mode sleep_longform
 ```
 
 Expected stdout: `created <path>\music.json`. Then:
 
-1. Copy each approved master into `E:\music_projects\ep01\tracks\`.
-2. Copy each approved clip into `E:\music_projects\ep01\visual\`.
+1. Copy each approved master into `music_projects\ep01\tracks\`.
+2. Copy each approved clip into `music_projects\ep01\visual\`.
 3. Edit `music.json`: replace every `PLACEHOLDER` value (track paths, clip paths, track titles, `name`). If the human has no card or thumbnail titles, set `cards.enabled` and `thumbnail.enabled` to `false`. Never leave a `PLACEHOLDER` string in a field that is enabled.
 4. Study mode only: edit `study.json`.
 
 Step 2. Validate. Must exit 0 before any build:
 
 ```console
-cd E:\music_projects\ep01
+cd music_projects\ep01
 python -m moviepy.ae.templates music validate music.json
 ```
 

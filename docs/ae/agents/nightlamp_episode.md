@@ -29,7 +29,7 @@ Ask the human for every missing item. Never invent, substitute or generate media
 | Input | Exact location / field | If missing |
 |---|---|---|
 | Channel | `init --channel story` or `init --channel history` | Ask. Only these two values exist. |
-| Episode folder | new empty folder, e.g. `E:\episodes\ep012` | Ask. Do not reuse a non-empty folder. |
+| Episode folder | new empty folder, e.g. `episodes\ep012` | Ask. Do not reuse a non-empty folder. |
 | Still images (approved) | `media/<file>` used by `shots[].image`; at least 1920x1080 px, never upscaled by you | Stop. Ask for approved images. |
 | Video shots (optional) | `media/<file>` used by `shots[].video` | Ask. Video audio is never used. |
 | Narration | `media/<file>` in `audio.narration`; stereo WAV preferred (mono is converted and about 3 dB quieter) | Stop. Ask for the approved narration. |
@@ -53,26 +53,22 @@ Text rules for every title, subtitle, chapter item and quote: no medical or heal
 
 Run from the repo root. Use PowerShell.
 
-```console
-cd E:\moviepy_ae
-```
-
 Step 1. Create the episode folder (once; refuses a non-empty folder):
 
 ```console
-python -m moviepy.ae.templates init E:\episodes\ep012 --channel history
+python -m moviepy.ae.templates init episodes\ep012 --channel history
 ```
 
 Expected stdout: `created <path>\episode.json`. Then:
 
-1. Copy approved images, narration and music into `E:\episodes\ep012\media\`.
-2. Copy SRT files into `E:\episodes\ep012\subtitles\`.
+1. Copy approved images, narration and music into `episodes\ep012\media\`.
+2. Copy SRT files into `episodes\ep012\subtitles\`.
 3. Edit `episode.json`: replace every `PLACEHOLDER` value (`PLACEHOLDER_*.jpg`, `PLACEHOLDER_narration.wav`, `PLACEHOLDER_*.srt`, titles, quotes). Keep `preset` as `nightlamp_story` or `nightlamp_history` to match the channel.
 
 Step 2. Validate. Must exit 0 before any render:
 
 ```console
-python -m moviepy.ae.templates validate E:\episodes\ep012\episode.json
+python -m moviepy.ae.templates validate episodes\ep012\episode.json
 ```
 
 Expected stdout: `OK <name>: 1920x1080 @ 24 fps, <duration> s, <n> segments, <n> chapters, <n> quotes, audio` (or `no audio`). Record `<duration>`.
@@ -80,21 +76,21 @@ Expected stdout: `OK <name>: 1920x1080 @ 24 fps, <duration> s, <n> segments, <n>
 Step 3. Preview render (draft: 480x270 at 12 fps; layout and timing check only). Use its own empty folder:
 
 ```console
-python -m moviepy.ae.templates render E:\episodes\ep012\episode.json E:\episodes\ep012\preview --preview
+python -m moviepy.ae.templates render episodes\ep012\episode.json episodes\ep012\preview --preview
 ```
 
 Step 4. Final render. Use a new empty folder. Do not pass `--overwrite`:
 
 ```console
-python -m moviepy.ae.templates render E:\episodes\ep012\episode.json E:\episodes\ep012\final --workers 8 --encoder auto
+python -m moviepy.ae.templates render episodes\ep012\episode.json episodes\ep012\final --workers 8 --encoder auto
 ```
 
-Long runs: launch in the background and log to a file, for example `... > E:\episodes\ep012\logs\final.out.txt 2>&1` (create `logs` first with `New-Item -ItemType Directory -Force`). Poll the log and report progress.
+Long runs: launch in the background and log to a file, for example `... > episodes\ep012\logs\final.out.txt 2>&1` (create `logs` first with `New-Item -ItemType Directory -Force`). Poll the log and report progress.
 
 Step 5. Master render (only if the human asks for a lossless master). Run this INSTEAD of Step 4, not after it: `--master` writes into the same output folder, and a folder that already holds a render is refused:
 
 ```console
-python -m moviepy.ae.templates render E:\episodes\ep012\episode.json E:\episodes\ep012\final --master --workers 8 --encoder auto
+python -m moviepy.ae.templates render episodes\ep012\episode.json episodes\ep012\final --master --workers 8 --encoder auto
 ```
 
 Stills: by default the render writes stills for the intro and outro middles, each chapter start + 1 s, and each quote middle. To choose times, pass seconds: `--still 3.0 12.5`. Pass `--still` with at least one number.
@@ -214,7 +210,7 @@ Python snippets for G2 to G4 (run from the repo root; adjust paths):
 ```python
 from moviepy.ae.templates.subtitles import find_bad_breaks, parse_srt, check_timing
 
-text = open(r"E:\episodes\ep012\subtitles\zh-TW.srt", encoding="utf-8-sig").read()
+text = open(r"episodes\ep012\subtitles\zh-TW.srt", encoding="utf-8-sig").read()
 cues = parse_srt(text, "zh-TW")
 print(find_bad_breaks(cues, protected=["夜燈"]))  # [] means pass
 print(check_timing(cues))  # [] means pass
@@ -224,7 +220,7 @@ print(check_timing(cues))  # [] means pass
 from moviepy.ae.templates.episode import EpisodeSpec, build_episode
 from moviepy.ae.templates.ken_burns import check_motion
 
-spec = EpisodeSpec.from_json(r"E:\episodes\ep012\episode.json")
+spec = EpisodeSpec.from_json(r"episodes\ep012\episode.json")
 comp = build_episode(spec)
 try:
     for seg in comp.episode["timeline"]:

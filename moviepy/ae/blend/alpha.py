@@ -2,8 +2,9 @@
 
 All functions operate on aligned premultiplied float32 regions: ``cb`` and
 ``alpha_b`` for the backdrop (the accumulated layers below) and ``cs`` and
-``alpha_s`` for the source layer, with opacity already applied to the source. Alpha arrays are
-replicated to three channels so every operation is same-shape and contiguous.
+``alpha_s`` for the source layer, with opacity already applied to the source.
+Alpha arrays are replicated to three channels so every operation is
+same-shape and contiguous.
 
 The general rule is the W3C *Compositing and Blending Level 1* source-over
 composite with blending (§9.1.4 / §10)::

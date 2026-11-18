@@ -46,7 +46,8 @@ def keys(value, allowed, label):
 def _material(material):
     keys(
         material,
-        "base_color metallic roughness emission_color emission_strength maps normal_convention height_scale",
+        "base_color metallic roughness emission_color emission_strength "
+        "maps normal_convention height_scale",
         "material",
     )
     material["base_color"] = vector(
@@ -126,7 +127,8 @@ def validate_scene(value):
     """Return an independent normalized scene; all paths are explicit and local."""
     keys(
         value,
-        "size fps duration samples transparent camera materials objects lights world_strength seed",
+        "size fps duration samples transparent camera materials "
+        "objects lights world_strength seed",
         "scene",
     )
     scene = copy.deepcopy(value)

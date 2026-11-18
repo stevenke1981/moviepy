@@ -10,6 +10,7 @@ These tests keep the guides honest:
 * every spec field named in a quick-reference table exists on its dataclass;
 * every error fragment quoted in a failure table occurs in the source;
 * every ``docs/...`` and ``moviepy/...`` path mentioned exists;
+* no guide contains a drive-letter path.
 * each guide has front matter with ``name`` and ``description`` and the
   eight required sections.
 """
@@ -396,3 +397,10 @@ def test_referenced_repo_paths_exist(guide):
     for raw in sorted(paths):
         path = REPO / raw.rstrip(".")
         assert path.exists(), f"{guide}: {raw} does not exist"
+
+
+@pytest.mark.parametrize("guide", sorted(p.name for p in AGENTS.glob("*.md")))
+def test_guide_has_no_drive_letter_path(guide):
+    """A drive letter ties a guide to one machine; use repo-relative paths."""
+    match = re.search(r"[A-Za-z]:\\", _read(guide))
+    assert match is None, f"{guide}: drive-letter path at offset {match.start()}"

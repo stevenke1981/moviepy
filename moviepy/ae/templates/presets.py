@@ -337,8 +337,9 @@ def source_han_font(style="sans", weight="Bold"):
     """Return the path of an installed Source Han (思源) Traditional Chinese font.
 
     Looks for the Traditional Chinese (``TC``, full glyph set) and then the
-    Taiwan subset (``TW``) static OpenType files of Source Han Sans (思源黑體, ``style="sans"``) or Source
-    Han Serif (思源宋體, ``style="serif"``) in the Windows system and
+    Taiwan subset (``TW``) static OpenType files of Source Han Sans (思源黑體,
+    ``style="sans"``) or Source Han Serif (思源宋體, ``style="serif"``) in the
+    Windows system and
     per-user font folders and the usual user font folders elsewhere. When
     none is installed the expected per-user path is returned anyway, so
     ``ChannelPreset.font`` reports exactly which file to install; no other

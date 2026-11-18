@@ -409,7 +409,8 @@ class StudySchedule:
                 )
             tip_end = min(phase["end"], phase["start"] + display["tip_display_seconds"])
             tip_a, tip_b = max(start, phase["start"]), min(end, tip_end)
-            # A short preview may start inside a tip; do not manufacture another fade-in.
+            # A short preview may start inside a tip; do not manufacture
+            # another fade-in.
             fade_in = 500 if tip_a == phase["start"] else 0
             fade_out = 700 if tip_b == tip_end else 0
             fade = f"\\fad({fade_in},{fade_out})"
@@ -447,7 +448,9 @@ WrapStyle: 2
 ScaledBorderAndShadow: yes
 
 [V4+ Styles]
-Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
+Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, \
+BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, \
+BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
 __STYLES__
 
 [Events]

@@ -1,1 +1,4 @@
-"""Transition effects (AE Transition category): wipes and dissolves that cut away coverage."""
+"""Transition effects (AE Transition category).
+
+Wipes and dissolves that cut away coverage.
+"""

@@ -50,7 +50,7 @@ Shipped recommended configs (``configs/music_*.json``) and the
     the last 30 minutes to a dim 0.15 glow with the music fading with it;
     trilingual track cards at every chapter (placeholder titles); a
     thumbnail with the auto duration badge; automated QA on the render.
-``music_study_pomodoro.json`` (S14 study companion, ``s14-assets.py``, ``s14-render.py``)
+``music_study_pomodoro.json`` (S14 companion, ``s14-assets.py``, ``s14-render.py``)
     A 5220 s schedule (3 x 25 min focus, 5 min breaks, 2 min closing; chimes
     at 1500, 1800, 3300, 3600 and 5100 s), six pieces of 880 s (6 x 880 - 5 x
     12 = 5220), chimes 10 dB under the local music RMS (never boosted, no
@@ -1689,7 +1689,8 @@ def prepare_audio(spec):
     """Normalize, assemble and (study) chime-mix the audio; resumable.
 
     Writes ``audio/masters/<id>.flac`` (S14 soundx staging and loudness to
-    the target with an exact-frame contract; ``audio.loudness_backend``), ``audio/music.flac`` (looped
+    the target with an exact-frame contract; ``audio.loudness_backend``),
+    ``audio/music.flac`` (looped
     chapters joined with crossfades and edge fades), in study mode with chimes
     ``audio/chime.wav`` and ``audio/audio.flac`` (chimes mixed at the phase
     boundaries, ``below_music_db`` under the local music, no ducking), each
@@ -2655,10 +2656,13 @@ _README = """\
 [ ] 2. 把 Flow 影片片段放入 visual/（取代 PLACEHOLDER_clip_*.mp4），
        或在 visual.cycle_path 指向已備妥的循環影片。
 {study}[ ] 3. 檢查：  python -m moviepy.ae.templates music validate music.json
-[ ] 4. 建置素材：python -m moviepy.ae.templates music build music.json --steps audio,visual,overlays
-[ ] 5. 預覽 60 秒：python -m moviepy.ae.templates music build music.json --steps render --preview 0 60
+[ ] 4. 建置素材：python -m moviepy.ae.templates music build music.json \
+--steps audio,visual,overlays
+[ ] 5. 預覽 60 秒：python -m moviepy.ae.templates music build music.json \
+--steps render --preview 0 60
 [ ] 6. 正式輸出：python -m moviepy.ae.templates music build music.json --steps render
-[ ] 7. 縮圖與自動檢查：python -m moviepy.ae.templates music build music.json --steps thumbnail,qa
+[ ] 7. 縮圖與自動檢查：python -m moviepy.ae.templates music build music.json \
+--steps thumbnail,qa
        （在 music.json 填好 thumbnail.titles 與 cards.titles；氛圍層在 ambience）
 所有輸出皆為獨佔建立（不覆寫）；每一步寫入證據 JSON，中斷後重跑會驗證雜湊並略過已完成者。
 若修改設定，須先刪除對應產物與其 .json 證據才能重建。
@@ -2695,10 +2699,10 @@ def init_music_episode(directory, mode):
 
     Examples
     --------
-    >>> init_music_episode("x", "tv")
+    >>> init_music_episode("x", "tv")  # doctest: +IGNORE_EXCEPTION_DETAIL
     Traceback (most recent call last):
     ...
-    moviepy.ae.templates.music_episode.MusicEpisodeError: mode must be one of ['sleep_longform', 'study_pomodoro'], got 'tv'
+    moviepy.ae.templates.music_episode.MusicEpisodeError: mode must be one of ...
     """
     _choice(mode, "mode", MODES)
     target = Path(directory)

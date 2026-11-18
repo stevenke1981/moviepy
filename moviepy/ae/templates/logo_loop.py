@@ -10,8 +10,9 @@ carousel (the last one dissolves back into the first). The frame at
 with ``-stream_loop -1`` (or a player's loop switch) without a visible seam.
 
 Every element is an ordinary AE layer (``Background``, ``Halo``, ``Embers``,
-``Glow``, ``Lamp``, ``Flame glow``, ``Flame``, ``Title``, ``Shine``, ``Tagline 1`` ...) with its
-``Transform`` ``Property`` objects, so a caller can re-keyframe any of them.
+``Glow``, ``Lamp``, ``Flame glow``, ``Flame``, ``Title``, ``Shine``,
+``Tagline 1`` ...) with its ``Transform`` ``Property`` objects, so a caller
+can re-keyframe any of them.
 
 Examples
 --------

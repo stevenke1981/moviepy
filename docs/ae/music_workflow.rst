@@ -3,7 +3,7 @@
 音樂頻道長片製作流程（``moviepy.ae.templates`` music）
 ======================================================
 
-本文說明如何用 ``python -m moviepy.ae.templates music`` 製作長篇音樂影片：從建立專案資料夾、準備母帶與畫面素材、撰寫 ``music.json``，到驗證、預覽與正式輸出，以及人工驗收。流程由「森息音界 / Biophilic Haven」（``E:\music_channel``）的製作方式整理而成，對應兩種模式：
+本文說明如何用 ``python -m moviepy.ae.templates music`` 製作長篇音樂影片：從建立專案資料夾、準備母帶與畫面素材、撰寫 ``music.json``，到驗證、預覽與正式輸出，以及人工驗收。流程由「森息音界 / Biophilic Haven」的製作方式整理而成，對應兩種模式：
 
 * ``sleep_longform``：長篇放鬆／睡眠片，即 S06 型（``build-season-06.ps1``），六首各 3210 秒、全長 5 小時 20 分。
 * ``study_pomodoro``：番茄讀書片，即 S14 型（``s14-assets.py``、``s14-render.py``、``study-overlay.py``），全長 87 分鐘，附階段提示音與頻譜條。
@@ -33,14 +33,13 @@ Python 套件
 
 .. code-block:: console
 
-    pip install -e E:\moviepy_ae
+    pip install -e .
 
 .. code-block:: console
 
-    $env:PYTHONPATH = "E:\moviepy_ae"
-    cd E:\moviepy_ae
+    $env:PYTHONPATH = (Get-Location)
 
-``pip install -e`` 為永久設定；``PYTHONPATH`` 只對目前的 PowerShell 視窗有效。本模組依賴 numpy（頻譜分析）與 Pillow（精簡版字幕量字寬）。CI 以 Python 3.9 與 3.12 測試本文件。
+``pip install -e`` 為永久設定；``PYTHONPATH`` 只對目前的 PowerShell 視窗有效。兩者都在 repo 根目錄（含 ``pyproject.toml`` 的資料夾）執行。本模組依賴 numpy（頻譜分析）與 Pillow（精簡版字幕量字寬）。CI 以 Python 3.9 與 3.12 測試本文件。
 
 FFmpeg 與編碼器
 ~~~~~~~~~~~~~~~
@@ -81,11 +80,11 @@ FFmpeg 與編碼器
 
 .. code-block:: console
 
-    python -m moviepy.ae.templates music init E:\music_projects\ep01 --mode sleep_longform
+    python -m moviepy.ae.templates music init music_projects\ep01 --mode sleep_longform
 
 .. code-block:: console
 
-    python -m moviepy.ae.templates music init E:\music_projects\s14 --mode study_pomodoro
+    python -m moviepy.ae.templates music init music_projects\s14 --mode study_pomodoro
 
 ``--mode`` 為必填，只接受 ``sleep_longform`` 或 ``study_pomodoro``。目標資料夾若不存在或為空，會產生：
 
@@ -898,7 +897,7 @@ QA 會解碼媒體約 4 次（閃光、響度、靜音與削波各一次），�
 
 .. code-block:: console
 
-    python -m moviepy.ae.templates music validate E:\music_projects\ep01\music.json
+    python -m moviepy.ae.templates music validate music_projects\ep01\music.json
 
 通過時印出 ``OK <name> (<mode>): 1280x720 @ 24 fps, 6 tracks, 19200 s, 460800 frames``。缺檔以 ``MISSING`` 列出，問題以 ``PROBLEM`` 列出，兩者皆使結束碼為 1。只想檢查時長、暫時沒有素材時，加上 ``--allow-missing`` 跳過檔案檢查。
 
@@ -1058,19 +1057,19 @@ QA 會解碼媒體約 4 次（閃光、響度、靜音與削波各一次），�
 
 .. code-block:: console
 
-    python -m moviepy.ae.templates music build E:\music_projects\ep01\music.json --steps audio,visual,overlays
+    python -m moviepy.ae.templates music build music_projects\ep01\music.json --steps audio,visual,overlays
 
 .. code-block:: console
 
-    python -m moviepy.ae.templates music build E:\music_projects\ep01\music.json --steps render --preview 0 60
+    python -m moviepy.ae.templates music build music_projects\ep01\music.json --steps render --preview 0 60
 
 .. code-block:: console
 
-    python -m moviepy.ae.templates music build E:\music_projects\ep01\music.json --steps render
+    python -m moviepy.ae.templates music build music_projects\ep01\music.json --steps render
 
 .. code-block:: console
 
-    python -m moviepy.ae.templates music build E:\music_projects\ep01\music.json --workers 4 --encoder libx264
+    python -m moviepy.ae.templates music build music_projects\ep01\music.json --workers 4 --encoder libx264
 
 .. list-table::
    :header-rows: 1
@@ -1128,7 +1127,7 @@ QA 會解碼媒體約 4 次（閃光、響度、靜音與削波各一次），�
 
     from moviepy.ae.templates.music_episode import MusicEpisodeSpec, build_music_episode, validate_music_episode
 
-    spec = MusicEpisodeSpec.from_json("E:/music_projects/ep01/music.json")
+    spec = MusicEpisodeSpec.from_json("music_projects/ep01/music.json")
     check = validate_music_episode(spec, check_files=True)
     if check["ok"]:
         report = build_music_episode(spec, steps=("audio", "visual", "overlays"))
@@ -1293,7 +1292,7 @@ QA 會解碼媒體約 4 次（閃光、響度、靜音與削波各一次），�
    :header-rows: 1
    :widths: 34 36 30
 
-   * - ``E:\music_channel`` 舊腳本
+   * - 舊的本機腳本資料夾
      - 新的 API
      - 備註
    * - ``s14-assets.py`` ``normalize()``

@@ -157,9 +157,15 @@ func _ready():
                     values.append(key)
             if values.is_empty():
                 continue
-            var property_name = {"location": "position", "rotation": "rotation_degrees", "scale": "scale"}[field]
+            var property_name = {
+                "location": "position",
+                "rotation": "rotation_degrees",
+                "scale": "scale"
+            }[field]
             var track = animation.add_track(Animation.TYPE_VALUE)
-            animation.track_set_path(track, NodePath(str(node.name) + ":" + property_name))
+            animation.track_set_path(
+                track, NodePath(str(node.name) + ":" + property_name)
+            )
             animation.track_insert_key(track, 0.0, vec(item[field]))
             for key in values:
                 animation.track_insert_key(track, key.time, vec(key[field]))
@@ -205,8 +211,13 @@ func _ready():
         particles.interpolate = false
         particles.use_fixed_seed = true
         particles.seed = item.seed
-        var extent = item.speed[1] * item.lifetime + vec(item.gravity).length() * item.lifetime * item.lifetime + 1.0
-        particles.visibility_aabb = AABB(Vector3.ONE * -extent, Vector3.ONE * extent * 2)
+        var extent = (
+            item.speed[1] * item.lifetime
+            + vec(item.gravity).length() * item.lifetime * item.lifetime + 1.0
+        )
+        particles.visibility_aabb = AABB(
+            Vector3.ONE * -extent, Vector3.ONE * extent * 2
+        )
         particles.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
         var process_material = ParticleProcessMaterial.new()
         process_material.direction = vec(item.direction).normalized()

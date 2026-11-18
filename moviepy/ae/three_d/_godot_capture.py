@@ -26,7 +26,10 @@ func _render_callback(_kind: int, data: RenderData):
     copy_format.width = format.width
     copy_format.height = format.height
     copy_format.format = RenderingDevice.DATA_FORMAT_R16G16B16A16_SFLOAT
-    copy_format.usage_bits = RenderingDevice.TEXTURE_USAGE_STORAGE_BIT | RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT
+    copy_format.usage_bits = (
+        RenderingDevice.TEXTURE_USAGE_STORAGE_BIT
+        | RenderingDevice.TEXTURE_USAGE_CAN_COPY_FROM_BIT
+    )
     var copied = device.texture_create(copy_format, RDTextureView.new())
     var source = RDShaderSource.new()
     source.source_compute = """
@@ -40,7 +43,9 @@ void main() {
     imageStore(copied_image, pixel, imageLoad(original_image, pixel));
 }
 """
-    var shader = device.shader_create_from_spirv(device.shader_compile_spirv_from_source(source))
+    var shader = device.shader_create_from_spirv(
+        device.shader_compile_spirv_from_source(source)
+    )
     var pipeline = device.compute_pipeline_create(shader)
     var input = RDUniform.new()
     input.uniform_type = RenderingDevice.UNIFORM_TYPE_IMAGE
@@ -54,7 +59,9 @@ void main() {
     var commands = device.compute_list_begin()
     device.compute_list_bind_compute_pipeline(commands, pipeline)
     device.compute_list_bind_uniform_set(commands, uniforms, 0)
-    device.compute_list_dispatch(commands, int(ceil(format.width / 8.0)), int(ceil(format.height / 8.0)), 1)
+    device.compute_list_dispatch(
+        commands, int(ceil(format.width / 8.0)), int(ceil(format.height / 8.0)), 1
+    )
     device.compute_list_end()
     var raw = device.texture_get_data(copied, 0)
     device.free_rid(uniforms)
@@ -64,7 +71,9 @@ void main() {
     if raw.size() != format.width * format.height * 8:
         push_error("Linear capture returned an incomplete frame")
         return
-    var image = Image.create_from_data(format.width, format.height, false, Image.FORMAT_RGBAH, raw)
+    var image = Image.create_from_data(
+        format.width, format.height, false, Image.FORMAT_RGBAH, raw
+    )
     var path = "res://linear_raw/frame%08d" % frame_index
     if image.save_exr(path + ".exr", false) != OK:
         push_error("Linear EXR export failed")

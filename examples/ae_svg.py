@@ -4,7 +4,7 @@ Run from the repository root::
 
     python -m examples.ae_svg --output svg.mp4
     python -m examples.ae_svg --benchmark 30
-    python -m examples.ae_svg --font /path/to/font.ttf --text "MoviePy AE" --output title.mp4
+    python -m examples.ae_svg --font FONT.ttf --text "MoviePy AE" --output title.mp4
 """
 
 import argparse
@@ -52,7 +52,8 @@ def build_scene(font=None, text="MoviePy AE", *, cache_entries=8):
     if font:
         svg = svg.replace(
             "</svg>",
-            '<text id="label" x="172" y="168" font-size="24" fill="white">SVG</text></svg>',
+            '<text id="label" x="172" y="168" font-size="24" fill="white">'
+            "SVG</text></svg>",
         )
     layer = comp.add_svg(
         svg,

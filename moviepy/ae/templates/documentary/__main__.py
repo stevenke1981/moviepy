@@ -194,7 +194,9 @@ def _render(args):
             body = (
                 "一封泛黃的信，讓遠方的往事重新浮現。\n紙上的字跡、熟悉的日期，和那些未曾遺忘的人。\n時間走過半個世紀，故事仍在繼續。"
                 if chinese
-                else "An old letter brings a distant story back into view.\nHandwriting, a familiar date and people never forgotten.\nHalf a century later, the story continues."
+                else "An old letter brings a distant story back into view.\n"
+                "Handwriting, a familiar date and people never forgotten.\n"
+                "Half a century later, the story continues."
             )
             source_label = (
                 "來源：原創示範素材" if chinese else "Source: original demo artwork"

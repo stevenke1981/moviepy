@@ -906,7 +906,8 @@ def _chapter_layers(layout, sc, parts, title, start, watermark_span):
         x, y, w, h = sc.cta
         layers.append(
             _still_layer(
-                image, "subscribe", (x + (w - 1) / 2, y + (h - 1) / 2), t0, t1, layout.fade,
+                image, "subscribe", (x + (w - 1) / 2, y + (h - 1) / 2), t0, t1,
+                layout.fade,
                 anchor=((iw - 1) / 2, (ih - 1) / 2), scale=_pop_scale(layout, 0.0),
             )
         )  # fmt: skip
@@ -1050,10 +1051,11 @@ def add_scene_overlays(
     >>> layers = add_scene_overlays(comp, SceneLayout(), [(0, "A"), (5, "B")])
     >>> len(layers)
     4
-    >>> add_scene_overlays(comp, SceneLayout(), [(0, "A"), (3, "B")])
+    >>> add_scene_overlays(comp, SceneLayout(),
+    ...                    [(0, "A"), (3, "B")])  # doctest: +IGNORE_EXCEPTION_DETAIL
     Traceback (most recent call last):
     ...
-    ValueError: chapter overlays overlap: the one at 0s runs until 4s but the next starts at 3s
+    ValueError: chapter overlays overlap: ...
     """
     rows = _check_chapters(layout, chapters, float(comp.duration))
     if not rows:
@@ -1133,7 +1135,8 @@ def export_scene_overlay(
     frames = int(round(layout.duration * fps))
     if fps <= 0 or abs(layout.duration * fps - frames) > 1e-6:
         raise ValueError(
-            f"duration {layout.duration:g}s at {fps:g} fps is not a whole number of frames"
+            f"duration {layout.duration:g}s at {fps:g} fps "
+            "is not a whole number of frames"
         )
     comp = Composition(
         size=tuple(int(v) for v in canvas_size), fps=fps, duration=layout.duration,
