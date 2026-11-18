@@ -144,3 +144,23 @@
 R2 先做是因為 R1 的 seed 依賴穩定的圖層 id；R6 的快取物件會被 R3 的 ROI 外擴用到；P2 會改動 `blend` 內部，放在 P1 之前可避免重工。
 
 完成 R1–R6 與 P1–P3 後再開 WS-07（Motion Blur 會把每格成本乘上取樣數，現有效能會被放大）。
+
+---
+
+## 7. 狀態更新（2026-11-19）
+
+| 項目 | 狀態 | 依據 |
+|---|---|---|
+| R2 同名圖層共用亂數流 | 完成 | `5788bae` |
+| R1 Dissolve 雜訊隨 buffer 邊界改變 | 完成 | `201fef8` |
+| R6 單次 render 內重複計算 | 完成 | `d218dc6`（`renderer._RenderCache`） |
+| R3 Adjustment Layer 效果 ROI 邊緣 | 完成 | `8746c80` |
+| R4 Adjustment 效果未隨 `resolution_scale` 縮放 | 完成 | `5d34d98` |
+| R5 `best` 品質旋轉 ROI 不一致 | 完成 | `c06160d` |
+| D1–D4 | 完成（依本版發佈負責人回報；本文件撰寫時的基底分支尚未含 D3 revision 計數與 D4 的 clip 修改，請以最終合併內容為準） | 各自的 fix 提交與 ws03／ws04／ws06 文件 |
+| D5 與規格落差 | 本版收尾：`MaskPath` 別名、`flatten` 等距細分說明（ws05.rst）已處理；`ae.wiggle` 與 slow 記憶體測試不在本包範圍 | `docs/ae/ws05.rst` |
+| P1、P3 效能 | 數據見 `benchmarks/results/`（`ws03-06-2026-11-19.json` 隨本版加入） | 同左 |
+| P4 Benchmark 涵蓋 WS-03–06 | 本版收尾 | 同上 |
+| §5 流程缺口 | 本版收尾：`ws03–ws06_acceptance.md` 已新增；`masks/path.py` 覆蓋率由 88% 升至 99%（新增 `tests/ae/test_mask_path_coverage.py`）；CHANGELOG 由發佈包處理；獨立 reviewer 審查（§5.5）**尚無記錄** | `docs/ae/ws0[3-6]_acceptance.md` |
+
+R1–R6 的六個提交已用 `git log feat/ae-parity` 逐一確認存在。

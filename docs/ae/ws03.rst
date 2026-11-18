@@ -155,11 +155,14 @@ Markers、Work Area 與既有 MoviePy 互通
 已知限制
 --------------
 
-* ``add_adjustment``／``add_text``／``add_shape`` 屬於 WS-06／WS-21／WS-20，
-  尚未提供。
+* ``add_adjustment`` 已由 WS-06 提供；``add_text``／``add_shape`` 屬於
+  WS-21／WS-20，尚未提供。
 * Collapse Transformations 只實作「不裁切子合成畫框」；子圖層的混合模式
   仍在子合成內解決，不會與父合成圖層互動，也沒有省去二次重取樣。
-* 單次 render 內的 (layer, t) 快取與 RAM Preview 屬於 WS-28；目前只有
-  RGB 與 mask 對同一時間共用一次渲染結果。
+* 單次 render 內已有快取：``moviepy.ae.renderer._RenderCache`` 在最外層
+  render 期間共用相同圖層與合成的中間結果，render 結束即釋放。跨 render 的
+  RAM Preview 屬於 WS-28，尚未提供。
+* ``Composition.audio`` 會混合含聲音的 ``AVLayer``；細節見
+  `composition_audio.rst <composition_audio.rst>`_。
 * 圖層物件是可變的，透過 ``with_*`` 衍生的 clip 會共用同一組圖層
   （與 MoviePy 共用 ``frame_function`` 的語意一致）。

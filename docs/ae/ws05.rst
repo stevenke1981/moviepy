@@ -41,6 +41,11 @@ SVG 支援 ``M L H V C S Q Z``（絕對與相對；二次曲線精確轉成三�
 ``rasterize(path, bounds, feather, expansion, supersample=4)`` 以精確的
 掃描線（奇偶規則）在超取樣格點上填滿，再平均回像素：
 
+* ``path.flatten`` 以**等距細分**（uniform subdivision）把曲線轉成多邊形：
+  每段三次貝茲的步數隨控制多邊形長度（乘上 ``scale``）增加，約每 2 個輸出
+  像素一點，上限 512 步；它不是規格所寫的自適應細分。面積誤差由
+  ``tests/ae/test_masks.py`` 驗證，其餘分支由 ``tests/ae/test_mask_path_coverage.py``
+  覆蓋（``path.py`` 分支覆蓋率 99%）。
 * 軸對齊、落在像素邊界上的矩形完全精確；半徑 40 的圓面積誤差 < 0.05 %。
 * 羽化為可分離高斯模糊，``sigma = feather / 2``（水平、垂直可不同）。
 * 擴張以距離轉換實作：正值向外長、負值向內縮（像素單位）。
@@ -125,5 +130,7 @@ SVG 支援 ``M L H V C S Q Z``（絕對與相對；二次曲線精確轉成三�
 
 * 軌道遮罩只在 ``Renderer``／``Composition`` 中套用；單獨呼叫
   ``Layer.render`` 只套用遮罩。
+* 規格中的 ``MaskPath`` 實際型別是 ``moviepy.ae.properties.PathValue``；本版
+  同時在 ``moviepy.ae.masks`` 提供 ``MaskPath`` 別名（指向 ``PathValue``）。
 * 不支援 AE 的遮罩運動模糊、可變寬度羽化（Mask Feather Tool）與
   RotoBezier；這些可在後續工作流程補上。

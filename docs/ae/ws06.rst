@@ -235,4 +235,6 @@ M1 範例
 * Gaussian Blur 的 ``blurriness → σ`` 換算為經驗值（Adobe 未公開）。
 * Brightness & Contrast 只實作 Legacy 線性模型。
 * 調整圖層的效果與效果遮罩在合成座標中運作；一般圖層則在圖層座標中運作。
-* 註冊表目前只有上表 6 個效果；規格要求的 WS-10～19 全部效果屬 M3。
+* 上表只列出 WS-06 本階段的 6 個基準效果；內建註冊表目前共註冊 29 個效果、
+  分 9 類（``registry.load_builtins()`` 後 ``len(registry.list())`` 實測）。
+  規格要求的 WS-10～19 全部效果仍未完成。
