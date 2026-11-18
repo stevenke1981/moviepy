@@ -231,7 +231,9 @@ def _codec(target):
     """Return the FFmpeg codec arguments for a ``.flac`` or ``.wav`` target."""
     suffix = target.suffix.lower()
     if suffix == ".flac":
-        return ["-c:a", "flac", "-sample_fmt", "s32"]
+        # FFmpeg 9 lets loudnorm's ~1 s frames become single FLAC blocks that
+        # its own demuxer then reads as zero packets; pin the usual block size.
+        return ["-c:a", "flac", "-sample_fmt", "s32", "-frame_size", "4608"]
     if suffix in (".wav", ".wave"):
         return ["-c:a", "pcm_s24le"]
     raise ValueError("normalize_loudness writes .flac or .wav files")

@@ -416,7 +416,9 @@ def test_long_filter_graph_uses_script_file(grey):
     report = render_grey(
         grey, "long.mp4", video_filters=[expr], duration=1.0, audio=None
     )
-    assert "-filter_complex_script" in report["command"]
+    # FFmpeg 9 removed -filter_complex_script; 7+ also accept -/filter_complex.
+    flags = ("-filter_complex_script", "-/filter_complex")
+    assert any(flag in report["command"] for flag in flags)
     assert (grey["folder"] / "long.mp4.filtergraph.txt").is_file()
     assert decode(grey["folder"] / "long.mp4").shape[0] == 12
 

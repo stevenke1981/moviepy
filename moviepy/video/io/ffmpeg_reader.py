@@ -225,7 +225,7 @@ class FFMPEG_VideoReader:
                 result = np.frombuffer(s, dtype="uint8")
             else:
                 result = np.fromstring(s, dtype="uint8")
-            result.shape = (h, w, len(s) // (w * h))  # reshape((h, w, len(s)//(w*h)))
+            result = result.reshape((h, w, len(s) // (w * h)))
             self.last_read = result
 
         # We have to do this down here because `self.pos` is used in the warning above
@@ -495,6 +495,9 @@ class FFmpegInfosParser:
 
         field = infos[0].strip()
         value = infos[1].strip()
+        if field == "Display Matrix":
+            # FFmpeg 7+ spells the side data "Display Matrix" instead.
+            field = "displaymatrix"
 
         if field == "rotate":
             value = float(value)

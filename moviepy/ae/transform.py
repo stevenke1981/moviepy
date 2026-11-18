@@ -69,6 +69,25 @@ _TRANSFORM_KEYS = (
 )
 
 
+_QUARTER_TURNS = ((1.0, 0.0), (0.0, 1.0), (-1.0, 0.0), (0.0, -1.0))
+
+
+def _cos_sin(degrees):
+    """Return ``(cos, sin)`` of an angle, exact for multiples of 90 degrees.
+
+    ``math.cos(math.radians(90))`` is about 6e-17 rather than 0. Resamplers
+    that keep full float precision in their coordinates (OpenCV 5 does) then
+    blend a neighbouring pixel at weight ~1e-16 into every output pixel, so a
+    quarter turn stops being bit-identical to ``numpy.rot90``. Snapping the
+    quarter turns to the exact table keeps those rotations lossless.
+    """
+    turns, remainder = divmod(degrees, 90.0)
+    if remainder == 0.0:
+        return _QUARTER_TURNS[int(turns) % 4]
+    angle = math.radians(degrees)
+    return math.cos(angle), math.sin(angle)
+
+
 def affine_matrix(position, rotation, scale, anchor):
     """Return the AE matrix ``T(position) · R(rotation) · S(scale) · T(-anchor)``.
 
@@ -97,8 +116,7 @@ def affine_matrix(position, rotation, scale, anchor):
     position_x, position_y = validate_pair(position, "position")
     anchor_x, anchor_y = validate_pair(anchor, "anchor_point")
     percent_x, percent_y = validate_pair(scale, "scale")
-    angle = math.radians(finite_real(rotation, "rotation"))
-    cos, sin = math.cos(angle), math.sin(angle)
+    cos, sin = _cos_sin(finite_real(rotation, "rotation"))
     factor_x, factor_y = percent_x / 100.0, percent_y / 100.0
     m00, m01 = factor_x * cos, -factor_y * sin
     m10, m11 = factor_x * sin, factor_y * cos

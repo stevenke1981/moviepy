@@ -21,6 +21,7 @@ Examples
 125280
 """
 
+import functools
 import hashlib
 import json
 import math
@@ -209,6 +210,25 @@ def _check_ass(ass):
     return ass
 
 
+@functools.lru_cache(maxsize=None)
+def _graph_file_flag(binary):
+    """Return the flag that reads a ``-filter_complex`` graph from a file.
+
+    FFmpeg 7 added the generic ``-/filter_complex FILE`` form and FFmpeg 9
+    removed ``-filter_complex_script``, which older builds still require.
+    """
+    found = subprocess.run(
+        [binary, "-hide_banner", "-h", "full"],
+        capture_output=True,
+        creationflags=_NO_WINDOW,
+    ).stdout.decode("utf-8", "replace")
+    return (
+        "-filter_complex_script"
+        if "-filter_complex_script " in found
+        else "-/filter_complex"
+    )
+
+
 def _build_command(
     *, plan, output, encoder, quality, audio_bitrate, metadata, has_chapters
 ):
@@ -311,7 +331,7 @@ def _build_command(
         # Windows command-line limit: hand the graph to FFmpeg as a file.
         script = Path(plan["output"] + ".filtergraph.txt")
         script.write_text(graph, encoding="utf-8")
-        command += ["-filter_complex_script", str(script)]
+        command += [_graph_file_flag(FFMPEG_BINARY), str(script)]
     else:
         command += ["-filter_complex", graph]
     command += ["-map", "[v]"]

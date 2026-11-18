@@ -215,6 +215,10 @@ def warp_buffer(buffer, matrix, opacity=1.0, *, interpolation="linear", bounds=N
     target = _target_rectangle(transform, buffer, interpolation, bounds)
     if target[2] <= target[0] or target[3] <= target[1] or _singular(transform):
         return _empty_result(buffer, target[:2])
+    if bounds is None and interpolation != "cubic":
+        exact = _quarter_turn(buffer, transform, factor, target)
+        if exact is not None:
+            return exact
     return _resample(buffer, transform, factor, interpolation, target)
 
 
@@ -266,13 +270,57 @@ def _translated(buffer, shift, factor):
     # ``to_uint8_rgb`` fast path skip unpremultiplication. The float32 product
     # reproduces the per-pixel rounding above exactly, and ``applied_factor``
     # already clamps to 0..1 so premultiplication stays valid.
+    return Buffer._publish(array, offset, buffer.color_space, _scaled(buffer, factor))
+
+
+def _scaled(buffer, factor):
+    """Return publish metadata for a pixel permutation scaled by ``factor``."""
     uniform = buffer._uniform_alpha
-    metadata = (
+    return (
         None if uniform is None else uniform * np.float32(factor),
         buffer._value_bound * factor,
         buffer._unit_premultiplied,
     )
-    return Buffer._publish(array, offset, buffer.color_space, metadata)
+
+
+def _quarter_turn(buffer, transform, factor, target):
+    """Rotate or mirror by whole quarter turns with numpy, bit for bit.
+
+    A linear part that is a signed permutation with an integer translation maps
+    every source pixel center onto a destination pixel center, so nearest and
+    linear sampling both reduce to a pure reordering. OpenCV 5 evaluates those
+    coordinates in floating point and can weigh a neighbour at about 1e-6,
+    which broke the documented equality with ``numpy.rot90``. Returns None
+    for any other matrix, or when the reordering would not fill ``target``.
+    """
+    linear = transform[:2, :2]
+    if not (np.isin(linear, (-1.0, 0.0, 1.0)).all() and np.abs(linear).sum() == 2):
+        return None
+    if np.count_nonzero(linear, axis=0).min() == 0:
+        return None
+    width, height = buffer.size
+    left, top = buffer.offset
+    corners = transform[:2] @ np.array(
+        [[left, left + width - 1], [top, top + height - 1], [1.0, 1.0]]
+    )
+    origin = corners.min(axis=1)
+    if not np.array_equal(origin, np.floor(origin)):
+        return None
+    pixels = buffer.rgba
+    signs = (linear[0, 0], linear[1, 1])
+    if linear[0, 0] == 0.0:
+        pixels = pixels.transpose(1, 0, 2)
+        signs = (linear[0, 1], linear[1, 0])
+    pixels = pixels[:: int(signs[1]), :: int(signs[0])]
+    expected = (target[3] - target[1], target[2] - target[0])
+    if tuple(int(value) for value in origin) != tuple(target[:2]):
+        return None
+    if pixels.shape[:2] != expected:
+        return None
+    array = _owned_output(pixels.shape)
+    np.multiply(pixels, np.float32(factor), out=array)
+    metadata = _scaled(buffer, factor)
+    return Buffer._publish(array, target[:2], buffer.color_space, metadata)
 
 
 def _target_rectangle(transform, buffer, interpolation, bounds):
@@ -307,6 +355,8 @@ def _resample(buffer, transform, factor, interpolation, target):
     array = _owned_output((height, width, 4))
     if interpolation == "cubic":
         _cubic_remap(buffer, transform, target, array)
+    elif interpolation == "nearest":
+        _nearest_gather(buffer, forward, target, array)
     else:
         cv2.warpAffine(
             buffer.rgba,
@@ -318,6 +368,39 @@ def _resample(buffer, transform, factor, interpolation, target):
             borderValue=(0.0, 0.0, 0.0, 0.0),
         )
     return _finish(array, buffer, factor, interpolation, target)
+
+
+def _nearest_gather(buffer, forward, target, array):
+    """Copy the nearest source pixel with a fixed round-half-up rule.
+
+    OpenCV 4 rounded nearest coordinates half up through fixed point, while
+    OpenCV 5 resolves exact half-pixel ties differently, which widened a
+    2-pixel solid at a half-pixel position to 3 pixels. Gathering with numpy
+    keeps one rule, ``floor(x + 0.5)``, across OpenCV releases. Rows are
+    processed in strips so the index maps stay small for large frames.
+    """
+    import cv2
+
+    inverse = cv2.invertAffineTransform(forward)
+    width, height = buffer.size
+    columns = np.arange(target[2] - target[0], dtype=np.float64)
+    for start in range(0, array.shape[0], 256):
+        rows = np.arange(start, min(start + 256, array.shape[0]), dtype=np.float64)
+        source = [
+            np.floor(
+                inverse[axis, 0] * columns[None, :]
+                + (inverse[axis, 1] * rows + inverse[axis, 2])[:, None]
+                + 0.5
+            )
+            for axis in range(2)
+        ]
+        inside = (source[0] >= 0) & (source[0] < width)
+        inside &= (source[1] >= 0) & (source[1] < height)
+        strip = array[start : start + rows.size]
+        strip.fill(0.0)
+        strip[inside] = buffer.rgba[
+            source[1][inside].astype(np.intp), source[0][inside].astype(np.intp)
+        ]
 
 
 def _cubic_remap(buffer, transform, target, array):
