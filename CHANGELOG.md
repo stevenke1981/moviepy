@@ -12,6 +12,8 @@ For performances reason a very minor change to the API of CompositeVideoClip hav
 This mean you need to specifically set `bg_color=None` if you want to generate a video with a transparent background.
 
 ### Fixed
+- Compatibility with OpenCV 5, FFmpeg 9 and NumPy 2.5: exact 90/180/270° AE rotations match `np.rot90` bit for bit, nearest sampling rounds half-pixel positions identically on every OpenCV version, long music filter graphs fall back to `-/filter_complex`, FLAC loudness intermediates decode again, FFmpeg 7+ "Display Matrix" rotation is parsed, and the NumPy 2.5 reshape deprecation in `ffmpeg_reader` is gone.
+- Agent guides and AE workflow docs use repo-relative paths instead of a hard-coded drive; over-long lines in `moviepy/ae`, benchmarks and examples are wrapped.
 - `FFMPEG_AudioReader.get_frame` returned silence for a single request spanning more than half the read buffer (about 2.3 s at 44.1 kHz) because it recursed on the boolean range mask instead of the timestamps.
 - Speed up AE 1080p compositing about 2.2x (uint8 export, sparse/opaque layer composites, closed-form import metadata) with bit-identical frames.
 - Drain Godot audio playback after the final content frame and verify release without changing delivered frames or PCM samples.
@@ -23,6 +25,11 @@ This mean you need to specifically set `bg_color=None` if you want to generate a
 - Fix incorrect handling of lines with a format different from "key: value" during FFmpeg infos parsing (see #2311, #1860, #2418, #2470)
 
 ### Added
+- `AGENTS.md`, `CLAUDE.md`, a `docs/ae/README.md` index and a README quickstart for `moviepy.ae`, checked by `tests/ae/test_repo_guides.py`.
+- `python -m moviepy.ae.templates` with no arguments, `-h` or `--help` prints an overview of every command group (episodes, `music`, `library`, `logo`, `documentary`); an unknown command exits 2 with a "did you mean" hint.
+- `ae.wiggle(freq, amp, octaves=1, amp_mult=0.5, value=None)`, usable directly as an effect or property value (`ae.fx.GaussianBlur(blurriness=ae.wiggle(freq=2, amp=8))`), and the `ae.masks.MaskPath` alias for `PathValue`.
+- `benchmarks/ae_comp_bench.py`: WS-03..06 compositing benchmark (blend modes vs Normal, 20-layer comp, feathered mask, adjustment Gaussian Blur, Echo) with a recorded 1080p baseline, plus an opt-in (`AE_SLOW=1`) 1080p 200-frame memory-growth test.
+- WS-03..06 acceptance records and a dated status update in `docs/ae/AE_REVIEW_PLAN.md`; `masks/path.py` coverage raised from 88% to 99%.
 - Parallel AE frame rendering (`moviepy.ae.parallel`) feeding one FFmpeg encoder in order, with automatic NVENC detection and libx264 fallback; `render --workers/--encoder`. A 1080p episode exports about 2x faster with byte-identical frames.
 - Production templates in `moviepy.ae.templates` distilled from the Night Lamp workflows: channel presets, episode-media title bookends, subtitle layout/burn-in/SRT/VTT/ASS, sub-pixel Ken Burns with a motion check, chapter tags, vertical quotes on bamboo or paper, and a declarative `episode.json` build with narration/music mixing and a `python -m moviepy.ae.templates init|validate|render` CLI. See [new episode workflow](docs/ae/episode_workflow.rst) and [templates](docs/ae/templates.rst).
 - Godot requirements as data (`GODOT_REQUIREMENTS`, `[tool.moviepy.godot]`) with a non-raising `python -m moviepy.ae.three_d.requirements` environment check.

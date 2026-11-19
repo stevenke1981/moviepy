@@ -60,8 +60,10 @@ Agents should also read [AGENTS.md](../../AGENTS.md) at the repository root.
 | [ws00_acceptance.md](ws00_acceptance.md) | WS-00 acceptance |
 | [ws01_acceptance.md](ws01_acceptance.md) | WS-01 acceptance |
 | [ws02_acceptance.md](ws02_acceptance.md) | WS-02 acceptance |
+| [ws03_acceptance.md](ws03_acceptance.md) | WS-03 acceptance |
+| [ws04_acceptance.md](ws04_acceptance.md) | WS-04 acceptance |
+| [ws05_acceptance.md](ws05_acceptance.md) | WS-05 acceptance |
+| [ws06_acceptance.md](ws06_acceptance.md) | WS-06 acceptance |
 | [change_notes.rst](change_notes.rst) | Change notes overview |
 | [ws01_change_notes.rst](ws01_change_notes.rst), [ws02_change_notes.rst](ws02_change_notes.rst), [ws03_change_notes.rst](ws03_change_notes.rst), [ws04_change_notes.rst](ws04_change_notes.rst), [ws05_change_notes.rst](ws05_change_notes.rst), [ws06_change_notes.rst](ws06_change_notes.rst) | Per-workstream change notes |
 
-Acceptance records ws03_acceptance.md, ws04_acceptance.md, ws05_acceptance.md and ws06_acceptance.md
-(being added).

@@ -187,6 +187,12 @@ reference machine (AMD Ryzen 9 3900X 12-Core Processor, Windows 11, Python
 The JSON records them in `git_status_porcelain`, with source hashes. Every
 case was deterministic, and every blend output was finite.
 
+This run shared the machine with other test jobs. An idle re-run of the same
+command at commit `97d783c` gave medians within about 5–25% of these numbers,
+for example: adjustment blur 363 ms, 20-layer comp 332 ms, Echo single 496 ms,
+Normal 26.6 ms. It reached the same verdict, 0 of 27 targets met. Use an idle
+machine for future comparisons.
+
 **Summary: 0 of 27 recorded targets met.** All
 25 separable blend modes are above 2× Normal. The 20-layer comp and the
 adjustment blur are both above 150 ms. No performance fixes were attempted in
