@@ -101,7 +101,10 @@ def get_functions_with_decorator_defined(code, decorator_name):
         def generic_visit(self, node):
             if isinstance(node, ast.FunctionDef) and node.decorator_list:
                 for dec in node.decorator_list:
-                    if not isinstance(dec, ast.Call) or dec.func.id != decorator_name:
+                    if (
+                        not isinstance(dec, ast.Call)
+                        or getattr(dec.func, "id", None) != decorator_name
+                    ):
                         continue
 
                     decorator_argument_names = []
