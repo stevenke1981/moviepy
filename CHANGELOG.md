@@ -13,6 +13,8 @@ This mean you need to specifically set `bg_color=None` if you want to generate a
 
 ### Fixed
 - Compatibility with OpenCV 5, FFmpeg 9 and NumPy 2.5: exact 90/180/270° AE rotations match `np.rot90` bit for bit, nearest sampling rounds half-pixel positions identically on every OpenCV version, long music filter graphs fall back to `-/filter_complex`, FLAC loudness intermediates decode again, FFmpeg 7+ "Display Matrix" rotation is parsed, and the NumPy 2.5 reshape deprecation in `ffmpeg_reader` is gone.
+- AE nearest-neighbour sampling is about 10x faster at 1080p (exact `floor(x + 0.5)` maps fed to `cv2.remap`), samples in world coordinates so ROI renders equal crops of full renders, and quarter turns stay bit-exact when a layer is clipped by the comp or ROI.
+- `ae.wiggle` validates its arguments eagerly; the music filter-graph flag detection falls back to `-filter_complex_script` when FFmpeg's help is empty or unavailable.
 - Agent guides and AE workflow docs use repo-relative paths instead of a hard-coded drive; over-long lines in `moviepy/ae`, benchmarks and examples are wrapped.
 - `FFMPEG_AudioReader.get_frame` returned silence for a single request spanning more than half the read buffer (about 2.3 s at 44.1 kHz) because it recursed on the boolean range mask instead of the timestamps.
 - Speed up AE 1080p compositing about 2.2x (uint8 export, sparse/opaque layer composites, closed-form import metadata) with bit-identical frames.
