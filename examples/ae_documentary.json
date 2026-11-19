@@ -1,0 +1,13 @@
+{
+  "input": "media/footage.mp4",
+  "clippings": ["media/news1.png", "media/news2.png"],
+  "main_is_page": false,
+  "headline": "跨越半個世紀的故事",
+  "body": "一封信，讓遠方的往事重新浮現。\n時間走過，記憶仍在。",
+  "source_label": "來源：自有素材",
+  "watermark": "1961",
+  "news": {"main_width": 0.63, "push": 0.025, "pan": [0.008, -0.006], "entrance": 0.55},
+  "film": {"fit": "cover", "push": 0.035, "pan": [0.015, 0], "cut": 40, "radius": 12, "notches": true},
+  "subtitles_primary": [{"start": 0, "end": 4, "text": "一封信，讓遠方的故事再次被讀起。", "lang": "zh-TW"}],
+  "subtitles_secondary": [{"start": 0, "end": 4, "text": "A letter brings a distant story back.", "lang": "en"}]
+}

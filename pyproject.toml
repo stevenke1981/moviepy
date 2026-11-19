@@ -40,6 +40,10 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+svg = [
+    "resvg-py==0.2.6",
+    "fonttools==4.59.2",
+]
 doc = [
     "numpydoc<2.0",
     "Sphinx==6.*",
@@ -65,3 +69,13 @@ lint = [
 [tool.setuptools.packages.find]
 include = ["moviepy*"]
 exclude = ["media", "tests", "docs"]
+
+[tool.setuptools.package-data]
+"moviepy.ae.templates" = ["configs/*.json"]
+
+[tool.moviepy.godot]
+min_version = "4.7"
+max_version_exclusive = "5.0"
+platforms = ["win32"]
+renderer = "forward_plus"
+env = "MOVIEPY_GODOT"

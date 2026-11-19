@@ -1,0 +1,326 @@
+{
+  "acceptance": {
+    "normal_minimum_fps": 10.0,
+    "passed": true,
+    "reasons": [],
+    "regression": "initial baseline; not measured"
+  },
+  "cases": {
+    "gaussian_sigma20": {
+      "channels": "RGBA",
+      "correct": true,
+      "deterministic": true,
+      "float_dtype": "float32",
+      "float_shape": [
+        1080,
+        1920,
+        4
+      ],
+      "median_fps": 3.5051402355797796,
+      "median_ms": 285.2952899998854,
+      "oracle": "independent float64 161-tap separable Gaussian samples",
+      "output_sha256": "e4761424fba04a6e18640bc9c32611cb4f7104d69e7f4b01cde34b7554c56ec1",
+      "sample_max_error": 2.680493794704475e-07,
+      "sample_points_yx": [
+        [
+          0,
+          0
+        ],
+        [
+          0,
+          1919
+        ],
+        [
+          540,
+          960
+        ],
+        [
+          1079,
+          0
+        ],
+        [
+          1079,
+          1919
+        ]
+      ],
+      "samples": [
+        {
+          "fps": 3.5049245679789958,
+          "frames": 20,
+          "ms_per_frame": 285.31284499986214,
+          "repeat": 1,
+          "seconds": 5.706256899997243
+        },
+        {
+          "fps": 3.508187108878748,
+          "frames": 20,
+          "ms_per_frame": 285.04751000000397,
+          "repeat": 2,
+          "seconds": 5.700950200000079
+        },
+        {
+          "fps": 3.5051402355797796,
+          "frames": 20,
+          "ms_per_frame": 285.2952899998854,
+          "repeat": 3,
+          "seconds": 5.7059057999977085
+        },
+        {
+          "fps": 3.550284786981985,
+          "frames": 20,
+          "ms_per_frame": 281.66754499998206,
+          "repeat": 4,
+          "seconds": 5.633350899999641
+        },
+        {
+          "fps": 3.4619239600869047,
+          "frames": 20,
+          "ms_per_frame": 288.856719999967,
+          "repeat": 5,
+          "seconds": 5.7771343999993405
+        }
+      ],
+      "timed_boundary": "raw cv2 GaussianBlur float32 RGBA sigma=20; no WS-10 class"
+    },
+    "normal_10": {
+      "correct": true,
+      "deterministic": true,
+      "float_dtype": "float32",
+      "float_max_error": 8.24454040593281e-08,
+      "float_sha256": "7e66bf24f8284043b2e1a2091fbc21ef135a1b1d5ccf231327bab7f63bbfc439",
+      "float_shape": [
+        1080,
+        1920,
+        4
+      ],
+      "median_fps": 13.773734727512792,
+      "median_ms": 72.6019499999893,
+      "oracle": "independent float64 source-over from source RGB and masks",
+      "output_sha256": "b77113ba48605608b5869409e9ff920140bda4898bb59e92f768a24d9ea86806",
+      "rgb_dtype": "uint8",
+      "rgb_max_code_error": 0,
+      "rgb_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "samples": [
+        {
+          "fps": 13.773734727512792,
+          "frames": 20,
+          "ms_per_frame": 72.6019499999893,
+          "repeat": 1,
+          "seconds": 1.452038999999786
+        },
+        {
+          "fps": 13.501705906789631,
+          "frames": 20,
+          "ms_per_frame": 74.06471499998588,
+          "repeat": 2,
+          "seconds": 1.4812942999997176
+        },
+        {
+          "fps": 13.512583153930938,
+          "frames": 20,
+          "ms_per_frame": 74.00509499984764,
+          "repeat": 3,
+          "seconds": 1.4801018999969529
+        },
+        {
+          "fps": 14.304895106483917,
+          "frames": 20,
+          "ms_per_frame": 69.90614000005735,
+          "repeat": 4,
+          "seconds": 1.398122800001147
+        },
+        {
+          "fps": 13.778964330344861,
+          "frames": 20,
+          "ms_per_frame": 72.57439499990141,
+          "repeat": 5,
+          "seconds": 1.4514878999980283
+        }
+      ],
+      "timed_boundary": "prebuilt readonly Buffers; 10 full-canvas over calls; one RGB export"
+    },
+    "normal_10_end_to_end": {
+      "correct": true,
+      "deterministic": true,
+      "float_dtype": "float32",
+      "float_max_error": 8.24454040593281e-08,
+      "float_sha256": "7e66bf24f8284043b2e1a2091fbc21ef135a1b1d5ccf231327bab7f63bbfc439",
+      "float_shape": [
+        1080,
+        1920,
+        4
+      ],
+      "median_fps": 1.1776850239596404,
+      "median_ms": 849.1234749999421,
+      "oracle": "independent float64 source-over from source RGB and masks",
+      "output_sha256": "b77113ba48605608b5869409e9ff920140bda4898bb59e92f768a24d9ea86806",
+      "rgb_dtype": "uint8",
+      "rgb_max_code_error": 0,
+      "rgb_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "samples": [
+        {
+          "fps": 1.1776850239596404,
+          "frames": 20,
+          "ms_per_frame": 849.1234749999421,
+          "repeat": 1,
+          "seconds": 16.982469499998842
+        },
+        {
+          "fps": 1.1726210732869327,
+          "frames": 20,
+          "ms_per_frame": 852.790405000087,
+          "repeat": 2,
+          "seconds": 17.05580810000174
+        },
+        {
+          "fps": 1.173714582120765,
+          "frames": 20,
+          "ms_per_frame": 851.9958900000347,
+          "repeat": 3,
+          "seconds": 17.039917800000694
+        },
+        {
+          "fps": 1.1898665963218222,
+          "frames": 20,
+          "ms_per_frame": 840.4303499999514,
+          "repeat": 4,
+          "seconds": 16.80860699999903
+        },
+        {
+          "fps": 1.188350316641754,
+          "frames": 20,
+          "ms_per_frame": 841.5027000000919,
+          "repeat": 5,
+          "seconds": 16.830054000001837
+        }
+      ],
+      "timed_boundary": "11 source imports; same 10 over calls; one RGB export"
+    },
+    "single": {
+      "correct": true,
+      "deterministic": true,
+      "float_dtype": "float32",
+      "float_max_error": 2.9685450542160652e-08,
+      "float_sha256": "4368afa40c539bf0e8b38fdd1b66872992a324b20b88d1eef660383fc348bdbc",
+      "float_shape": [
+        1080,
+        1920,
+        4
+      ],
+      "median_fps": 74.37454724492905,
+      "median_ms": 13.44546000000264,
+      "oracle": "independent float64 source-over from source RGB and masks",
+      "output_sha256": "9f58d64f551648e60d43f4fd82099ee42601c2293cee482376f97ac5025463c8",
+      "rgb_dtype": "uint8",
+      "rgb_max_code_error": 0,
+      "rgb_shape": [
+        1080,
+        1920,
+        3
+      ],
+      "samples": [
+        {
+          "fps": 74.37454724492905,
+          "frames": 20,
+          "ms_per_frame": 13.44546000000264,
+          "repeat": 1,
+          "seconds": 0.2689092000000528
+        },
+        {
+          "fps": 74.572272090696,
+          "frames": 20,
+          "ms_per_frame": 13.40980999993917,
+          "repeat": 2,
+          "seconds": 0.2681961999987834
+        },
+        {
+          "fps": 74.31891360677727,
+          "frames": 20,
+          "ms_per_frame": 13.455524999881163,
+          "repeat": 3,
+          "seconds": 0.26911049999762326
+        },
+        {
+          "fps": 74.4325910542176,
+          "frames": 20,
+          "ms_per_frame": 13.434975000018312,
+          "repeat": 4,
+          "seconds": 0.26869950000036624
+        },
+        {
+          "fps": 74.23345605383354,
+          "frames": 20,
+          "ms_per_frame": 13.471014999959152,
+          "repeat": 5,
+          "seconds": 0.26942029999918304
+        }
+      ],
+      "timed_boundary": "prebuilt Buffer; one final RGB export"
+    }
+  },
+  "config": {
+    "cases": [
+      "single",
+      "normal_10",
+      "normal_10_end_to_end",
+      "gaussian_sigma20"
+    ],
+    "fixture_recipe": 1,
+    "foreground_layers": 10,
+    "frames": 20,
+    "height": 1080,
+    "repeats": 5,
+    "sigma": 20,
+    "warmup": 5,
+    "width": 1920
+  },
+  "input_buffers_readonly": true,
+  "machine": {
+    "architecture": "AMD64",
+    "commit": "2c6288ef089fade7df232361bb703e2f5f903710",
+    "cpu": "AMD Ryzen 9 3900X 12-Core Processor",
+    "git_dirty": true,
+    "git_status_porcelain": "A  benchmarks/results/ws01-regression-20261003.json\nA  docs/ae/ws01.rst\nA  docs/ae/ws01_acceptance.md\nA  docs/ae/ws01_change_notes.rst\nA  moviepy/ae/properties/__init__.py\nA  moviepy/ae/properties/_expression_helpers.py\nA  moviepy/ae/properties/_expression_sampling.py\nA  moviepy/ae/properties/_noise.py\nA  moviepy/ae/properties/_numeric.py\nA  moviepy/ae/properties/_sandbox.py\nA  moviepy/ae/properties/easing.py\nA  moviepy/ae/properties/expression.py\nA  moviepy/ae/properties/keyframe.py\nA  moviepy/ae/properties/property.py\nA  moviepy/ae/properties/serialization.py\nA  moviepy/ae/properties/spatial.py\nA  moviepy/ae/properties/values.py\nA  tests/ae/test_easing.py\nA  tests/ae/test_expression.py\nA  tests/ae/test_expression_edges.py\nA  tests/ae/test_keyframe.py\nA  tests/ae/test_property.py\nA  tests/ae/test_property_boundaries.py\nA  tests/ae/test_property_serialization.py\nA  tests/ae/test_spatial.py\nA  tests/ae/test_ws01_integration.py\nA  tests/ae/test_ws01_review_fixes.py\n?? .ag-artifacts/\n?? .opencode/\n?? .pi-loop.json.lock\n?? .sites-runtime/\n?? docs/AE_PARITY_SPEC.md\n?? nul",
+    "logical_cpus": 24,
+    "os": "Windows-10-10.0.19045-SP0",
+    "source_sha256": {
+      "benchmarks/ae_bench.py": "04e0700eb269e24fa40471106257f70b3adb37fbacf1d3003a3e90d11d88958b",
+      "moviepy/ae/__init__.py": "e4a87850823d94ed8556cd4ee97e74860b10ea94d72ca180604a1beaba460aa3",
+      "moviepy/ae/buffer.py": "b2248f4a773c0f6214d644a33a6b819b23d589e4af287fb0af4b81f6f7c02ac4",
+      "moviepy/ae/context.py": "8e3c6700099d2ef6a2dcf93cfb56f68b52372af57bc6c26146cb225b60773814"
+    },
+    "versions": {
+      "imageio": "2.38.0",
+      "moviepy": "2.2.0",
+      "numpy": "2.4.6",
+      "opencv": "5.0.0",
+      "pillow": "12.3.0",
+      "python": "3.11.14"
+    }
+  },
+  "schema": 1,
+  "threads": {
+    "environment": {
+      "BLIS_NUM_THREADS": "1",
+      "GOTO_NUM_THREADS": "1",
+      "MKL_NUM_THREADS": "1",
+      "NUMEXPR_NUM_THREADS": "1",
+      "OMP_NUM_THREADS": "1",
+      "OPENBLAS_NUM_THREADS": "1",
+      "OPENCV_FOR_THREADS_NUM": "1",
+      "VECLIB_MAXIMUM_THREADS": "1"
+    },
+    "opencl": false,
+    "opencv_threads": 1,
+    "scope": "process-local library CPU threads; no GPU/parallelism"
+  },
+  "timestamp_utc": "2026-10-03T10:26:41.974883+00:00"
+}
