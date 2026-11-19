@@ -72,10 +72,14 @@ Template pipelines for finished videos have a command line:
 
 ``` console
 python -m moviepy.ae.templates --help
-python -m moviepy.ae.templates init <folder>
-python -m moviepy.ae.templates validate <folder>
-python -m moviepy.ae.templates render <folder>
+python -m moviepy.ae.templates init --channel story my_episode
+python -m moviepy.ae.templates validate my_episode/episode.json
+python -m moviepy.ae.templates render my_episode/episode.json out.mp4
 ```
+
+`init` takes `--channel story|history` and writes `my_episode/episode.json`. `validate` and
+`render` take that JSON file (`render` also takes the output path); both stop with an error until
+you replace the `PLACEHOLDER_*` entries in `my_episode/media` with your own media.
 
 See [docs/ae/README.md](docs/ae/README.md) for the full index and [AGENTS.md](AGENTS.md) for
 setup, tests and conventions.

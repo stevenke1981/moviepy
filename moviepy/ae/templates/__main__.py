@@ -13,8 +13,8 @@ GROUPS = (
         "{init,validate,render}",
         "episode projects: scaffold, check and render an episode",
     ),
-    ("music", "music-video projects (init, validate, render, QA)"),
-    ("library", "browse the bundled templates, presets and fonts"),
+    ("music", "music-video projects (init, validate, build)"),
+    ("library", "browse templates and recipes (list, show, recipes)"),
     ("logo", "render a looping logo animation"),
     ("documentary", "documentary news-collage and archival-film templates"),
 )
@@ -41,7 +41,11 @@ def _unknown(token):
 
 
 def run(argv=None):
-    """Dispatch ``music``/``library``/``logo`` to their CLIs, the rest to episodes."""
+    """Dispatch each command group to its CLI.
+
+    ``music``, ``library``, ``logo`` and ``documentary`` go to their own CLIs;
+    ``init``, ``validate`` and ``render`` go to the episode CLI.
+    """
     argv = sys.argv[1:] if argv is None else list(argv)
     if not argv:
         sys.stdout.write(overview())

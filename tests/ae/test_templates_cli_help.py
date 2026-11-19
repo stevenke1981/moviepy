@@ -1,5 +1,7 @@
 """Unified templates CLI: overview, unknown-command hint, unchanged delegation."""
 
+import re
+
 import pytest
 
 from moviepy.ae.templates.__main__ import run
@@ -37,6 +39,28 @@ def test_unknown_command_without_close_match(capsys):
     err = capsys.readouterr().err
     assert "did you mean" not in err
     assert "music" in err
+
+
+@pytest.mark.parametrize("group", ["music", "library"])
+def test_overview_subcommands_exist_in_group_help(group, capsys):
+    """Every subcommand named in the overview is a real subcommand of the group."""
+    from moviepy.ae.templates.__main__ import GROUPS
+
+    purpose = dict(GROUPS)[group]
+    named = re.search(r"\(([a-z, ]+)\)", purpose).group(1).split(", ")
+    assert named
+    with pytest.raises(SystemExit):
+        run([group, "--help"])
+    out = capsys.readouterr().out
+    choices = re.search(r"\{([a-z,]+)\}", out).group(1).split(",")
+    assert sorted(named) == sorted(choices)
+
+
+def test_episode_group_names_are_real_commands():
+    from moviepy.ae.templates.__main__ import EPISODE_COMMANDS, GROUPS
+
+    assert dict(GROUPS)["{init,validate,render}"]
+    assert EPISODE_COMMANDS == ("init", "validate", "render")
 
 
 @pytest.mark.parametrize(

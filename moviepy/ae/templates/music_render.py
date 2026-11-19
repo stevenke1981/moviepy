@@ -214,19 +214,22 @@ def _check_ass(ass):
 def _graph_file_flag(binary):
     """Return the flag that reads a ``-filter_complex`` graph from a file.
 
-    FFmpeg 7 added the generic ``-/filter_complex FILE`` form and FFmpeg 9
+    A missing binary or empty help output selects the legacy flag. FFmpeg 7
+    added the generic ``-/filter_complex FILE`` form and FFmpeg 9
     removed ``-filter_complex_script``, which older builds still require.
     """
-    found = subprocess.run(
-        [binary, "-hide_banner", "-h", "full"],
-        capture_output=True,
-        creationflags=_NO_WINDOW,
-    ).stdout.decode("utf-8", "replace")
-    return (
-        "-filter_complex_script"
-        if "-filter_complex_script " in found
-        else "-/filter_complex"
-    )
+    legacy = "-filter_complex_script"
+    try:
+        found = subprocess.run(
+            [binary, "-hide_banner", "-h", "full"],
+            capture_output=True,
+            creationflags=_NO_WINDOW,
+        ).stdout.decode("utf-8", "replace")
+    except (OSError, subprocess.SubprocessError):
+        return legacy  # the real run reports a missing or broken binary
+    if not found.strip():
+        return legacy
+    return legacy if "-filter_complex_script " in found else "-/filter_complex"
 
 
 def _build_command(

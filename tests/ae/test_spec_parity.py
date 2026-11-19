@@ -76,6 +76,19 @@ def test_wiggle_matches_the_expression_helper():
         {"freq": float("nan"), "amp": 1},
         {"freq": 1, "amp": 1, "octaves": 0},
         {"freq": 1, "amp": 1, "octaves": 1.5},
+        {"freq": "2", "amp": 1},
+        {"freq": None, "amp": 1},
+        {"freq": 1, "amp": "8"},
+        {"freq": 1, "amp": None},
+        {"freq": 1, "amp": float("inf")},
+        {"freq": 1, "amp": (1, float("nan"))},
+        {"freq": 1, "amp": 1, "octaves": True},
+        {"freq": 1, "amp": 1, "octaves": None},
+        {"freq": 1, "amp": 1, "amp_mult": "0.5"},
+        {"freq": 1, "amp": 1, "amp_mult": True},
+        {"freq": 1, "amp": (1, 2), "value": (0.0, 0.0, 0.0)},
+        {"freq": 1, "amp": np.array([1.0, 2.0]), "value": 3.0, "octaves": 0},
+        {"freq": 1, "amp": np.zeros((2, 2))},
         {"freq": 1, "amp": 1, "amp_mult": 2},
         {"freq": 1, "amp": (1, 2, 3, 4)},
         {"freq": True, "amp": 1},
@@ -83,8 +96,25 @@ def test_wiggle_matches_the_expression_helper():
 )
 def test_wiggle_rejects_invalid_arguments_eagerly(kwargs):
     """Bad arguments fail when the factory is called, not at render time."""
-    with pytest.raises(ValueError):
+    with pytest.raises((ValueError, TypeError)):
         ae.wiggle(**kwargs)
+
+
+def test_wiggle_error_types_and_messages():
+    with pytest.raises(TypeError, match="freq must be a real number, not str"):
+        ae.wiggle("2", 1)
+    with pytest.raises(TypeError, match="octaves"):
+        ae.wiggle(1, 1, octaves=2.0)
+    with pytest.raises(ValueError, match="must match"):
+        ae.wiggle(1, (1, 2), value=(0.0, 0.0, 0.0))
+
+
+def test_wiggle_accepts_numpy_and_matching_vector_value():
+    assert ae.wiggle(np.float64(1), np.array([3, 4])).source == (
+        "wiggle(1.0, [3.0, 4.0], 1, 0.5)"
+    )
+    prop = ae.wiggle(1, [1, 2, 3], octaves=np.int64(2), value=(0.0, 0.0, 0.0))
+    assert isinstance(prop, Property)
 
 
 def test_effect_param_accepts_wiggle_and_clamps():

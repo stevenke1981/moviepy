@@ -3,6 +3,8 @@
 import math
 from dataclasses import dataclass, field
 
+import numpy as np
+
 from moviepy.ae.context import RenderContext
 from moviepy.ae.properties._expression_helpers import registry
 from moviepy.ae.properties._expression_sampling import PropertySampler
@@ -186,21 +188,53 @@ class Expression:
 
 
 def _literal(number, name):
+    if isinstance(number, (bool, np.bool_)) or not isinstance(
+        number, (int, float, np.integer, np.floating)
+    ):
+        raise TypeError(f"{name} must be a real number, not {type(number).__name__}")
     value = float(number)
-    if isinstance(number, bool) or not math.isfinite(value):
-        raise ValueError(name + " must be a finite real number")
+    if not math.isfinite(value):
+        raise ValueError(f"{name} must be finite, got {number!r}")
     return value
 
 
-def _wiggle_source(freq, amp, octaves, amp_mult):
+def _value_dimension(value):
+    """Return the vector length of a base value, or None for a scalar."""
+    if callable(value) or isinstance(value, (str, bytes)):
+        return None
+    try:
+        shape = np.shape(value)
+    except (ValueError, TypeError):
+        return None
+    return shape[0] if len(shape) == 1 else None
+
+
+def _wiggle_source(freq, amp, octaves, amp_mult, value=None):
     freq, amp_mult = _literal(freq, "freq"), _literal(amp_mult, "amp_mult")
-    if freq < 0 or not 0 <= amp_mult <= 1:
-        raise ValueError("freq must be nonnegative and amp_mult within [0, 1]")
-    if isinstance(octaves, bool) or octaves != int(octaves) or not 1 <= octaves <= 8:
-        raise ValueError("octaves must be an integer in 1..8")
+    if freq < 0:
+        raise ValueError(f"freq must be nonnegative, got {freq!r}")
+    if not 0 <= amp_mult <= 1:
+        raise ValueError(f"amp_mult must be within [0, 1], got {amp_mult!r}")
+    if isinstance(octaves, (bool, np.bool_)) or not isinstance(
+        octaves, (int, np.integer)
+    ):
+        raise TypeError(
+            f"octaves must be a positive integer, not {type(octaves).__name__}"
+        )
+    if not 1 <= octaves <= 8:
+        raise ValueError(f"octaves must be an integer in 1..8, got {octaves!r}")
+    if isinstance(amp, np.ndarray):
+        if amp.ndim != 1:
+            raise ValueError("amp arrays must be one-dimensional")
+        amp = amp.tolist()
     if isinstance(amp, (tuple, list)):
         if not 1 <= len(amp) <= 3:
             raise ValueError("amp vectors need one to three components")
+        dim = _value_dimension(value)
+        if dim is not None and len(amp) != dim:
+            raise ValueError(
+                f"amp has {len(amp)} components but value has {dim}; they must match"
+            )
         amp_text = "[" + ", ".join(repr(_literal(a, "amp")) for a in amp) + "]"
     else:
         amp_text = repr(_literal(amp, "amp"))
@@ -220,7 +254,7 @@ def wiggle(freq, amp, octaves=1, amp_mult=0.5, *, value=None):
     ----------
     freq : float
         Wiggles per second, nonnegative. ``0`` returns the base value.
-    amp : float or sequence of float
+    amp : float, tuple, list or numpy.ndarray
         Peak deviation in the property's units; a sequence gives one amplitude
         per vector component.
     octaves : int, optional
@@ -252,7 +286,7 @@ def wiggle(freq, amp, octaves=1, amp_mult=0.5, *, value=None):
     >>> 2.0 <= a <= 18.0
     True
     """
-    expression = Expression(_wiggle_source(freq, amp, octaves, amp_mult))
+    expression = Expression(_wiggle_source(freq, amp, octaves, amp_mult, value))
     if value is None:
         return expression
     from moviepy.ae.properties.property import Property

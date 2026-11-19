@@ -897,5 +897,19 @@ def test_side_data():
     )
 
 
+def test_display_matrix_ffmpeg7_spelling():
+    """Parse the FFmpeg 7+ side data spelled "Display Matrix:" (capitalised)."""
+    infos = """Input #0, mov,mp4,m4a,3gp,3g2,mj2, from 'phone.mov':
+  Duration: 00:00:01.00, start: 0.000000, bitrate: 1000 kb/s
+  Stream #0:0[0x1](und): Video: h264 (High) (avc1 / 0x31637661), yuv420p(progressive), 1920x1080, 900 kb/s, 30 fps, 30 tbr, 600 tbn (default)
+    Metadata:
+      handler_name    : Core Media Video
+    Side data:
+      Display Matrix: rotation of -90.00 degrees
+"""
+    d = FFmpegInfosParser(infos, "phone.mov").parse()
+    assert d["video_rotation"] == 90
+
+
 if __name__ == "__main__":
     pytest.main()

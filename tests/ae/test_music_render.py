@@ -423,6 +423,43 @@ def test_long_filter_graph_uses_script_file(grey):
     assert decode(grey["folder"] / "long.mp4").shape[0] == 12
 
 
+def _flag_with(monkeypatch, run):
+    from moviepy.ae.templates import music_render
+
+    music_render._graph_file_flag.cache_clear()
+    monkeypatch.setattr(music_render.subprocess, "run", run)
+    try:
+        return music_render._graph_file_flag("ffmpeg-fake")
+    finally:
+        music_render._graph_file_flag.cache_clear()
+
+
+@pytest.mark.parametrize(
+    "stdout, expected",
+    [
+        (b"", "-filter_complex_script"),
+        (b"   \n", "-filter_complex_script"),
+        (b" -filter_complex_script file\n", "-filter_complex_script"),
+        (b" -/filter_complex file\n -filter_complex x\n", "-/filter_complex"),
+    ],
+)
+def test_graph_file_flag_from_help_output(monkeypatch, stdout, expected):
+    def fake_run(*args, **kwargs):
+        return subprocess.CompletedProcess(args, 0, stdout=stdout, stderr=b"")
+
+    assert _flag_with(monkeypatch, fake_run) == expected
+
+
+@pytest.mark.parametrize(
+    "error", [FileNotFoundError("nope"), PermissionError("denied"), OSError("bad")]
+)
+def test_graph_file_flag_missing_binary_uses_legacy(monkeypatch, error):
+    def fake_run(*args, **kwargs):
+        raise error
+
+    assert _flag_with(monkeypatch, fake_run) == "-filter_complex_script"
+
+
 def test_filter_arguments_validated(grey):
     with pytest.raises(ValueError):
         render_grey(grey, "badop.mp4", overlay_loops=[(grey["loop"], 0, 0, 2.0)])
